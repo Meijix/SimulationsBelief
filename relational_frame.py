@@ -9,17 +9,14 @@ KD45 frame conditions:
     * Seriality      (Axiom D):  every world has at least one successor.
     * Transitivity   (Axiom 4):  w -> u and u -> v  implies  w -> v.
     * Euclideanness  (Axiom 5):  w -> u and w -> v  implies  u -> v.
+
+Visualisation (text / Graphviz / images) lives in visualization.py; runnable
+examples live in examples.py.
 """
 
 from __future__ import annotations
 
-import os
-import shutil
-import subprocess
 from typing import Dict, Hashable, Iterable, List, Set, Tuple
-
-# Default directory where all generated artifacts (.dot / images) are written.
-OUTPUT_DIR = "outputs"
 
 # Type aliases for readability.
 #
@@ -51,19 +48,6 @@ class RelationalFrame:
         _successors: Precomputed adjacency ``agent -> {world -> set of successors}``
             used for efficient axiom checking.
     """
-
-    # Qualitative, colour-blind-safe palette (Okabe-Ito). Agents are assigned a
-    # colour by their sorted position; the list cycles if there are more agents
-    # than colours. Kept as a class attribute so it is easy to override globally.
-    _PALETTE = (
-        "#0072B2",  # blue
-        "#D55E00",  # vermillion
-        "#009E73",  # green
-        "#CC79A7",  # purple
-        "#E69F00",  # orange
-        "#56B4E9",  # sky blue
-        "#000000",  # black
-    )
 
     def __init__(
         self,
@@ -136,7 +120,7 @@ class RelationalFrame:
 
         Returns:
             A nested mapping ``agent -> {world -> set of successors}``. Every
-            world of every agent gets an entry(possibly empty). 
+            world of every agent gets an entry(possibly empty).
             Example: {'alice': {'w1': {'w2'}, 'w2': {'w3'}}, 'bob': {'w2': {'w3'}, 'w3': {'w4'}}}.
         """
         successors: Dict[Agent, Dict[World, Set[World]]] = {
@@ -159,7 +143,8 @@ class RelationalFrame:
         for agent, edges in self.relations.items():
             if agent not in self.agents:
                 raise ValueError(
-                    f"Unknown agent {agent!r} in relations; "
+                    f"Unknown agent {agent!r} in relations; it is not one of the "
+                    f"declared agents {sorted(map(str, self.agents))}."
                 )
             for source, target in edges:
                 if source not in self.worlds:
@@ -174,8 +159,6 @@ class RelationalFrame:
                     )
 
     def _seriality_violations(self) -> List[str]:
-        #NOT SURE ABOUT THIS. Am I understanding it correctly?
-        #todo: to verify
         """Axiom D: every world must have at least one outgoing edge per agent. NO DEAD ENDS.
         Makes belief consistent: an agent can believe false things, it just has to
         believe something. A world with no successors makes "believes P" vacuously
@@ -227,8 +210,7 @@ class RelationalFrame:
 
     #Transitivity and euclideaness warrantes complete access to the agents own mental state. Agents can be wrong about the world, but they cannot be wrong about what they believe by themselves.
 
-    # ------------------------------------------------------------------ #
-    # Convenience / introspection
+
     # ------------------------------------------------------------------ #
     def kd45_violations(self) -> List[str]:
         """Return every KD45 axiom violation as a message (empty list if valid).
@@ -259,12 +241,7 @@ class RelationalFrame:
         return missing
 
     def dead_ends(self) -> Dict[Agent, Set[World]]:
-        """Return, per agent, the worlds that have no outgoing edge (seriality/D).
-
-        A world with no successor for some agent is a dead end: that agent's
-        beliefs would be inconsistent there. Unlike :meth:`missing_edges`, there is
-        no canonical edge to add, so these are reported as offending *worlds*.
-        """
+        """Return, per agent, the worlds that have no outgoing edge (seriality/D). """
         return {
             agent: {w for w in self.worlds if not self._successors[agent][w]}
             for agent in self.agents
@@ -273,3 +250,111 @@ class RelationalFrame:
     def successors(self, agent: Agent, world: World) -> Set[World]:
         """Return the set of worlds directly accessible for ``agent`` from ``world``."""
         return set(self._successors[agent][world])
+
+    def __repr__(self) -> str:
+        n_edges = sum(len(edges) for edges in self.relations.values())
+        return (
+            f"RelationalFrame(agents={len(self.agents)}, "
+            f"worlds={len(self.worlds)}, edges={n_edges})"
+        )
+
+#########
+#Helper functions
+#########
+
+def kd45_closure(
+    worlds: Iterable[World],
+    edges: Iterable[Edge],
+    make_serial: bool = False,
+) -> Set[Edge]:
+    """Compute the KD45 closure of a single agent's relation.
+
+    Returns the smallest set of edges that contains ``edges`` and is both
+    **transitive** (Axiom 4) and **Euclidean** (Axiom 5).
+
+    Raises:
+        ValueError: If an edge references a world not in ``worlds``, or if
+            ``make_serial`` is False and an isolated world would violate seriality.
+    """
+    world_set: Set[World] = set(worlds)
+
+    # The transitive + Euclidean closure does all the Horn-style edge forcing.
+    succ = _transitive_euclidean_closure(world_set, edges)
+
+    # Seriality: after closure, dead ends are exactly the isolated worlds.
+    dead_ends = {w for w in world_set if not succ[w]}
+    if dead_ends:
+        if make_serial:
+            for w in dead_ends:
+                succ[w].add(w)  # a one-world cluster is trivially KD45
+        else:
+            raise ValueError(
+                f"Seriality (D) cannot be closed automatically for isolated "
+                f"worlds {sorted(map(str, dead_ends))}; pass make_serial=True to "
+                f"give each a self-loop, or add an outgoing edge manually."
+            )
+
+    return {(w, v) for w, targets in succ.items() for v in targets}
+
+
+def _transitive_euclidean_closure(
+    world_set: Set[World], edges: Iterable[Edge]
+) -> Dict[World, Set[World]]:
+    """Return the transitive + Euclidean closure as an adjacency map.
+
+    shared core of :func:`kd45_closure` (belief) and :func:`s5_closure`
+    (knowledge), reused to compute which edges an invalid frame is *missing*. 
+
+    Returns:
+        ``{world -> set of successors}`` closed under transitivity and Euclideanness.
+
+    Raises:
+        ValueError: If an edge references a world not in ``world_set``.
+    """
+    succ: Dict[World, Set[World]] = {w: set() for w in world_set}
+    for source, target in edges:
+        if source not in world_set or target not in world_set:
+            raise ValueError(
+                f"Edge ({source!r} -> {target!r}) references a world not in "
+                f"{sorted(map(str, world_set))}."
+            )
+        succ[source].add(target)
+
+    # Fixpoint: keep adding transitively/Euclidean-forced edges until stable.
+    changed = True
+    while changed:
+        changed = False
+        for w in world_set:
+            for u in list(succ[w]):
+                # Transitivity: w -> u and u -> v  =>  w -> v.
+                for v in list(succ[u]):
+                    if v not in succ[w]:
+                        succ[w].add(v)
+                        changed = True
+                # Euclideanness: w -> u and w -> v  =>  u -> v.
+                for v in list(succ[w]):
+                    if v not in succ[u]:
+                        succ[u].add(v)
+                        changed = True
+    return succ
+
+def s5_closure(worlds: Iterable[World], edges: Iterable[Edge]) -> Set[Edge]:
+    """Compute the S5 closure of a relation --  *knowledge*.
+
+    This is the counterpart of :func:`kd45_closure` for KNOWLEDGE instead of
+    BELIEF. 
+
+        * KNOWLEDGE = S5 = reflexive + transitive + Euclidean (equivalence relation).
+          extra axiom is T (Truth / factivity): w -> w for EVERY world.
+          "If you know P, then P is true", so the real world is always one of
+          the worlds you consider possible. You cannot know something false.
+
+    Concretely, S5 replaces KD45's *seriality* with the stronger *reflexivity*:
+
+    Returns:
+        The closed, reflexive-transitive-Euclidean (S5) edge set.
+    """
+    world_set: Set[World] = set(worlds)
+    seeded = set(edges) | {(w, w) for w in world_set}
+    # No make_serial needed: reflexivity already guarantees seriality.
+    return kd45_closure(world_set, seeded, make_serial=False)
