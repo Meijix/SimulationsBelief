@@ -24,7 +24,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-Image rendering (`RelationalFrame.render()`) needs the Graphviz system binary:
+Image rendering (`visualization.show()`) needs the Graphviz system binary:
 
 ```bash
 brew install graphviz        # macOS
@@ -33,8 +33,15 @@ brew install graphviz        # macOS
 
 ## Usage
 ```bash
-.venv/bin/python relational_frame.py     # run the built-in examples
-.venv/bin/python -m pytest -q            # run the test suite
+.venv/bin/python examples.py             # run the feature demos
+.venv/bin/python examples.py --open      # ...and open each image in your viewer
+.venv/bin/python examples2.py            # a single frame, step by step
 ```
 
-Generated images are written to `outputs/` (git-ignored).
+For a quick one-off look at a model in the REPL, use `visualization.preview(model)`
+(renders and opens it). Generated images are written to `outputs/` (git-ignored).
+
+Tests live in `tests/`, kept local (git-ignored). To run them:
+```bash
+.venv/bin/python -m pytest -q
+```

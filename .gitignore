@@ -1,0 +1,15 @@
+# Generated visualization artifacts
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment & test caches
+.venv/
+.pytest_cache/
+.hypothesis/
+
+# Tests (kept local for now)
+tests/
+docs/
