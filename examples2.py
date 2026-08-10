@@ -6,8 +6,10 @@ cloud; Bob is convinced it will be sunny.
 Run it:  python examples2.py
 """
 
+import sys
+
 from relational_frame import RelationalFrame
-from visualization import render, visualize
+from visualization import preview, show, to_dot, visualize
 
 # --- Step 1: agents and worlds -----------------------------------------------
 agents = {"alice", "bob"}
@@ -46,9 +48,32 @@ for agent in sorted(agents):
         print(f"  {agent} at {world:5s} accesses {str(sorted(accessible)):22s}"
               f" believes sunny = {accessible <= sunny}")
 
-# --- Step 7: draw it ---------------------------------------------------------
-print("\nSTEP 7: rendering")
+# --- Step 7: drawing it ------------------------------------------------------
+# visualization.py has a tiny API, and each function accepts ANY model in the
+# project (a frame, a knowledge+belief model or a simplicial model):
+#
+#   visualize(model)             the text diagram used in step 5 -- no extras needed
+#   show(model, name, title)     writes outputs/<name>.png and returns the path
+#   show(model, name, open=True) ...and opens it in your viewer
+#   preview(model)               zero-config: render to a temp file and open it
+#   to_dot(model)                the Graphviz source, if you want to edit it by hand
+print("\nSTEP 7: the Graphviz source, to_dot(frame)")
+print("\n".join(to_dot(frame).splitlines()[:8]), "\n  ...")
+
+# show() picks the renderer and the style by itself: this frame is KD45, so it is
+# drawn with arrows; an S5 (knowledge) relation would come out undirected and
+# without self-loops. Add dim=3 for a simplicial model to get interactive HTML.
+# Pass --open to also open the image (and to preview it in one call).
+print("\nSTEP 8: the image, show(frame, name, title)")
+open_it = "--open" in sys.argv
 try:
-    print(" ", render(frame, name="example2", title="Tomorrow's weather · belief (KD45)"))
+    print(" ", show(frame, "example2", "Tomorrow's weather · belief (KD45)", open=open_it))
 except RuntimeError as exc:
+    # Raised when Graphviz is not installed -- the text diagram still works.
     print(" skipped:", exc)
+
+# STEP 9: the easiest one-liner -- preview() renders and opens in a single call,
+# with no name or folder to choose. Quiet by default; opens when you pass --open.
+if open_it:
+    print("\nSTEP 9: preview(frame) -- render + open in one call")
+    preview(frame, "Tomorrow's weather · belief (KD45)")

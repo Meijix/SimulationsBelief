@@ -10,15 +10,26 @@ These showcase the library's building blocks:
 
 Run all examples:   python examples.py
 Run one:            python examples.py muddy_children
+Open the images:    python examples.py muddy_children --open
 
-Images are written to the outputs/ folder (git-ignored).
+Images are written to the outputs/ folder (git-ignored). For a quick one-off look
+at a single model in the REPL, use ``visualization.preview(model)``.
 """
 
 import itertools
 import sys
 
 from relational_frame import RelationalFrame, kd45_closure, s5_closure
-from visualization import render, visualize
+from visualization import show as _show, visualize
+
+# Run with `--open` to also open each rendered image in your viewer.
+_OPEN = "--open" in sys.argv
+
+
+def show(*args, **kwargs):
+    """Local wrapper so a ``--open`` CLI flag makes every example open its image."""
+    kwargs.setdefault("open", _OPEN)
+    return _show(*args, **kwargs)
 
 
 def banner(title: str) -> None:
@@ -147,7 +158,7 @@ def gallery() -> None:
         (broken, "invalid_euclidean"),     # invalid: missing edges
         (dead_end, "invalid_deadend"),     # invalid: seriality dead end
     ]:
-        print(indent(f"{name:20s} valid={model.is_valid()!s:5s} -> {render(model, name)}"))
+        print(indent(f"{name:20s} valid={model.is_valid()!s:5s} -> {show(model, name)}"))
 
 
 # --------------------------------------------------------------------------- #
@@ -184,13 +195,9 @@ def muddy_children() -> None:
     print(indent(visualize(muddy)))
     # A dense S5 model reads best with reflexive loops dropped and symmetric pairs
     # merged -- that turns the 3-child model into its natural cube.
-    path = render(
-        muddy,
-        "muddy_children",
-        title="Muddy children · 3 kids · knowledge (S5)",
-        omit_self_loops=True,
-        undirected_symmetric=True,
-    )
+    # The S5 style -- self-loops hidden, symmetric pairs merged -- is inferred,
+    # which turns the 3-child model into its natural cube.
+    path = show(muddy, "muddy_children", "Muddy children · 3 kids · knowledge (S5)")
     print(indent(f"Rendered -> {path}"))
 
 
@@ -208,6 +215,7 @@ EXAMPLES = {
 
 def main(argv=None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
+    argv = [a for a in argv if a != "--open"]  # --open is handled at import time
     if not argv:
         for example in EXAMPLES.values():
             example()
