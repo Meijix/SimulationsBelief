@@ -16,7 +16,7 @@ examples live in examples.py.
 
 from __future__ import annotations
 
-from typing import Dict, Hashable, Iterable, List, Set, Tuple
+from typing import Dict, FrozenSet, Hashable, Iterable, List, Set, Tuple
 
 # Type aliases for readability.
 #
@@ -41,10 +41,14 @@ class RelationalFrame:
     a set of directed edges ``(source, target)`` between worlds. Checks structural integrity and then enforces the KD45 frame conditions,
     raising :class:`ValueError` if any of them is violated.
 
+    A frame is **immutable** once built: ``agents``, ``worlds`` and each relation are
+    stored as frozensets, so the precomputed ``_successors`` adjacency can never
+    fall out of sync. Build a new frame to change the structure.
+
     Attributes:
-        agents: The set of agent identifiers.
-        worlds: The set of world identifiers (graph nodes).
-        relations: Mapping ``agent -> set of (source, target)`` edges.
+        agents: The (frozen) set of agent identifiers.
+        worlds: The (frozen) set of world identifiers (graph nodes).
+        relations: Mapping ``agent -> frozenset of (source, target)`` edges.
         _successors: Precomputed adjacency ``agent -> {world -> set of successors}``
             used for efficient axiom checking.
     """
@@ -63,10 +67,19 @@ class RelationalFrame:
                 and, when ``validate`` is True, if any agent's relation violates
                 seriality, transitivity or the Euclidean property.
         """
-        self.agents: Set[Agent] = set(agents)
-        self.worlds: Set[World] = set(worlds)
-        self.relations: Dict[Agent, Set[Edge]] = {
-            agent: set(edges) for agent, edges in relations.items()
+        # Why frozensets (not plain sets):
+        # The constructor precomputes `_successors` (an adjacency cache) once, and
+        # every query and validator reads from that cache, not from `relations`.
+        # If `relations` were a mutable set, code could do
+        # `frame.relations[a].discard(edge)` after construction and the cache would
+        # silently go stale -- successors()/is_valid()/dead_ends() would then report
+        # the OLD structure. Freezing agents,
+        # worlds and each relation makes the frame immutable, so `_successors` can
+        # never drift out of sync: to change the structure, you build a new frame.
+        self.agents: FrozenSet[Agent] = frozenset(agents)
+        self.worlds: FrozenSet[World] = frozenset(worlds)
+        self.relations: Dict[Agent, FrozenSet[Edge]] = {
+            agent: frozenset(edges) for agent, edges in relations.items()
         }
 
         # Structural integrity must hold ALWAYS (even to draw it).

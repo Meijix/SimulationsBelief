@@ -1,0 +1,14 @@
+# ---------------------------------------------------------------------------
+# SimulationsBelief -- Python dependencies
+# ---------------------------------------------------------------------------
+# The models (relational_frame, proper, knowledge_belief, simplicial) run on the
+# standard library alone. Rendering is optional and lazily imported:
+#   - matplotlib : render_simplicial()      (2-D simplicial image)
+#   - plotly     : render_simplicial_3d()   (interactive 3-D HTML)
+# pytest + hypothesis are only for the tests. Graphviz (the `dot` binary) is a
+# separate system install for the relational renderers (brew install graphviz).
+# (kaleido is optional, only needed to export a static PNG from a Plotly figure.)
+pytest==9.1.1
+hypothesis==6.156.6
+matplotlib==3.11.0
+plotly==6.9.0
