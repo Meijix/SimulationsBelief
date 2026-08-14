@@ -24,11 +24,13 @@ print(f"{non_proper_worlds(RF2)}")
 
 preview(RF2, "Example 2")
 
-print("Also seems good up to here!")
-
 frame3 = {"a": {("w1","w2"),("w1","w3")},"b": {("w3","w2"),("w2","w3")},"c": {("w3","w2"),("w2","w3")}}
 
 RF3 = RelationalFrame.from_partial(agents, worlds, frame3, make_serial=True)
+
+print(f"{is_proper(RF3)}")
+
+print(f"{non_proper_worlds(RF3)}")
 
 preview(RF3, "Example 3")
 
