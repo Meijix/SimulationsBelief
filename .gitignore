@@ -1,1 +1,20 @@
+
 *.pyc
+
+
+# --- Entornos virtuales ---
+.venv/
+venv/
+env/
+ENV/
+
+
+# --- Salidas generadas ---
+outputs/
+*.dot
+
+# --- Notebooks ---
+.ipynb_checkpoints/
+
+docs/
+tests/
