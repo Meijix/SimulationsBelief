@@ -16,7 +16,7 @@ examples live in examples.py.
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Hashable, Iterable, List, Set, Tuple
+from typing import Dict, FrozenSet, Hashable, Iterable, List, Mapping, Set, Tuple
 
 # Type aliases for readability.
 #
@@ -123,6 +123,36 @@ class RelationalFrame:
             seed = partial_relations.get(agent, set())
             # Close THIS agent's relation only -- never mix agents' edges.
             closed[agent] = kd45_closure(world_set, seed, make_serial=make_serial)
+        return cls(agents=agents, worlds=world_set, relations=closed)
+
+    @classmethod
+    def from_partial_s5(
+        cls,
+        agents: Iterable[Agent],
+        worlds: Iterable[World],
+        partial_relations: Dict[Agent, Iterable[Edge]],
+    ) -> "RelationalFrame":
+        """Build a KNOWLEDGE frame from *partial* relations, closing each agent under S5.
+
+        The knowledge counterpart of :meth:`from_partial`.
+
+        As in :meth:`from_partial`, the closure is applied *independently to each
+        agent* -- one agent's edges never leak into another's relation.
+
+        There is deliberately no ``make_serial`` parameter: reflexivity already gives
+        every world the successor ``w -> w``, so seriality (Axiom D) cannot fail and
+        there is nothing to decide.
+
+        Returns:
+            A fully validated :class:`RelationalFrame` whose relations are
+            equivalence relations.
+        """
+        world_set = set(worlds)
+        closed: Dict[Agent, Set[Edge]] = {}
+        for agent in agents:
+            seed = partial_relations.get(agent, set())
+            # Close THIS agent's relation only -- never mix agents' edges.
+            closed[agent] = s5_closure(world_set, seed)
         return cls(agents=agents, worlds=world_set, relations=closed)
 
     # ------------------------------------------------------------------ #
@@ -275,6 +305,51 @@ class RelationalFrame:
 #Helper functions
 #########
 
+def _as_edge_list(edges: Iterable[Edge], caller: str) -> List[Edge]:
+    """Materialise ``edges`` and reject anything that is not an iterable of pairs.
+
+    The closures take **one agent's** edges. Handing them the whole
+    ``agent -> edges`` mapping is the easy mistake, and without this check it
+    surfaces as ``ValueError: not enough values to unpack`` from deep inside the
+    fixpoint loop -- because iterating a dict yields its KEYS. Fail early, and
+    name the function that does take a mapping.
+
+    Args:
+        edges: The candidate edge iterable (materialised, so generators survive).
+        caller: Name of the calling closure, used in the error message.
+
+    Returns:
+        The edges as a list.
+
+    Raises:
+        TypeError: If ``edges`` is a mapping, or contains a non-pair item.
+    """
+    family_helper = (
+        "RelationalFrame.from_partial_s5" if caller == "s5_closure"
+        else "RelationalFrame.from_partial"
+    )
+    if isinstance(edges, Mapping):
+        keys = sorted(map(repr, edges))
+        raise TypeError(
+            f"{caller}(worlds, edges) takes ONE agent's edges -- an iterable of "
+            f"(source, target) pairs -- but got a mapping of {len(edges)} entries "
+            f"with keys {keys[:5]}{' ...' if len(keys) > 5 else ''}. Iterating a "
+            f"mapping yields its KEYS, not its edges. Close one agent at a time, "
+            f"e.g. {caller}(worlds, relations[agent]), or close the whole family "
+            f"in one call with {family_helper}(agents, worlds, relations)."
+        )
+    out: List[Edge] = []
+    for position, item in enumerate(edges):
+        if isinstance(item, (str, bytes)) or not isinstance(item, tuple) or len(item) != 2:
+            raise TypeError(
+                f"{caller}(worlds, edges) expects (source, target) pairs, but item "
+                f"{position} is {item!r}. Each edge must be a 2-tuple; if you have "
+                f"an agent -> edges mapping, use {family_helper} instead."
+            )
+        out.append(item)
+    return out
+
+
 def kd45_closure(
     worlds: Iterable[World],
     edges: Iterable[Edge],
@@ -290,6 +365,7 @@ def kd45_closure(
             ``make_serial`` is False and an isolated world would violate seriality.
     """
     world_set: Set[World] = set(worlds)
+    edges = _as_edge_list(edges, "kd45_closure")
 
     # The transitive + Euclidean closure does all the Horn-style edge forcing.
     succ = _transitive_euclidean_closure(world_set, edges)
@@ -368,6 +444,6 @@ def s5_closure(worlds: Iterable[World], edges: Iterable[Edge]) -> Set[Edge]:
         The closed, reflexive-transitive-Euclidean (S5) edge set.
     """
     world_set: Set[World] = set(worlds)
-    seeded = set(edges) | {(w, w) for w in world_set}
+    seeded = set(_as_edge_list(edges, "s5_closure")) | {(w, w) for w in world_set}
     # No make_serial needed: reflexivity already guarantees seriality.
     return kd45_closure(world_set, seeded, make_serial=False)
