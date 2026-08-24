@@ -9,7 +9,7 @@ s5_closure(worlds, edges) closes each edge under S5 -- works for one relation at
 kd45_closure(worlds, edges, make_serial=True) closes each edge under KD45 -- works for one relation at a time -- transitivity + Euclideanness, plus a self-loop for isolated worlds. KD45 is BELIEF.
 
 Solution: 
-1. Rename from_partial to from_partial_KD45
+1. from_partial = from_partial_KD45
 2. Add a new function from_partial_S5 that closes each edge under S5.
 3. Add a new class KnowledgeBeliefFrame to carry both relations.
 
