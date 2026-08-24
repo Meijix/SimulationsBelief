@@ -379,7 +379,8 @@ class ProperKnowledgeBeliefFrame(KnowledgeBeliefFrame):
 
     Construction validates everything the parent does (knowledge S5, belief KD45,
     ``Q_a ⊆ R_a``, belief constant on knowledge classes) AND properness of the
-    knowledge relations (``|⋂_a R_a(w)| = 1`` for every world). This is the exact
+    knowledge relations (no two distinct worlds jointly accessible to every
+    agent). This is the exact
     precondition the simplicial translation needs: because the model is proper,
     each world corresponds to a distinct facet of the complex.
 
