@@ -4,22 +4,26 @@ Scope: this module is for **knowledge**, i.e. frames whose relations are equival
 relations (S5). Every public entry point refuses a non-reflexive (KD45 / belief) frame
 -- see :func:`require_knowledge` and the REVIEW note below for why.
 
-A relational model is **proper** when, for every world ``w``, the only world that
-*all* agents jointly consider possible from ``w`` is ``w`` itself:
+A relational model is **proper** when there is no pair of **distinct** worlds
+``x != y`` related by *every* agent:
 
-    |  intersection over agents a of R_a(w)  | = 1
+    for all x, y in W:   x != y   =>   NOT (x R_a y for every agent a)
 
-Equivalently (this is the primary definition in Bjorndahl & Sink, *A Note on Proper
-Relational Structures*, arXiv:2506.17142): there is no pair of **distinct** worlds
-``x != y`` with ``x R_a y`` for *every* agent ``a``.
+That is the definition in Bjorndahl & Sink, *A Note on Proper Relational Structures*
+(arXiv:2506.17142), and it is the one implemented here. :func:`jointly_confused_with`
+computes ``⋂_a R_a(w) \\ {w}``, so a world is a violation exactly when some *other*
+world is jointly accessible from it.
 
-    The two formulations agree exactly when the relations are **reflexive**, because
-    reflexivity puts ``w`` in the intersection and so pins ``|intersection| >= 1``. The
-    ``= 1`` reading then says precisely "no *other* world is jointly accessible". On a
-    non-reflexive KD45 frame they come apart: an empty intersection (``|.| = 0``) means
-    the agents' beliefs are mutually inconsistent at that world, which is NOT a
-    properness failure under the primary definition, yet ``!= 1`` reports it as one.
-    Restricting this module to S5 (below) is what keeps the cheap ``= 1`` test correct.
+    Not the ``= 1`` test. Properness is often stated instead as
+    ``| intersection over agents a of R_a(w) | = 1`` at every world. That form is
+    *equivalent* to the definition above only when the relations are **reflexive**:
+    reflexivity is what puts ``w`` in the intersection and pins
+    ``|intersection| >= 1``, and then ``= 1`` says precisely "no *other* world is
+    jointly accessible". Without reflexivity the two come apart, because an empty
+    intersection becomes possible -- and ``|.| = 0`` means the agents' beliefs are
+    mutually inconsistent at that world, which is NOT a properness failure, yet
+    ``!= 1`` reports it as one. Implementing the definition removes that trap.
+    :func:`joint_possibilities` still exposes the raw intersection for diagnostics.
 
 For knowledge, ``R_a(w)`` is agent ``a``'s equivalence class ``[w]_a``, so properness
 says: no two distinct worlds are indistinguishable to *every* agent at once. That is
@@ -87,14 +91,19 @@ from relational_frame import Agent, Edge, RelationalFrame, World
 #   1. In the thesis architecture properness is a condition on the KNOWLEDGE
 #      relations (see knowledge_belief.KnowledgeBeliefFrame.is_proper, which
 #      passes self.knowledge). Belief lives in Q_a; properness never touches it.
-#   2. The cheap `|intersection| = 1` test implemented below is only *equivalent*
-#      to the paper's primary definition under reflexivity.
-#      Without the guard it silently reports mutually-inconsistent beliefs
-#      (`|intersection| = 0`) as properness failures -- which is exactly the wrong
-#      answer, and exactly the confusing behaviour reported against examples3.py.
-#   3. to_proper / copy_and_skew (Sink Thm 2.4, Bjorndahl & Sink Props. 2.1-2.3)
+#   2. to_proper / copy_and_skew (Sink Thm 2.4, Bjorndahl & Sink Props. 2.1-2.3)
 #      is proved for equivalence relations. Its correctness on a non-reflexive
-#      KD45 frame has NOT been verified.
+#      KD45 frame has NOT been verified. This is now the real blocker: is_proper()
+#      would be safe to open up today, to_proper() would not, and shipping one
+#      without the other is a confusing API.
+#
+# NO LONGER A REASON: this module used to test `|intersection| = 1`, which is
+# equivalent to the definition only under reflexivity -- so on a KD45 frame it
+# reported mutually-inconsistent beliefs (`|intersection| = 0`) as properness
+# failures. That was the confusing behaviour reported against examples3.py. The
+# definition itself is now implemented (jointly_confused_with); it needs no
+# reflexivity, and it agrees with the old test on 5800 S5 frames. Soundness is no
+# longer an argument for the guard -- only reasons 1 and 2 above are.
 #
 # the guard stays. Remove it deliberately, not by accident.
 # =========================================================================== #
@@ -124,7 +133,14 @@ def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> 
     raise ValueError(
         f"{operation} is defined for KNOWLEDGE (S5) models only, but this frame is "
         f"not reflexive (Axiom T): {len(missing)} missing self-loop(s) -- {shown}{more}. "
-        f"A KD45 *belief* frame has no properness verdict here: on a non-reflexive ")
+        f"A KD45 *belief* frame gets no properness verdict here: in the thesis "
+        f"architecture properness is a condition on the KNOWLEDGE relations, and "
+        f"to_proper is only proved for equivalence relations. "
+        f"If you meant knowledge, build the relations with "
+        f"RelationalFrame.from_partial_s5(...) or relational_frame.s5_closure(...). "
+        f"If you have both knowledge and belief, use "
+        f"knowledge_belief.KnowledgeBeliefFrame, whose is_proper() checks the "
+        f"knowledge relations. See the REVIEW LATER note in properness.py.")
 
 # --------------------------------------------------------------------------- #
 # The properness check
@@ -142,8 +158,30 @@ def joint_possibilities(frame: RelationalFrame, world: World) -> Set[World]:
     return intersection if intersection is not None else set()
 
 
+def jointly_confused_with(frame: RelationalFrame, world: World) -> Set[World]:
+    """Return the *other* worlds jointly accessible from ``world``: ``⋂_a R_a(w) \\ {w}``.
+
+    This is properness read directly off the definition. ``world`` is a violation
+    exactly when this set is non-empty -- i.e. when some **distinct** ``y`` has
+    ``world R_a y`` for *every* agent ``a``, so the agents' perspectives together
+    fail to tell ``world`` apart from ``y``.
+
+    Subtracting ``{w}`` rather than testing ``|⋂_a R_a(w)| = 1`` is what makes this
+    the primary definition: an *empty* intersection is not a properness failure (it
+    means the agents' beliefs are mutually inconsistent there, a separate matter),
+    and the ``= 1`` reading only coincides with the definition when the frame is
+    reflexive. See the module docstring.
+
+    Unguarded on purpose: the raw set is useful as a diagnostic on any frame.
+    """
+    return joint_possibilities(frame, world) - {world}
+
+
 def non_proper_worlds(frame: RelationalFrame) -> List[World]:
-    """Return the worlds where properness fails (``|⋂_a R_a(w)| != 1``); empty if proper.
+    """Return the worlds where properness fails; empty if proper.
+
+    A world ``w`` fails when some distinct ``y`` satisfies ``w R_a y`` for every
+    agent (:func:`jointly_confused_with`).
 
     Raises:
         ValueError: If ``frame`` is not a knowledge (S5) frame.
@@ -152,7 +190,23 @@ def non_proper_worlds(frame: RelationalFrame) -> List[World]:
     return [
         w
         for w in sorted(frame.worlds, key=str)
-        if len(joint_possibilities(frame, w)) != 1
+        if jointly_confused_with(frame, w)
+    ]
+
+
+def properness_pairs(frame: RelationalFrame) -> List[Edge]:
+    """Return every ordered pair ``(x, y)``, ``x != y``, with ``x R_a y`` for all agents.
+
+    The definition's own witnesses. Empty iff the frame is proper.
+
+    Raises:
+        ValueError: If ``frame`` is not a knowledge (S5) frame.
+    """
+    require_knowledge(frame, "properness_pairs")
+    return [
+        (x, y)
+        for x in sorted(frame.worlds, key=str)
+        for y in sorted(jointly_confused_with(frame, x), key=str)
     ]
 
 
@@ -165,12 +219,15 @@ def properness_violations(frame: RelationalFrame) -> List[str]:
     require_knowledge(frame, "properness_violations")
     problems: List[str] = []
     for w in sorted(frame.worlds, key=str):
-        joint = joint_possibilities(frame, w)
-        if len(joint) != 1:
+        others = jointly_confused_with(frame, w)
+        if others:
+            listed = sorted(map(str, others))
+            plural = "s" if len(others) > 1 else ""
             problems.append(
-                f"Properness violated at world {w!r}: all agents jointly consider "
-                f"{len(joint)} world(s) possible ({sorted(map(str, joint))}), "
-                f"expected exactly 1."
+                f"Properness violated at world {w!r}: every agent also considers "
+                f"{len(others)} other world{plural} possible from it ({listed}), so "
+                f"the agents jointly fail to tell {w!r} apart from "
+                f"{'them' if len(others) > 1 else listed[0]!r}."
             )
     return problems
 
@@ -178,8 +235,10 @@ def properness_violations(frame: RelationalFrame) -> List[str]:
 def is_proper(frame: RelationalFrame) -> bool:
     """Return True iff the knowledge model is proper (bridges to a simplicial model).
 
-    Proper = at every world, all agents jointly consider exactly one world possible
-    (namely that world). Equivalently ``|⋂_a [w]_a| = 1`` for every ``w``.
+    Proper = there is no pair of distinct worlds ``x != y`` with ``x R_a y`` for
+    every agent ``a``. For knowledge (where each ``R_a`` is reflexive) this is
+    equivalent to ``|⋂_a [w]_a| = 1`` at every world, but the definition above is
+    what is implemented -- see :func:`jointly_confused_with`.
 
     Raises:
         ValueError: If ``frame`` is not a knowledge (S5) frame.
@@ -196,12 +255,13 @@ def explain(frame: RelationalFrame) -> str:
     bad = non_proper_worlds(frame)
     if not bad:
         return "PROPER: every world is uniquely pinned down by the agents' joint knowledge."
-    lines = [f"NOT PROPER: {len(bad)} world(s) fail |intersection of R_a(w)| = 1:"]
+    lines = [
+        f"NOT PROPER: {len(bad)} world(s) are jointly confused with another world:"
+    ]
     for w in bad:
-        joint = sorted(joint_possibilities(frame, w), key=str)
+        others = sorted(jointly_confused_with(frame, w), key=str)
         lines.append(
-            f"  world {w!r}: all agents jointly consider {len(joint)} worlds possible "
-            f"-> {joint}"
+            f"  world {w!r}: every agent also considers {others} possible from it"
         )
     return "\n".join(lines)
 
@@ -212,9 +272,9 @@ def explain(frame: RelationalFrame) -> str:
 class ProperRelationalFrame(RelationalFrame):
     """A :class:`RelationalFrame` that is *proper* (ready for the simplicial step).
 
-    Beyond the usual KD45 checks, construction also verifies properness
-    (``|⋂_a R_a(w)| = 1`` for every world), which requires the frame to be a
-    knowledge (S5) frame. When produced by :func:`to_proper`, :attr:`projection`
+    Beyond the usual KD45 checks, construction also verifies properness (no two
+    distinct worlds are jointly accessible to every agent), which requires the
+    frame to be a knowledge (S5) frame. When produced by :func:`to_proper`, :attr:`projection`
     maps each (copied) world back to the world it simulates in the original model
     -- the surjective bounded morphism that witnesses bisimilarity, and the link
     the simplicial translation will need.
