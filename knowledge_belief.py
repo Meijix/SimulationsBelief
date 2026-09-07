@@ -447,7 +447,10 @@ class KnowledgeBeliefFrame:
 
         Args:
             distinguished_agent: The agent whose relations are skewed. Defaults to
-                the first agent (sorted); changeable.
+                the agent with the FEWEST knowledge edges (ties broken by name).
+                The result's size is the same for every choice -- ``|W|^2`` worlds,
+                each edge copied ``|W|`` times whether skewed or not -- the sparse
+                default just minimises the number of cross-copy (skewed) edges.
 
         Returns:
             A :class:`ProperKnowledgeBeliefFrame` whose :attr:`projection` maps each
@@ -470,10 +473,17 @@ class KnowledgeBeliefFrame:
                 "No proper model bisimilar to this frame exists: a single-agent, "
                 "non-proper frame cannot be made proper. Requires >= 2 agents."
             )
+        # Default: skew the agent with the sparsest KNOWLEDGE relation (the
+        # family properness is about). Size is invariant under the choice; the
+        # sparse default only minimises the cross-copy edges. Same agent for
+        # both families either way.
         distinguished = (
             distinguished_agent
             if distinguished_agent is not None
-            else sorted(self.agents, key=str)[0]
+            else min(
+                sorted(self.agents, key=str),
+                key=lambda a: len(self.knowledge.relations[a]),
+            )
         )
         if distinguished not in self.agents:
             raise ValueError(
