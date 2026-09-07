@@ -27,7 +27,14 @@ from typing import Dict, FrozenSet, Iterable, List, Optional, Set
 
 from properness import copy_and_skew, is_proper as _frame_is_proper
 from properness import properness_violations as _frame_properness_violations
-from relational_frame import Agent, Edge, RelationalFrame, World
+from relational_frame import (
+    Agent,
+    Edge,
+    RelationalFrame,
+    World,
+    kd45_closure,
+    s5_closure,
+)
 
 
 def knowledge_classes(knowledge: RelationalFrame, agent: Agent) -> List[FrozenSet[World]]:
@@ -56,6 +63,7 @@ def belief_closure(
     agent: Agent,
     seed: Iterable[Edge],
     believe_all_when_silent: bool = True,
+    trim_out_of_class: bool = False,
 ) -> Set[Edge]:
     """Close a *belief* seed into a valid ``Q_a``, relative to the knowledge ``R_a``.
 
@@ -79,8 +87,11 @@ def belief_closure(
       the seed's targets over the whole class -- constancy forces every world in
       ``C`` to share one belief set, so the union is the smallest legal choice.
       This is the unique minimum.
-    * **The seed points outside the class.** Refused: ``Q_a ⊆ R_a`` forbids it and
-      *no* valid ``Q_a`` contains such a seed, so there is nothing to fall back to.
+    * **The seed points outside the class.** Refused by default: ``Q_a ⊆ R_a``
+      forbids it and *no* valid ``Q_a`` contains such a seed, so there is nothing
+      to fall back to. With ``trim_out_of_class=True`` the offending targets are
+      dropped instead (the spec's "trim the cluster to the class" repair); if the
+      trim empties a class's belief set, the silent-class rule below takes over.
     * **The seed says nothing about the class.** Seriality still demands a
       non-empty ``B_a(C)``, but no minimum exists -- the minimal choices are the
       singletons, and they are incomparable. The only canonical option is the
@@ -95,19 +106,25 @@ def belief_closure(
         seed: Partial ``(world, believed_world)`` edges.
         believe_all_when_silent: If True, a class the seed ignores gets
             ``B_a(C) = C``; if False, such a class raises.
+        trim_out_of_class: If True, seed targets outside their source's knowledge
+            class are silently dropped (repair by trimming) instead of raising.
 
     Returns:
         The edge set of a ``Q_a`` satisfying all four knowledge/belief conditions.
 
     Raises:
-        ValueError: If the seed puts a world outside its own knowledge class, or if
-            it is silent on a class and ``believe_all_when_silent`` is False.
+        ValueError: If the seed puts a world outside its own knowledge class (and
+            ``trim_out_of_class`` is False), or if it is silent on a class and
+            ``believe_all_when_silent`` is False.
     """
     seed_edges = set(seed)
     relation: Set[Edge] = set()
     for cls in knowledge_classes(knowledge, agent):
         believed = {u for (w, u) in seed_edges if w in cls}
         outside = believed - cls
+        if outside and trim_out_of_class:
+            believed -= outside  # trim the cluster to the class; may go empty
+            outside = set()
         if outside:
             raise ValueError(
                 f"Belief seed for agent {agent!r} puts {sorted(map(str, outside))} in "
@@ -158,8 +175,21 @@ class KnowledgeBeliefFrame:
         self.agents: Set[Agent] = set(agents)
         self.worlds: Set[World] = set(worlds)
         # Reuse RelationalFrame for storage, successors and the KD45 validators.
-        self.knowledge = RelationalFrame(agents, worlds, knowledge, validate=False)
-        self.belief = RelationalFrame(agents, worlds, belief, validate=False)
+        # Normalise both mappings so EVERY declared agent has an entry: an agent
+        # missing from one of them then fails validation with the honest message
+        # (seriality / reflexivity) instead of a KeyError deep in violations().
+        # Merging (not filtering) keeps unknown-agent keys visible, so the
+        # structural check still rejects them by name.
+        self.knowledge = RelationalFrame(
+            agents, worlds,
+            {**{a: set() for a in self.agents}, **dict(knowledge)},
+            validate=False,
+        )
+        self.belief = RelationalFrame(
+            agents, worlds,
+            {**{a: set() for a in self.agents}, **dict(belief)},
+            validate=False,
+        )
         self.projection: Dict[World, World] = dict(projection or {})
         if validate:
             problems = self.violations()
@@ -180,6 +210,7 @@ class KnowledgeBeliefFrame:
         knowledge: Dict[Agent, Iterable[Edge]],
         belief: Dict[Agent, Iterable[Edge]],
         believe_all_when_silent: bool = True,
+        trim_out_of_class: bool = False,
     ) -> "KnowledgeBeliefFrame":
         """Build a knowledge+belief model from *partial* relations of both kinds.
 
@@ -209,28 +240,121 @@ class KnowledgeBeliefFrame:
             believe_all_when_silent: passed to :func:`belief_closure`; when a
                 knowledge class gets no belief seed, default to believing exactly
                 what is known there rather than raising.
+            trim_out_of_class: passed to :func:`belief_closure`; repair a belief
+                seed that points outside its knowledge class by dropping those
+                targets, instead of raising.
 
         Returns:
             A fully validated :class:`KnowledgeBeliefFrame`.
 
         Raises:
             ValueError: If a belief seed cannot fit inside its knowledge class (see
-                :func:`belief_closure`).
+                :func:`belief_closure`), or if the input mixes modalities per agent
+                (see below).
+
+        One model type for ALL agents. A knowledge+belief model gives *every*
+        agent both relations; it cannot give some agents only knowledge and
+        others only belief. So when ``belief`` is non-empty (case 2 input), every
+        declared agent must appear as a key in BOTH mappings -- an agent with
+        nothing to seed gets an explicit empty set, which documents the intent
+        instead of letting a typo silently invent a default relation. A belief
+        mapping that is entirely empty is case-3 input (knowledge only, belief
+        defaults to ``Q_a = R_a`` everywhere) and stays valid; belief seeds with
+        no knowledge at all are case-1 input and belong in
+        :meth:`from_beliefs_only`, which *induces* the knowledge.
         """
         world_set = set(worlds)
         agent_set = list(agents)
+        if belief:
+            if not knowledge:
+                raise ValueError(
+                    "from_partial got belief seeds but no knowledge at all. That "
+                    "is case-1 input (beliefs only): use "
+                    "KnowledgeBeliefFrame.from_beliefs_only, which induces each "
+                    "R_a as the equivalence closure of Q_a. (from_partial would "
+                    "instead default knowledge to the identity, which almost no "
+                    "belief seed fits inside.)"
+                )
+            missing_k = sorted(str(a) for a in agent_set if a not in knowledge)
+            missing_q = sorted(str(a) for a in agent_set if a not in belief)
+            if missing_k or missing_q:
+                raise ValueError(
+                    "A knowledge+belief model needs BOTH relations for EVERY "
+                    "agent, but this input mixes modalities: "
+                    f"agent(s) {missing_k} have no knowledge entry and "
+                    f"agent(s) {missing_q} have no belief entry. Give every "
+                    "agent a key in both mappings -- an explicit empty set "
+                    "(e.g. belief={'b': set()}) means 'no seed' and gets the "
+                    "documented default (identity knowledge / believe exactly "
+                    "what is known). If NO agent has belief seeds, pass "
+                    "belief={} (case 3); if no agent has knowledge, use "
+                    "from_beliefs_only (case 1)."
+                )
         know_frame = RelationalFrame.from_partial_s5(
             agent_set, world_set, knowledge
         )
         belief_relations: Dict[Agent, Set[Edge]] = {
             a: belief_closure(
-                know_frame, a, belief.get(a, set()), believe_all_when_silent
+                know_frame, a, belief.get(a, set()),
+                believe_all_when_silent, trim_out_of_class,
             )
             for a in agent_set
         }
         return cls(
             agent_set, world_set, know_frame.relations, belief_relations
         )
+
+    @classmethod
+    def from_beliefs_only(
+        cls,
+        agents: Iterable[Agent],
+        worlds: Iterable[World],
+        belief: Dict[Agent, Iterable[Edge]],
+    ) -> "KnowledgeBeliefFrame":
+        """Build a knowledge+belief model from *belief seeds alone* (case: only Q).
+
+        The entry point when the modeller has only doxastic information -- no
+        knowledge relations at all. Knowledge is *induced* from belief:
+
+        1. Each ``Q_a`` seed is closed under KD45 by
+           :func:`relational_frame.kd45_closure` (transitive + Euclidean closure,
+           then a self-loop for every world left without a successor).
+        2. ``R_a`` is the **equivalence closure** of that ``Q_a`` -- the smallest
+           equivalence relation containing it, computed by
+           :func:`relational_frame.s5_closure` (with a reflexive seed, closing
+           under transitivity + Euclideanness IS the equivalence closure).
+
+        This always yields a valid model, with no repair step: a KD45 ``Q_a`` is
+        automatically contained in its equivalence closure, serial by
+        construction, and constant on the induced classes -- within one weakly
+        connected component every world points into the same final cluster
+        (``w -> u`` forces ``Q_a(u) = Q_a(w)``), so the component shares one
+        belief set. The constructor's validation below is a safety net.
+
+        The induced ``R_a`` can perfectly well come out as the COMPLETE relation
+        (e.g. Sink's Figure 1, where every world believes the same worlds
+        possible). That is correct, not a bug: it just means the model is not
+        proper, and :meth:`to_proper` handles it like any other case.
+
+        Args:
+            agents, worlds: identifier sets.
+            belief: partial ``Q_a`` edges per agent (closed under KD45).
+
+        Returns:
+            A fully validated :class:`KnowledgeBeliefFrame` whose knowledge is the
+            equivalence closure of its belief.
+        """
+        world_set = set(worlds)
+        agent_set = list(agents)
+        belief_relations: Dict[Agent, Set[Edge]] = {
+            a: kd45_closure(world_set, belief.get(a, set()), make_serial=True)
+            for a in agent_set
+        }
+        # R_a := equivalence closure of Q_a (minimal equivalence containing it).
+        knowledge_relations: Dict[Agent, Set[Edge]] = {
+            a: s5_closure(world_set, belief_relations[a]) for a in agent_set
+        }
+        return cls(agent_set, world_set, knowledge_relations, belief_relations)
 
     # ------------------------------------------------------------------ #
     # Accessors
