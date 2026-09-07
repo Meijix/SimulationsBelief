@@ -1,8 +1,10 @@
 """Proper KNOWLEDGE (S5) models: the properness check and the general -> proper conversion.
 
 Scope: this module is for **knowledge**, i.e. frames whose relations are equivalence
-relations (S5). Every public entry point refuses a non-reflexive (KD45 / belief) frame
--- see :func:`require_knowledge` and the REVIEW note below for why.
+relations (S5 = reflexive + transitive + Euclidean). Checking properness and converting
+to a proper model are BOTH defined only there, so every entry point that does either
+refuses anything else up front and raises -- it never falls back to a partial or
+best-effort answer. See :func:`require_knowledge` and the REVIEW note below for why.
 
 A relational model is **proper** when there is no pair of **distinct** worlds
 ``x != y`` related by *every* agent:
@@ -107,40 +109,73 @@ from relational_frame import Agent, Edge, RelationalFrame, World
 #
 # the guard stays. Remove it deliberately, not by accident.
 # =========================================================================== #
-def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> None:
-    """Raise unless every relation in ``frame`` is reflexive (i.e. the frame is S5).
+def equivalence_violations(frame: RelationalFrame) -> List[str]:
+    """Return every reason ``frame``'s relations are not equivalence relations.
 
-    Properness in this module is defined for **knowledge**. A KD45 belief frame is
-    rejected rather than silently given a meaningless verdict.
+    Knowledge means each ``R_a`` is an equivalence relation, i.e. S5: **reflexive**
+    (Axiom T), **transitive** (Axiom 4) and **Euclidean** (Axiom 5). Reflexivity is
+    checked here; transitivity and Euclideanness are reused from the frame's own
+    KD45 validators (seriality cannot fail once reflexivity holds).
 
-    Args:
-        frame: The frame to check.
-        operation: Name of the caller, used in the error message.
+    Checking only reflexivity would not be enough: a frame built with
+    ``validate=False`` can be reflexive and still fail transitivity or
+    Euclideanness, and so not be an equivalence relation at all.
 
-    Raises:
-        ValueError: If some agent's relation lacks a reflexive edge ``w -> w``.
+    Returns:
+        A message per violation, empty iff every relation is an equivalence relation.
     """
+    problems: List[str] = []
     missing = [
         (a, w)
         for a in sorted(frame.agents, key=str)
         for w in sorted(frame.worlds, key=str)
         if w not in frame.successors(a, w)
     ]
-    if not missing:
+    if missing:
+        shown = ", ".join(f"R_{a}({w})" for a, w in missing[:5])
+        more = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
+        problems.append(
+            f"Reflexivity (Axiom T) fails: {len(missing)} missing self-loop(s) "
+            f"-- {shown}{more}."
+        )
+    # Transitivity + Euclideanness (+ seriality, which reflexivity already implies).
+    problems.extend(frame.kd45_violations())
+    return problems
+
+
+def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> None:
+    """Raise unless every relation in ``frame`` is an equivalence relation (S5).
+
+    Properness -- both **checking** it and **converting** to it -- is defined for
+    KNOWLEDGE only. A frame that is not an equivalence relation is refused here and
+    the caller never proceeds: no partial verdict, no best-effort answer.
+
+    Args:
+        frame: The frame to check.
+        operation: Name of the caller, used in the error message.
+
+    Raises:
+        ValueError: If any relation is not an equivalence relation, listing every
+            axiom that fails.
+    """
+    problems = equivalence_violations(frame)
+    if not problems:
         return
-    shown = ", ".join(f"R_{a}({w})" for a, w in missing[:5])
-    more = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
+    listed = "\n  - ".join(problems)
     raise ValueError(
-        f"{operation} is defined for KNOWLEDGE (S5) models only, but this frame is "
-        f"not reflexive (Axiom T): {len(missing)} missing self-loop(s) -- {shown}{more}. "
-        f"A KD45 *belief* frame gets no properness verdict here: in the thesis "
-        f"architecture properness is a condition on the KNOWLEDGE relations, and "
-        f"to_proper is only proved for equivalence relations. "
+        f"{operation} requires KNOWLEDGE relations: every R_a must be an EQUIVALENCE "
+        f"relation (S5 = reflexive + transitive + Euclidean). This frame is not, so "
+        f"no properness verdict is given and nothing is converted.\n"
+        f"  - {listed}\n"
+        f"Properness is a condition on the knowledge relations, and to_proper "
+        f"(Sink Thm 2.4) is only proved for equivalence relations -- running either "
+        f"on a KD45 belief frame would produce an answer with no theorem behind it. "
         f"If you meant knowledge, build the relations with "
         f"RelationalFrame.from_partial_s5(...) or relational_frame.s5_closure(...). "
         f"If you have both knowledge and belief, use "
         f"knowledge_belief.KnowledgeBeliefFrame, whose is_proper() checks the "
-        f"knowledge relations. See the REVIEW LATER note in properness.py.")
+        f"knowledge relations. See the REVIEW LATER note in properness.py."
+    )
 
 # --------------------------------------------------------------------------- #
 # The properness check
@@ -148,8 +183,11 @@ def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> 
 def joint_possibilities(frame: RelationalFrame, world: World) -> Set[World]:
     """Return ``⋂_a R_a(world)``: the worlds *every* agent considers possible from it.
 
-    Unguarded on purpose: this is the raw intersection, useful for diagnostics on any
-    frame. It is the *interpretation* as a properness verdict that needs S5.
+    Deliberately NOT guarded: this is a raw set intersection, not a properness
+    verdict, and it stays available on any frame as a diagnostic -- on a belief
+    frame an empty result means the agents' beliefs are mutually inconsistent there.
+    Every function that does deliver a properness verdict (:func:`jointly_confused_with`
+    and everything built on it) requires knowledge and refuses otherwise.
     """
     intersection: Set[World] | None = None
     for agent in frame.agents:
@@ -172,8 +210,12 @@ def jointly_confused_with(frame: RelationalFrame, world: World) -> Set[World]:
     and the ``= 1`` reading only coincides with the definition when the frame is
     reflexive. See the module docstring.
 
-    Unguarded on purpose: the raw set is useful as a diagnostic on any frame.
+    Raises:
+        ValueError: If ``frame`` is not a knowledge (equivalence / S5) frame. This
+            function *is* the properness test, so it is guarded like the rest; for
+            the raw intersection on any frame use :func:`joint_possibilities`.
     """
+    require_knowledge(frame, "jointly_confused_with")
     return joint_possibilities(frame, world) - {world}
 
 
@@ -291,6 +333,11 @@ class ProperRelationalFrame(RelationalFrame):
         super().__init__(agents, worlds, relations, validate=validate)
         # projection[(w, copy)] = w : which original world each new world simulates.
         self.projection: Dict[World, World] = dict(projection or {})
+        # Unconditional, even when validate=False: "proper" is only defined for
+        # knowledge, so a non-equivalence frame cannot be an instance of this class
+        # at all. validate=False may skip the *properness* check (a caller that
+        # built the relations itself), never the equivalence precondition.
+        require_knowledge(self, "ProperRelationalFrame")
         if validate:
             problems = properness_violations(self)
             if problems:
@@ -326,8 +373,12 @@ def to_proper(
         frame: A knowledge (S5) frame -- the equivalence relations that properness
             is about; the construction preserves its axioms.
         distinguished_agent: The agent whose relation is skewed. Defaults to the
-            first agent (sorted by name). Any agent works -- the choice only affects
-            *which* copies connect, not the correctness of the result.
+            agent with the FEWEST edges (ties broken by name). Any agent works, and
+            the size of the result never depends on the choice -- always ``|W|^2``
+            worlds, and every original edge yields exactly ``|W|`` copies whether
+            skewed or not. What the sparsest-relation default minimises is the
+            number of *cross-copy* (skewed) edges, keeping the construction as
+            readable as possible.
 
     Returns:
         A :class:`ProperRelationalFrame` whose :attr:`projection` maps each new
@@ -362,10 +413,13 @@ def to_proper(
             "relation to be the identity). The construction requires >= 2 agents."
         )
 
+    # Default: the sparsest relation gets skewed. The result's SIZE is the same
+    # for every choice (|W|^2 worlds; each edge copied |W| times regardless);
+    # this just minimises how many edges end up crossing copies.
     distinguished = (
         distinguished_agent
         if distinguished_agent is not None
-        else sorted(frame.agents, key=str)[0]
+        else min(sorted(frame.agents, key=str), key=lambda a: len(frame.relations[a]))
     )
     if distinguished not in frame.agents:
         raise ValueError(
