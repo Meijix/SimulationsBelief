@@ -114,15 +114,24 @@ class RelationalFrame:
         The closure is applied *independently to each agent*, because each agent's
         accessibility relation is a separate belief structure.
 
+        EVERY declared agent must have an entry in ``partial_relations``: a missing
+        agent is reported, never silently completed. An explicit empty set means
+        "no seed edges" and documents that intent.
+
         Returns:
             A fully validated :class `RelationalFrame`.
+
+        Raises:
+            ValueError: If some declared agent has no entry in ``partial_relations``.
         """
         world_set = set(worlds)
+        require_all_agents(agents, partial_relations, "RelationalFrame.from_partial")
         closed: Dict[Agent, Set[Edge]] = {}
         for agent in agents:
-            seed = partial_relations.get(agent, set())
             # Close THIS agent's relation only -- never mix agents' edges.
-            closed[agent] = kd45_closure(world_set, seed, make_serial=make_serial)
+            closed[agent] = kd45_closure(
+                world_set, partial_relations[agent], make_serial=make_serial
+            )
         return cls(agents=agents, worlds=world_set, relations=closed)
 
     @classmethod
@@ -143,16 +152,24 @@ class RelationalFrame:
         every world the successor ``w -> w``, so seriality (Axiom D) cannot fail and
         there is nothing to decide.
 
+        As in :meth:`from_partial`, EVERY declared agent must have an entry in
+        ``partial_relations`` (an explicit empty set means "no seed edges", and
+        closes to the identity relation); a missing agent is reported, never
+        silently completed.
+
         Returns:
             A fully validated :class:`RelationalFrame` whose relations are
             equivalence relations.
+
+        Raises:
+            ValueError: If some declared agent has no entry in ``partial_relations``.
         """
         world_set = set(worlds)
+        require_all_agents(agents, partial_relations, "RelationalFrame.from_partial_s5")
         closed: Dict[Agent, Set[Edge]] = {}
         for agent in agents:
-            seed = partial_relations.get(agent, set())
             # Close THIS agent's relation only -- never mix agents' edges.
-            closed[agent] = s5_closure(world_set, seed)
+            closed[agent] = s5_closure(world_set, partial_relations[agent])
         return cls(agents=agents, worlds=world_set, relations=closed)
 
     # ------------------------------------------------------------------ #
@@ -304,6 +321,39 @@ class RelationalFrame:
 #########
 #Helper functions
 #########
+
+def require_all_agents(
+    agents: Iterable[Agent],
+    relations: Mapping,
+    caller: str,
+    mapping_name: str = "relations",
+) -> None:
+    """Raise unless EVERY declared agent has an entry in ``relations``.
+
+    The partial-relation builders never invent a relation for an agent the caller
+    forgot: a silently-defaulted agent (identity knowledge, self-loop belief) looks
+    like a modelling choice but is usually a typo. Absence must be shown, not
+    completed. The way to say "this agent has no seed edges" is an explicit empty
+    set, which documents the intent.
+
+    Args:
+        agents: The declared agent identifiers.
+        relations: The ``agent -> edges`` mapping being checked.
+        caller: Name of the calling builder, used in the error message.
+        mapping_name: How the caller names its mapping parameter.
+
+    Raises:
+        ValueError: If some declared agent has no entry in ``relations``.
+    """
+    missing = sorted(str(a) for a in agents if a not in relations)
+    if missing:
+        plural = "s" if len(missing) > 1 else ""
+        raise ValueError(
+            f"{caller} requires an entry in {mapping_name} for EVERY declared "
+            f"agent, but agent{plural} {missing} have none. A missing agent is "
+            f"not silently completed -- pass an explicit empty set "
+            f"({mapping_name}[agent] = set()) to mean 'no seed edges'."
+        )
 
 def _as_edge_list(edges: Iterable[Edge], caller: str) -> List[Edge]:
     """Materialise ``edges`` and reject anything that is not an iterable of pairs.

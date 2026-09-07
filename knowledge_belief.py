@@ -33,6 +33,7 @@ from relational_frame import (
     RelationalFrame,
     World,
     kd45_closure,
+    require_all_agents,
     s5_closure,
 )
 
@@ -336,6 +337,10 @@ class KnowledgeBeliefFrame:
         possible). That is correct, not a bug: it just means the model is not
         proper, and :meth:`to_proper` handles it like any other case.
 
+        EVERY declared agent must have an entry in ``belief``: a missing agent is
+        reported, never silently given a default (an explicit empty set means "no
+        seed edges" and yields the identity belief via the seriality repair).
+
         Args:
             agents, worlds: identifier sets.
             belief: partial ``Q_a`` edges per agent (closed under KD45).
@@ -343,11 +348,15 @@ class KnowledgeBeliefFrame:
         Returns:
             A fully validated :class:`KnowledgeBeliefFrame` whose knowledge is the
             equivalence closure of its belief.
+
+        Raises:
+            ValueError: If some declared agent has no entry in ``belief``.
         """
         world_set = set(worlds)
         agent_set = list(agents)
+        require_all_agents(agent_set, belief, "from_beliefs_only", "belief")
         belief_relations: Dict[Agent, Set[Edge]] = {
-            a: kd45_closure(world_set, belief.get(a, set()), make_serial=True)
+            a: kd45_closure(world_set, belief[a], make_serial=True)
             for a in agent_set
         }
         # R_a := equivalence closure of Q_a (minimal equivalence containing it).
