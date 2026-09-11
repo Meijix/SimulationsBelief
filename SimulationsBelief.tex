@@ -1,0 +1,158 @@
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{csquotes}
+\usepackage{setspace}
+\usepackage[dvipsnames]{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath, amssymb, amscd, amsthm, amsfonts}
+\usepackage{graphicx}
+\usepackage{adjustbox}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{amsthm}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{proof}
+\usepackage{ninecolors}
+\usepackage{enumitem}
+
+\newcommand{\B}{\mathbf{B}}
+\newcommand{\w}{\mathbf{w}}
+\usepackage{proof}
+\usepackage{tikz-cd}
+\usepackage{xcolor}
+\usepackage{thmtools, thm-restate}
+\tikzcdset{scale cd/.style={every label/.append style={scale=#1},
+		cells={nodes={scale=#1}}}}
+%\usepackage{stmaryrd}
+
+
+\urlstyle{same}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[theorem]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{conjecture}[theorem]{Conjecture}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\declaretheorem[name=Theorem,numberwithin=section]{thm}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+
+\title{Simplicial Actions for Distributed Protocols}
+\author{Philip Sink}
+\date{}
+
+\newcommand{\rr}{\mathbb{R}}
+
+\newcommand{\al}{\alpha}
+\DeclareMathOperator{\conv}{conv}
+\DeclareMathOperator{\aff}{aff}
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\M}{\mathcal{M}}
+\newcommand{\td}{\bigtriangledown}
+\newcommand{\tu}{\bigtriangleup}
+
+%ADAM'S MACROS
+
+\newcommand{\draft}[1]{{\color{red}{\textsc{[#1]}}}}
+\newcommand{\commentout}[1]{}
+\newcommand{\defin}[1]{\textbf{#1}}
+
+\renewcommand{\phi}{\varphi}
+
+\newcommand{\lthen}{\rightarrow}
+\newcommand{\liff}{\leftrightarrow}
+
+\newcommand{\F}{\mathcal{F}}
+\renewcommand{\M}{\mathcal{M}}
+\renewcommand{\L}{\mathcal{L}}
+\newcommand{\N}{\mathcal{N}}
+
+\newcommand{\full}{\textsf{FULL}}
+
+%a better set-minus%
+\usepackage{amssymb,tikz}
+
+\newcommand{\mysetminusD}{\hbox{\tikz{\draw[line width=0.6pt,line cap=round] (3pt,0) -- (0,6pt);}}}
+\newcommand{\mysetminusT}{\mysetminusD}
+\newcommand{\mysetminusS}{\hbox{\tikz{\draw[line width=0.45pt,line cap=round] (2pt,0) -- (0,4pt);}}}
+\newcommand{\mysetminusSS}{\hbox{\tikz{\draw[line width=0.4pt,line cap=round] (1.5pt,0) -- (0,3pt);}}}
+
+\newcommand{\mysetminus}{\mathbin{\mathchoice{\mysetminusD}{\mysetminusT}{\mysetminusS}{\mysetminusSS}}}
+
+\begin{document}
+	
+	\maketitle
+	
+	\begin{abstract}
+		
+
+		
+	\end{abstract}
+	
+	\section{Introduction} \label{sec:int}
+	
+	Seeing as the impetus for Simplicial Semantics is the use of combinatorial topology in distributed computing, most of that literature acknowledges and is indebted to this connection already. \cite{Death,DoA,KaSC,SimpDEL,HG,FA,DCTCT,CACHIN2025114902,Roho_2025,Lehnherr_2025} In general, the procedures for using action models to describe distributed protocols are understood but new, showing up in \cite{SimpDEL}, \cite{KaSC}, \cite{KaG}, \cite{ActionDC}, \cite{CPM}, and \cite{CPaAM}. Moreover, the papers \cite{KaSC}, \cite{BelSimp}, \cite{HGD}, and \cite{SimpBel} are already attempts to give a semantics for belief, or non-factive (defeasible) knowledge. In \cite{TechMemo} and \cite{SimpAct}, these threads were brought together by using action models in the setting of simplicial semantics to model distributed protocols, and then incorporating belief revision, as defined in \cite{Lewis2} and \cite{Stalnaker1981}, and implemented in the simplicial setting as in \cite{SimpBelRev}, to then define new protocols and a new model of communication, in the sense of \cite{TopPersp}. For those unfamiliar with the details of this work, we will summarize it in Section \ref{sec:back}.
+	
+	\section{Background}\label{sec:back}
+	
+	The goal of this project is to use Python to simulate the definitions given in \cite{TechMemo} and \cite{SimpAct}. This section will give the particulars for how we will define simplicial semantics and simplicial actions throughout the paper. For a more thorough overview, we recommend reading \cite{KaSC}, \cite{BelSimp}, or \cite{SimpBelRev}. For more on actions specifically, one can consult \cite{TechMemo} or \cite{SimpAct}.
+	
+	The literature on simplicial semantics divides roughly into two approaches to defining valuations for propositional atoms. Loosely speaking, the first approach assigns truth values directly to the facets \cite{Death,FA,SimpSet},	while the second ``vertex-based'' approach assigns them (in a partial way) to the vertices and then ``lifts'' them to facets. \cite{DoA,KaSC,SimpDEL,HG} This paper will focus on the latter approach.
+	
+	Let $\mathfrak{P}$ be a countable set of propositional atoms, and $Ag$ a finite set of agents. Let $N$ be a set of of \defin{nodes}, $V:\rightarrow Ag$ a function called the \defin{coloring} function, and $L:N\rightarrow 3^\mathfrak{P}$ a function which assigns each node to a set of literals, which we call the \defin{assignment}. The interpretation is that $L(n)(P)=1$ if and only if $P$ is associated with $n$, $L(n)(P)=0$ if and only if $\neg P$ is associated with $n$, and $L(n)(P)=2$ if and only if neither is associated with $n$. $L$ is the only difference between their presentation here as compared to \cite{BelSimp}. As mentioned above, $L$ assigns propositions to nodes.
+	
+	Our first key idea is that we can use $N$, $V$, and $L$ to create a kind of \defin{maximal} simplicial complex. Like much of the previous literature, we will assume our simplicial complexes are uniquely colored. Specifically, each facet of our complexes has a dimension of size $|Ag|$, and no two nodes are associated to the same agent. Put formally, if $X\in S$ is such that for all $Y\in S$, if $X\subseteq Y$ then $X=Y$, we have that $|X|=|Ag|$, and, if $x,y\in X$, then if $V(x)=V(y)$, we have that $x=y$. We call this condition UCF for ``Uniquely Colored Facets''. The \defin{Maximal Complex} is the set of subsets of $N$ such that the associated logical content with that subset is consistent, and it satisfies the UCF condition. That is, it's the subsets $x\subseteq N$ such that $|x|=|A|$, The set of formulas assigned to $x$ by $L$ is consistent, and for all $u,v\in x$, $V(u)\neq V(v)$. We refer to $\mathfrak{M}((N,V,L)$ as the \defin{Maximal Complex} of $N$, $V$, and $L$. When the context is clear, we will refer to it simply as the maximal complex. The maximal complex can be defined set theoretically as follows:
+	
+	\begin{align*}
+		\mathfrak{M}(N,V,L):=\{y\in 2^N~|~\exists x\in 2^N (&y\subseteq x\\&\wedge\neg(\exists P\in\mathfrak{P}(\exists u,v\in x(L(u)(P)=1\wedge L(v)(P)=0))) \\&\wedge (|x|=|Ag|)
+		\\&\wedge (\forall u,v\in x(V(u)\neq V(v))))\}
+	\end{align*}
+	
+	Note that $\mathfrak{M}(N,V,L)$ is a simplicial complex. This is because, if $Y\in \mathfrak{M}(N,V,L)$, there is a set $X$ such that $Y\subseteq X$ and $X$ satisfies certain properties. If $Z\subseteq Y$, then the same set $X$ suffices to show that $Z\in \mathfrak{M}(N,V,L)$. All complexes we consider in this paper will be UCF subcomplexes of the maximal complex. 
+	
+	If $S$ is a simplicial complex, let $\mathcal{F}(S)$ denote the facets of $S$. Since all simplicial complexes we consider are UCF, we can define projection functions $\pi_a:\mathcal{F}(S)\rightarrow N$ given by $\pi(a)(X)=V^{-1}(a)\cap X$. That is, $\pi_a$ maps each facet to the unique $a$-colored node it contains.
+	
+	We can now define a \defin{Simplicial Model For Knowledge}:
+	
+	\begin{definition}[Simplicial Model for Knowledge]
+		A \defin{Simplicial Model for Knowledge} $\M$ is a tuple $(N,V,L,S)$ where $N$ is a nonempty set of nodes, $V$ is a coloring function, $L$ is an assignment function, and $S$ is a UCF subcomplex of $\mathfrak{M}(N,V,L)$.
+	\end{definition}
+	
+	In this setting, the language $\L_{K}(Ag)$ recursively defined by
+	$$\varphi ::= P \, | \, \bot \, | \, \phi \lthen \psi \, | \, K_{a}\phi,$$
+	where $P \in \mathfrak{P}$ and $a \in Ag$, can be interpreted in simplicial models for knowledge as follows for any $X\in\F(S)$:
+	\begin{align*}
+		\M,X & \models P \text{ iff } \exists a\in Ag(L(\pi_a(X))(P)=1)\\
+		\M,X & \nvDash \bot\\
+		\M,X & \models \phi \lthen \psi \text{ iff } \M,X \models \phi \text{ implies } \M,X \models \psi\\
+		\M,X & \models K_a \phi \text{ iff } \forall Y \in \F(S) \text{ if } \pi_a(Y) = \pi_a(X) \text{ then } \M,Y \models \phi
+	\end{align*}
+	
+	In order to incorporate belief revision, it will be necessary to talk about models for belief rather than models for knowledge. The following definition is borrowed from \cite{SimpBelRev}:
+	
+	\begin{definition}[Simplicial Model for Belief]
+		A \defin{Simplicial Model for Belief} $\M$ is a tuple $(N,V,L,S,\{S_a\}_{a\in Ag})$ where $N$ is a nonempty set of nodes, $V$ is a coloring function, $L$ is an assignment function, $S$ is a UCF subcomplex of $\mathfrak{M}(N,V,L)$, and for each $a\in Ag$, $S_a$ is a UCF subcomplex of $S$. Often, we will leave $S$ unspecified. In this case, we assume that $S=\mathfrak{M}(N,V,L)$.
+	\end{definition}
+	
+	In this setting, the language $\L_{B}(Ag)$ recursively defined by
+	$$\varphi ::= P \, | \, \bot \, | \, \phi \lthen \psi \, | \, B_{a}\phi,$$
+	where $P \in \mathfrak{P}$ and $a \in Ag$, can be interpreted in simplicial models for knowledge as follows for any $X\in\F(S)$:
+	\begin{align*}
+		\M,X & \models P \text{ iff } \exists a\in Ag(L(\pi_a(X))(P)=1)\\
+		\M,X & \nvDash \bot\\
+		\M,X & \models \phi \lthen \psi \text{ iff } \M,X \models \phi \text{ implies } \M,X \models \psi\\
+		\M,X & \models B_a \phi \text{ iff } \forall Y \in \F(S_a) \text{ if } \pi_a(Y) = \pi_a(X) \text{ then } \M,Y \models \phi
+	\end{align*}
+	
+	Following common convention, if $\M$ is a simplicial model for either knowledge or belief, the claim $x\in\M$ is short hand for $x\in N$ where $N$ is the set of nodes in $\M$.
+	
+	\bibliographystyle{plain}	
+	\bibliography{Epistemology} 
+	
+
+	
+\end{document}
