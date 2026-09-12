@@ -135,7 +135,7 @@
 	In order to incorporate belief revision, it will be necessary to talk about models for belief rather than models for knowledge. The following definition is borrowed from \cite{SimpBelRev}:
 	
 	\begin{definition}[Simplicial Model for Belief]
-		A \defin{Simplicial Model for Belief} $\M$ is a tuple $(N,V,L,S,\{S_a\}_{a\in Ag})$ where $N$ is a nonempty set of nodes, $V$ is a coloring function, $L$ is an assignment function, $S$ is a UCF subcomplex of $\mathfrak{M}(N,V,L)$, and for each $a\in Ag$, $S_a$ is a UCF subcomplex of $S$. Often, we will leave $S$ unspecified. In this case, we assume that $S=\mathfrak{M}(N,V,L)$.
+		A \defin{Simplicial Model for Belief} $\M$ is a tuple $(N,V,L,S,\{S_a\}_{a\in Ag})$ where $N$, $V$, $L$, and $S$ are familiar, and each $S_a$ is a UCF subcomplex of $S$. Often, we will leave $S$ unspecified. In this case, we assume that $S=\mathfrak{M}(N,V,L)$.
 	\end{definition}
 	
 	In this setting, the language $\L_{B}(Ag)$ recursively defined by
@@ -150,7 +150,191 @@
 	
 	Following common convention, if $\M$ is a simplicial model for either knowledge or belief, the claim $x\in\M$ is short hand for $x\in N$ where $N$ is the set of nodes in $\M$.
 	
-	Following \cite{BelSimp}, 
+	The final notion is a \defin{Simplicial Model for Belief and Knowledge}. This is a tuple $(N,V,L,S,\{S_a\}_{a\in Ag})$, and, as in the belief case, when $S$ is unspecified, we assume that $S=\mathfrak{M}(N,V,L)$. 	In this setting, the language $\L_{KB}(Ag)$ recursively defined by
+	$$\varphi ::= P \, | \, \bot \, | \, \phi \lthen \psi \, | \, K_{a}\phi \, | \, B_{a}\phi$$
+	where $P \in \mathfrak{P}$ and $a \in Ag$, can be interpreted in simplicial models for knowledge as follows for any $X\in\F(S)$. One appeals to $S$ for the truth condition for $K_a$ as in simplicial models for knowledge, and to the $S_a$ for the truth condition for $B_a$ as in simplicial models for belief.
+	
+	We say that a relational model is called \defin{proper} if, for all $w \in W$, $\big|\bigcap_{a \in Ag} [w]_{a} \big| = 1$, and for all $P$ in our language and any $w\in W$, there is an $a\in Ag$ such that for all $u\in R_a(w)$, $u\in v(P)$. Call the set of such distinguished agents $d(w,P)$.\footnote{This definition of properness differs from standard presentations when the relations are not equivalence relations, as has also been noted in \cite{Lehnherr_2025}. It also differs from the presentation in \cite{BelSimp} by adding in the distinguished agent. This is because there, unlike here, atmoic propositions are assigned to facets, not nodes.} Note that when a relational model is proper, the following axioms are sound for any atomic formula $P$:
+	
+	$$\textsf{NUK}:P\rightarrow\bigvee_{a\in Ag}K_aP$$
+	
+	$$\textsf{NUB}:P\rightarrow\bigvee_{a\in Ag}B_aP$$
+	
+	Here, ``NU'' stands for ``No Uncertainties''. The idea is that an atomic formula cannot be true unless there is some agent which knows/believes it. This is clearly sound in semantic models, so the restriction of simplicial models to those which are proper, and hence satisfy \textsf{NUK} and \textsf{NUB}, is necessary in order to translate between the two.
+	
+	This translation is another key result we simulate. Although the implementation of action models and especially belief revision in \cite{SimpBelRev}, \cite{SimpAct}, and \cite{TechMemo} depend heavily on the simplicial semantics, the much wider use of relational models\footnote{See \cite{DC5} for an overview, and \cite{KaSC}, \cite{KaG}, \cite{ActionDC}, \cite{CPM}, and \cite{CPaAM} for approaches closely aligned with our, in particular in the use of action models.} means that some users may find it easier to define a model relationally and then translate it into a simplicial model to take advantage of these tools. As such, we introduce relational models, and in particular how to translate them into simplicial models, as in \cite{BelSimp}.
+	
+	\begin{definition}[Relational Model for Knowledge] A \defin{Relational Model (over $Ag$)} is a tuple $\N = (W,(R_{a})_{a \in Ag},v)$ where $W$ is a nonempty set of \emph{possible worlds}, each $R_{a}$ is a binary relation on $W$ called an \emph{accessibility relation}, and $v: \mathfrak{P} \to 2^{W}$ is a \emph{valuation}. Semantics for the language $\L_{K}(Ag)$ are given in the usual way:
+	\begin{align*}
+		\N,w & \models P \text{ iff } w \in v(P)\\
+		\N,w & \nvDash \bot\\
+		\N,w & \models \phi \lthen \psi \text{ iff } \N,w \models \phi \text{ implies } \N,w \models \psi\\
+		\N,w & \models K_a \phi \text{ iff } \forall w' \in R_{a}(w) (\N,w' \models \phi),
+	\end{align*}
+	where $R_{a}(w) = \{w' \in W \: : \: wR_{a}w'\}$. When each $R_{a}$ is an equivalence relation or partition, we call this a \defin{Relational Model for Knowledge}. Such models will satisfy \defin{Factivity} ($\vdash K_a\varphi\rightarrow\varphi$), \defin{Positive Introspection} ($\vdash K_a\varphi\rightarrow K_aK_a\varphi$), and \defin{Negative Introspection} ($\vdash \neg K_a\varphi\rightarrow K_a\neg K_a\varphi$). Respectively, we call these axioms \textsf{T}, \textsf{4}, and \textsf{5}.
+	\end{definition}
+
+	We also have relational models for belief.
+	
+		\begin{definition}[Relational Model for Belief] Let $\N = (W,(Q_{a})_{a \in Ag},v)$ be a relational model. Semantics are given in the usual way, though for the language $\L_{B}(Ag)$. When each $Q_a$ is transitive Euclidean\footnote{For any worlds $w$, $u$, and $v$, if $u,v\in Q_a(w)$ then $u\in Q_a(v)$. Note that relational models for knowledge are also Euclidean.}, we call this a \defin{Relational Model for Belief}. Such models will satisfy positive introspection and negative introspection.
+	\end{definition}
+
+	The final case is when both belief and knowledge are present. A \defin{Relational Model for Belief and Knowledge} is a tuple $\N=(W,(R_{a})_{a \in Ag},(Q_{a})_{a \in Ag},v)$, where each $R_a$ is an equivalence relation, each $Q_a$ is serial, transitive, and Euclidean, and $Q_a\subseteq R_a$ for each $a\in Ag$. Such models can interpret the language $\L_{KB}(Ag)$ by using the $R_a$ to interpret $K_a\varphi$, just as in relational models for knowledge, and using the $Q_a$ to interpret $B_a\varphi$, just as in relational models for belief. The following axioms will be sound in such models:
+	
+	\begin{itemize}
+	\item knowledge implies belief ($K_{a} \phi \lthen B_{a} \phi$)
+	\item strong positive introspection ($B_{a} \phi \lthen K_{a} B_{a} \phi$)
+	\item strong negative introspection ($\lnot B_{a} \phi \lthen K_{a} \lnot B_{a} \phi)$
+	\end{itemize}
+
+	In fact, these are sufficient. The following is well known: \cite{DC5, BelSimp,Bjorndahl2024}
+	
+	\begin{theorem}[Soundness and Completeness for Relational Models]
+	The smallest axiom system closed under propositional logic, \textsf{T}, \textsf{4}, \textsf{5}, \textsf{K}\footnote{$\vdash ((K_a\varphi\wedge K_a(\varphi\rightarrow\psi)\rightarrow K_a\psi)$} and the rules of inference modus ponens, necessitation\footnote{$\vdash varphi\Rightarrow\vdash K_a\varphi$} is called $\textsf{S5}$. Relational Models for knowledge are sound and complete with respect to the axiom system $\textsf{S5}$. The smallest axiom system closed under propositional logic, \textsf{4}, \textsf{5}, \textsf{K} and the rules of inference modus ponens, necessitation is called $\textsf{K45}$. Relational Models for belief are sound and complete with respect to the axiom system $\textsf{K45}$.\footnote{Typical work on belief, such as \cite{HGD}, \cite{SimpBel}, and \cite{BelSimp} uses the \textsf{KD45} axiom system, which adds \textsf{D}, consistency, ensuring $\neg B_a\bot$. However, as observed in \cite{SimpBelRev}, this action models occasionally isolate vertices in simplicial models in such a way that \textsf{D} cannot be preserved in outputs, even if it is true in inputs and actions. So, we do not include it here.} Let $\full$ be the axiom system for the language $\L_{KB}(Ag)$ obtained by adding the above three axiom schemes to the system \textsf{S5} for knowledge combined with \textsf{K45} for belief. Relational Models for Knowledge and Belief are sound and complete with respect to the axiom system \full. When any of these classes are proper, they are sound and complete with respect to the same axiom systems simply with the schemes \textsf{NUK} and \textsf{NUB} added in as appropriate for the relevant language.
+	\end{theorem}
+
+	We can now turn to translating relational models into simplicial models. The following proposition is from \cite{BelSimp}:
+	
+	\begin{proposition}
+		Let $\N$ be a relational model for belief and knowledge. Using the L\"owenheim-Skolem theorem, fix $G$ a group of order $|W|$\footnote{Following convention, we denote the operation with concatenation and inverse with $()^{-1}$} with, and $g:W\rightarrow G$ a bijection. Moreover, let $i\in Ag$ be a distinguished agent. Define $\tilde{N}$ to be the relational model $(\tilde{W}, (\tilde{R}_a)_{a\in Ag}, (\tilde{Q}_a)_{a\in Ag}, v)$, where
+		\begin{align*}
+		\tilde{W}&:=W^2\\
+		(x',y')\in\tilde{R}_a(x,y)&\text{ iff }x'\in R_a(x)\text{ and } \begin{cases}
+		g(y)g(x)^{-1} = g(y')g(x')^{-1}& \text{ if }\;a=i\\
+		y=y'& \text{ otherwise}
+		\end{cases}\\
+		(x',y')\in\tilde{Q}_a(x,y)&\text{ iff }x'\in Q_a(x)\text{ and } \begin{cases}
+			g(y)g(x)^{-1} = g(y')g(x')^{-1}& \text{ if }\;a=i\\
+			y=y'& \text{ otherwise}
+		\end{cases}\\
+	\tilde{v}(P)&:=\{(x,y) \in \tilde{W} \: : \: x \in v(P)\}
+		\end{align*}
+		Then $\tilde{\N}$ is a proper relational model for knowledge and belief, and projection to the first coordinate is a surjective, bounded morphism from $\tilde{\N}$ to $\N$.
+	\end{proposition}
+
+	The obvious parallel results for relational models for only knowledge, or only belief, also hold.
+	
+	Only proper relational models can be transformed into simplicial models. Hence, the above proposition allows us to translate any relational model for knowledge into a simplicial model.	Given a proper relational model for knowledge and belief $\N=(W,(R_a)_{a\in Ag},(Q_a)_{a\in Ag},v)$, we define a simplicial model for knowledge and belief $\M_{\N}:=(N_{\N},V_{\N},L_{\N},S_{\N},(S_{\N,a})_{a\in Ag})$ similar to as in \cite{BelSimp}:\footnote{The difference between the work presented here, and the work in \cite{BelSimp}, is that in the latter, atomic formulae are assigned to facets, and here, they are assigned to nodes.}\footnote{Observe that we do not need to use the 0 case for $L_\N$. This is because the truth value of atomic propositions does not appeal to this case. It only affects what the maximal complex is, but because we are specifying $S$ directly, this is not relevant.}
+	
+\begin{align*}
+		N_{\N} &:= \{([w]_{a},a) \: : \: w \in W, a \in Ag\}\\
+V_{\N}([w]_{a},a) &:= a\\
+L_{\N}([w]_{a},a)(P) &:=\begin{cases}
+	1& \text{ if }\;a\in d(w,P)\\
+	2& \text{ otherwise}
+\end{cases}\\
+S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
+\end{align*}
+
+	where $e: N_{\N} \to 2^{W}$ is projection to the first coordinate (returning the equivalence class associated with each node), and $f \colon W \to \F(S_{\N})$ is the bijective correspondence between worlds in $W$ and facets in $S_{\N}$. What's missing are the belief subcomplexes, which we define as follows:
+	$$\mathcal{F}(S_{\N,a}) := \{F\in\mathcal{F}(S_{\N}) \: : \: f^{-1}(F) Q_{a} f^{-1}(F)\},$$
+	Specifying the facets of $S_{\N,a}$ uniquely determines the simplicial complex itself; it also guarantees that $S_{\N,a}$ is a UCF subcomplex of $S_{\N}$. 
+	
+	Translations similar to this are not new to the literature, appearing in \cite{SimpDEL} and \cite{KaSC}. Analogous translations for the case of relational/simplicial models with only knowledge or only belief are obvious. Such a translation gives us the following propositions, as in \cite{BelSimp}:
+	
+	\begin{proposition}
+		The simplicial frame $(N_{\N},V_{\N},L_{\N},S_{\N},(S_{\N,a})_{a\in Ag})$ satisfies UCF.
+	\end{proposition}
+
+	\begin{proposition}
+		For any relational model for knowledge and belief $\N$, the simplicial frame $\M_{\N}$ is such that $\N,w\vDash\varphi$ if and only if $\M_\N,f(w)\vDash\varphi$.
+	\end{proposition}
+
+	Which, in turn, gives us the following theorem(s) as in \cite{BelSimp} and \cite{SimpBelRev}:
+	
+	\begin{theorem}[Soundness and Completeness for Simplicial Models]
+		Simplicial Models for knowledge and belief (knowledge) (belief) are sound and complete with respect to \full+\textsf{NUK}+\textsf{NUB} (\textsf{S5}+\textsf{NUK}) (\textsf{K45}+\textsf{NUB}).
+	\end{theorem}
+	
+	The last step is to define action models, both with and without revision, as in \cite{SimpAct} and \cite{TechMemo}. 
+	
+	\begin{definition}[Simplicial Action for Knowledge]
+		A \defin{Simplicial Action for Knowledge} $A$ is a tuple $\langle N_A,V_A,L_A,S_A,Post\rangle$, where $Post:N_a\rightarrow 3^\mathfrak{P}$.\footnote{$N_A$ is a set of nodes, $V_A:N_A\rightarrow Ag$, $L_A:N_A\rightarrow 3^\mathfrak{P}$, and $S_A$ is a UCF subcomplex of $\mathfrak{M}(N_A,V_A,L_A)$, just as in a regular simplicial model.}
+		
+		Given a simplicial model for knowledge $\mathcal{M}=\langle N,V,L,S\rangle$, and a simplicial action $A=\langle N_A,V_A,L_A,S_A,Post\rangle$, we define the update model $\mathcal{M}[A]:=\langle N[A],V[A],L[A],S[A]\rangle$\footnote{$N[A]$ is a subset of $N\times N_A$, $V[A]:N[A]\rightarrow Ag$, $L[A]:N[A]\rightarrow 3^\mathfrak{P}$, and $S[A]$ is a UCF subcomplex of $\mathfrak{M}(N[A],V[A],L[A])$, just as in a regular simplicial model.} as follows:
+		
+		\begin{align*}
+			N[A]&:=\{(x,y)\in N\times N_A|V(x)=V_A(y)\\
+			&\wedge\forall P\in\mathfrak{P}((L(x)(P)=1\rightarrow L_A(y)(P)\neq 0)\wedge(L(x)(P)=0\rightarrow L_A(y)(P)\neq 1))\}
+			\\ V[A]((x,y))&:=V(x)
+			\\ L[A]((x,y))(P)&:=\begin{cases}
+				& Post(y)(P)\;\text{if}\;Post(y)(P)\neq 2 \\
+				& L_A(y)(P)\;\text{if}\;L(x)(P)=2 \\
+				&L(x)\;\text{otherwise}
+			\end{cases} 
+			\\ \mathcal{F}(S[A])&:=\left \{F\in 2^{N[A]}~\middle |~\begin{matrix}
+				& \pi_0(F)\in\mathcal{F}(S) \\
+				& \wedge\pi_1(F)\in\mathcal{F}(S_A) \\
+				& \wedge F\text{ is consistent w.r.t. }L[A] \\
+				%& \wedge\forall x,x'\in\pi_0(F),y,y'\in\pi_1(F)(x=x'\leftrightarrow y=y')
+			\end{matrix} \right \}
+		\end{align*}
+	\end{definition}
+	
+	Note that if $F\in 2^{N[A]}$, $\pi_0(F)=\{x~|~\exists y\in S_A((x,y))\in F)\}$, and similarly for $\pi_1$. Let us show that for any simplicial model for knowledge $\M$ and simplicial action $A$, $\M[A]$ satisfies the UCF property.\cite{SimpAct}
+	
+	Our definition of $N[A]$ is not the only one which could be motivated. In fact, all three of the definitions below are defensible.
+	
+	\begin{enumerate}
+		\item $\forall P\in\mathfrak{P}((L(x)(P)=1\rightarrow L_A(y)(P)=1)\wedge(L(x)(P)=0\rightarrow L_A(y)(P)=0))$
+		\item $\forall P\in\mathfrak{P}((L_A(y)(P)=1\rightarrow L(x)(P)=1)\wedge(L_A(y)(P)=0\rightarrow L_A(x)(P)=0))$
+		\item $\forall P\in\mathfrak{P}((L(x)(P)=1\rightarrow L_A(y)(P)\neq 0)\wedge(L(x)(P)=0\rightarrow L_A(y)(P)\neq 1))$
+	\end{enumerate}
+	
+	We will refer to these as modes 1-3. Indeed, mode 3 is the one introduced in our definition above. For our purposes in this paper, it will suffice.
+	
+	We now turn to modifying these notions for the belief setting:
+	
+	\begin{definition}[Simplicial Action for Belief]
+		A \defin{Simplicial Action for Belief} $A$ is a tuple $\langle N_A,V_A,L_A,\{S_{a,A}\}_{a\in Ag},Post\rangle$, where $Post:N_a\rightarrow 3^\mathfrak{P}$.\footnote{$N_A$ is a set of nodes, $V_A:N_A\rightarrow Ag$, $L_A:N_A\rightarrow 3^\mathfrak{P}$, and each $S_{a,A}$ is a UCF subcomplex of $\mathfrak{M}(N_A,V_A,L_A)$, just as in a regular simplicial model.}
+		
+		Given a simplicial model for belief $\mathcal{M}=\langle N,V,L,\{S_{a}\}_{a\in Ag}\rangle$, And a simplicial action for belief $A=\langle N_A,V_A,L_A,\{S_{a,A}\}_{a\in Ag},Post\rangle$, we define the update model $\mathcal{M}[A]_B:=\langle N[A]_B,V[A]_B,L[A]_B,\{S_a[A]_B\}_{a\in Ag}\rangle$\footnote{$N[A]_B$ is a subset of $N\times N_A$, $V[A]_B:N[A]_B\rightarrow Ag$, $L[A]_B:N[A]_B\rightarrow 3^\mathfrak{P}$, and $S_a[A]_B$ is a UCF subcomplex of $\mathfrak{M}(N[A]_B,V[A]_B,L[A]_B)$, just as in a regular simplicial model.} as follows:
+		
+		\begin{align*}
+			N[A]_B&:=\{(x,y)\in N\times N_A|V(x)=V_A(y)\\
+			&\wedge\forall P\in\mathfrak{P}((L(x)(P)=1\rightarrow L_A(y)(P)\neq 0)\wedge(L(x)(P)=0\rightarrow L_A(y)(P)\neq 1))\}
+			\\ V[A]_B((x,y))&:=V(x)
+			\\ L[A]_B((x,y))(P)&:=\begin{cases}
+				& Post(y)(P)\;\text{if}\;Post(y)(P)\neq 2 \\
+				& L_A(y)(P)\;\text{if}\;L(x)(P)=2 \\
+				&L(x)\;\text{otherwise}
+			\end{cases} 
+			\\ \mathcal{F}(S_a[A]_B)&:=\left \{F\in 2^{N[A]_B}~\middle |~\begin{matrix}
+				& \pi_0(F)\in\mathcal{F}(S_a) \\
+				& \wedge\pi_1(F)\in\mathcal{F}(S_{a,A}) \\
+				& \wedge F\text{ is consistent w.r.t. }L[A]_B \\
+				%& \wedge\forall x,x'\in\pi_0(F),y,y'\in\pi_1(F)(x=x'\leftrightarrow y=y')
+			\end{matrix} \right \}
+		\end{align*}
+	\end{definition}
+
+	We can also incorporate the notion of revision from \cite{SimpBelRev}, as discussed in \cite{SimpAct} and \cite{TechMemo}.
+
+	\begin{definition}[Simplicial Action for Belief with Revision]
+		Given a simplicial model for belief $\mathcal{M}=\langle N,V,L,\{S_{a}\}_{a\in Ag}\rangle$, and a simplicial action for belief $A=\langle N_A,V_A,L_A,\{S_{a,A}\}_{a\in Ag},Post\rangle$, we define the update model \defin{with revision} $\mathcal{M}[A]_{BR}:=\langle N[A]_{BR},V[A]_{BR},L[A]_{BR},\{S_a[A]_{BR}\}_{a\in Ag}\rangle$\footnote{$N[A]_B$ is a subset of $N\times N_A$, $V[A]_{BR}:N[A]_{BR}\rightarrow Ag$, $L[A]_{BR}:N[A]_{BR}\rightarrow 3^\mathfrak{P}$, and $S_a[A]_{BR}$ is a UCF subcomplex of $\mathfrak{M}(N[A]_{BR},V[A]_{BR},L[A]_{BR})$, just as in a regular simplicial model.} as follows:
+		
+		\begin{align*}
+			N[A]_{BR}&:=\{(x,y)\in N\times N_A|V(x)=V_A(y)\\
+			&\wedge\forall P\in\mathfrak{P}((L(x)(P)=1\rightarrow L_A(y)(P)\neq 0)\wedge(L(x)(P)=0\rightarrow L_A(y)(P)\neq 1))\}
+			\\ V[A]_{BR}((x,y))&:=V(x)
+			\\ L[A]_{BR}((x,y))(P)&:=\begin{cases}
+				& Post(y)(P)\;\text{if}\;Post(y)(P)\neq 2 \\
+				& L_A(y)(P)\;\text{if}\;L(x)(P)=2 \\
+				&L(x)\;\text{otherwise}
+			\end{cases} 
+		\end{align*}
+		
+		Defining $S_a[A]_{BR}$ will take some more work. Fix $a\in Ag$ and let $X$ be a UCF facet in $2^{N\times N_A}$ such that $\pi_0(X)\in\mathcal{F}(S_a)$ and $\pi_1(X)\in\mathcal{F}(S_{a,A})$. Call the set of such $X$ $\mathcal{F}^a(N\times N_A)$. Let $X$ be a UCF facet in $2^{N[A]_{BR}}$ such that $X$ is consistent, and $\pi_1(X)\in\mathcal{F}(S_{a,A})$. Call the set of such $X$ $\mathcal{F}_a(2^{N[A]_{BR}})$. 
+		
+		Then we can define a replacement function as follows for $X\in\mathcal{F}^a(N\times N_A)$:
+		
+		$$R_a(X):=\{Y\in\mathcal{F}_a(2^{N[A]_{BR}})|\pi_a(Y)=\pi_a(X)$$
+		$$\wedge(\forall Z\in\mathcal{F}_a(2^{N[A]_{BR}})(\pi_a(Z)=\pi_a(X)\rightarrow|Y\cap X|\geq|Z\cap X|))\}$$
+		
+		We say that $S_a[A]_{BR}$ is defined as the simplicial complex whose facets come from $\bigcup_{X\in\mathcal{F}^a(N\times N_A)}R_a(X)$.
+	\end{definition}
+
+	It is important to note that the application of an action to an input models a distributed protocol. Indeed, simplicial action models provably define a protocol in the sense of \cite{DCTCT}, \cite{SimpDEL}, and \cite{TopPersp}, as is shown in \cite{TechMemo} and \cite{SimpAct}.
 	
 	\bibliographystyle{plain}	
 	\bibliography{Epistemology} 
