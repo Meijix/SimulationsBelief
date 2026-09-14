@@ -19,7 +19,7 @@ at a single model in the REPL, use ``visualization.preview(model)``.
 import itertools
 import sys
 
-from relational_frame import RelationalFrame, kd45_closure, s5_closure
+from relational_frame import RelationalFrame, k45_closure, kd45_closure, s5_closure
 from visualization import show as _show, visualize
 
 # Run with `--open` to also open each rendered image in your viewer.
@@ -102,12 +102,19 @@ def closures() -> None:
     print(indent(str(sorted(closed))))
     print(indent(f"builds a valid frame: {RelationalFrame({'dave'}, worlds, {'dave': closed})}"))
 
-    print("\nSeriality has no canonical closure -- an isolated world must opt in:")
+    # An isolated world exposes the Axiom D decision, and there are THREE
+    # answers, not two: refuse (KD45, strict), repair with a self-loop (KD45,
+    # make_serial -- note the loop INVENTS an opinion: "believes exactly that
+    # world"), or declare the logic K45 and leave it defunct -- no successors,
+    # so B phi holds vacuously for every phi. The third is what thesis ch. 3
+    # needs, and it is the only one that invents nothing.
+    print("\nSeriality (Axiom D) has no canonical closure -- three ways out:")
     try:
         kd45_closure({"lonely"}, set())
     except ValueError as exc:
-        print(indent(f"without make_serial: {str(exc).split(';')[0]}"))
-    print(indent(f"with make_serial:    {sorted(kd45_closure({'lonely'}, set(), make_serial=True))}"))
+        print(indent(f"KD45, strict:       {str(exc).split(';')[0]}"))
+    print(indent(f"KD45, make_serial:  {sorted(kd45_closure({'lonely'}, set(), make_serial=True))}  (invented self-belief)"))
+    print(indent(f"K45  (k45_closure): {sorted(k45_closure({'lonely'}, set()))}  (defunct: believes everything vacuously)"))
 
 
 # --------------------------------------------------------------------------- #
