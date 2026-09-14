@@ -58,15 +58,26 @@ class RelationalFrame:
         agents: Iterable[Agent],
         worlds: Iterable[World],
         relations: Dict[Agent, Iterable[Edge]], # each agent's accessibility relation.
-        validate: bool = True, # If True, enforce the KD45 frame conditions.
+        validate: bool = True, # If True, enforce the declared frame conditions.
+        axiom_d: bool = True,  # If False, the frame's logic is K45: no seriality.
     ) -> None:
-        """Build a relational frame, optionally enforcing the KD45 axioms.
+        """Build a relational frame, optionally enforcing its declared axioms.
+
+        ``axiom_d`` is the frame's LOGIC CONTRACT, stored as an attribute so it
+        travels with the object: True means KD45 (seriality/D enforced, the
+        default and the historical behaviour), False means K45 (worlds with no
+        successor are legal -- the logic of thesis ch. 3, where belief revision
+        creates "isolated perspectives" and D is not sound). Transitivity (4)
+        and Euclideanness (5) are enforced either way. The flag is consulted by
+        validation only, never by any evaluator: quantifying over an empty
+        successor set is already the correct (vacuous) K45 truth condition.
 
         Raises:
             ValueError: Always if the structure references unknown agents/worlds;
                 and, when ``validate`` is True, if any agent's relation violates
-                seriality, transitivity or the Euclidean property.
+                transitivity, Euclideanness, or (only when ``axiom_d``) seriality.
         """
+        self.axiom_d: bool = axiom_d
         # Why frozensets (not plain sets):
         # The constructor precomputes `_successors` (an adjacency cache) once, and
         # every query and validator reads from that cache, not from `relations`.
@@ -88,13 +99,16 @@ class RelationalFrame:
         # Adjacency map: agent -> {world -> set of directly reachable worlds}.
         self._successors: Dict[Agent, Dict[World, Set[World]]] = self._build_successors()
 
-        # KD45 frame conditions -- only enforced when validate=True.
-        # We collect ALL violations first and report them together
+        # Frame conditions of the DECLARED logic -- only enforced when
+        # validate=True. We collect ALL violations first and report them
+        # together. The gate goes through violations(), which consults
+        # self.axiom_d, so a K45 frame is never asked for seriality.
         if validate:
-            problems = self.kd45_violations()
+            problems = self.violations()
             if problems:
+                logic = "KD45" if self.axiom_d else "K45"
                 raise ValueError(
-                    f"{len(problems)} KD45 violation(s) found:\n  - "
+                    f"{len(problems)} {logic} violation(s) found:\n  - "
                     + "\n  - ".join(problems)
                 )
 
@@ -105,11 +119,19 @@ class RelationalFrame:
         worlds: Iterable[World],
         partial_relations: Dict[Agent, Iterable[Edge]],
         make_serial: bool = False,
+        axiom_d: bool = True,
     ) -> "RelationalFrame":
-        """Build a frame from *partial* relations, closing each agent under KD45.
+        """Build a frame from *partial* relations, closing each agent's logic.
 
-        Fills in every edge that transitivity, Euclideanness (and optionally seriality) require,
-        then hands the result to the normal validating constructor.
+        With ``axiom_d=True`` (default) each relation is closed under KD45:
+        every edge that transitivity, Euclideanness (and optionally seriality)
+        require is filled in. With ``axiom_d=False`` the logic is K45: the same
+        4+5 closure, but worlds left without a successor stay that way -- they
+        are legal in K45, so there is nothing to repair and nothing to reject.
+        ``make_serial`` is a REPAIR STRATEGY for the D requirement, so it only
+        makes sense when D is on; combining ``make_serial=True`` with
+        ``axiom_d=False`` is contradictory intent and raises rather than
+        silently picking a side.
 
         The closure is applied *independently to each agent*, because each agent's
         accessibility relation is a separate belief structure.
@@ -119,20 +141,30 @@ class RelationalFrame:
         "no seed edges" and documents that intent.
 
         Returns:
-            A fully validated :class `RelationalFrame`.
+            A fully validated :class `RelationalFrame` carrying ``axiom_d`` as its
+            logic contract (shown by ``repr`` as KD45 or K45).
 
         Raises:
-            ValueError: If some declared agent has no entry in ``partial_relations``.
+            ValueError: If some declared agent has no entry in ``partial_relations``,
+                or ``make_serial=True`` is combined with ``axiom_d=False``.
         """
+        if make_serial and not axiom_d:
+            raise ValueError(
+                "make_serial=True repairs seriality, but axiom_d=False declares "
+                "that seriality (Axiom D) is not required -- these contradict "
+                "each other. Drop make_serial for a K45 frame, or keep D on."
+            )
         world_set = set(worlds)
         require_all_agents(agents, partial_relations, "RelationalFrame.from_partial")
         closed: Dict[Agent, Set[Edge]] = {}
         for agent in agents:
             # Close THIS agent's relation only -- never mix agents' edges.
-            closed[agent] = kd45_closure(
-                world_set, partial_relations[agent], make_serial=make_serial
+            closed[agent] = (
+                kd45_closure(world_set, partial_relations[agent], make_serial=make_serial)
+                if axiom_d
+                else k45_closure(world_set, partial_relations[agent])
             )
-        return cls(agents=agents, worlds=world_set, relations=closed)
+        return cls(agents=agents, worlds=world_set, relations=closed, axiom_d=axiom_d)
 
     @classmethod
     def from_partial_s5(
@@ -275,7 +307,9 @@ class RelationalFrame:
     def kd45_violations(self) -> List[str]:
         """Return every KD45 axiom violation as a message (empty list if valid).
         it collects all problems, so a frame built with ``validate=False`` can be inspected or annotated in a
-        visualisation.
+        visualisation. Always the FULL KD45 check (D + 4 + 5), regardless of the
+        frame's own ``axiom_d`` -- diagnostics answer the question asked, not the
+        frame's contract; use :meth:`violations` for the contract.
         """
         return (
             self._seriality_violations()
@@ -283,9 +317,28 @@ class RelationalFrame:
             + self._euclidean_violations()
         )
 
+    def k45_violations(self) -> List[str]:
+        """Return every K45 axiom violation (transitivity + Euclideanness only).
+
+        K45 is KD45 without seriality (Axiom D): worlds with no successor are
+        legal, and at them belief is vacuously universal (the agent "believes"
+        everything, ⊥ included -- thesis ch. 3 calls these defunct beliefs, the
+        product of learning something that contradicts all your beliefs). This
+        is the check a frame declared with ``axiom_d=False`` must pass.
+        """
+        return self._transitivity_violations() + self._euclidean_violations()
+
+    def violations(self) -> List[str]:
+        """Violations of THIS frame's declared logic: KD45 if ``axiom_d``, else K45.
+
+        This is what construction enforces and :meth:`is_valid` reports -- the
+        one place the ``axiom_d`` contract is consulted on the relational side.
+        """
+        return self.kd45_violations() if self.axiom_d else self.k45_violations()
+
     def is_valid(self) -> bool:
-        """Return True iff the frame satisfies all KD45 axioms."""
-        return not self.kd45_violations()
+        """Return True iff the frame satisfies its DECLARED axioms (see violations)."""
+        return not self.violations()
 
     def missing_edges(self) -> Dict[Agent, Set[Edge]]:
         """Return, per agent, the edges required by axioms 4/5 but currently absent.
@@ -311,10 +364,29 @@ class RelationalFrame:
         """Return the set of worlds directly accessible for ``agent`` from ``world``."""
         return set(self._successors[agent][world])
 
+    def logic_label(self) -> str:
+        """Name this frame's logic for display: ``S5``, ``KD45`` or ``K45``.
+
+        S5 is detected, not declared: a frame whose every relation is reflexive
+        reads as knowledge (for a validated frame, reflexive + transitive +
+        Euclidean IS an equivalence relation). Otherwise the label reports the
+        declared contract: KD45 with Axiom D, K45 without. The label is a
+        display hint -- on a frame built with ``validate=False`` it describes
+        intent, not verified fact.
+        """
+        if self.agents and all(
+            w in self._successors[a][w] for a in self.agents for w in self.worlds
+        ):
+            return "S5"
+        return "KD45" if self.axiom_d else "K45"
+
     def __repr__(self) -> str:
         n_edges = sum(len(edges) for edges in self.relations.values())
+        # type(self).__name__: subclasses (ProperRelationalFrame) report their
+        # own class, not the base -- a proper frame should say so.
         return (
-            f"RelationalFrame(agents={len(self.agents)}, "
+            f"{type(self).__name__}(logic={self.logic_label()}, "
+            f"agents={len(self.agents)}, "
             f"worlds={len(self.worlds)}, edges={n_edges})"
         )
 
@@ -433,6 +505,25 @@ def kd45_closure(
                 f"give each a self-loop, or add an outgoing edge manually."
             )
 
+    return {(w, v) for w, targets in succ.items() for v in targets}
+
+
+def k45_closure(worlds: Iterable[World], edges: Iterable[Edge]) -> Set[Edge]:
+    """Compute the K45 closure of a single agent's relation: 4 + 5, no D.
+
+    The same transitive + Euclidean fixpoint as :func:`kd45_closure`, but with
+    NO seriality handling at all: a world the seed leaves without a successor
+    keeps zero successors. That is not a defect to repair or reject -- in K45
+    it is a legal state, read as *defunct belief*: with nothing considered
+    possible, ``B φ`` holds vacuously for every φ (⊥ included). Thesis ch. 3
+    needs exactly this, because belief revision can strand perspectives.
+
+    Returns:
+        The smallest superset of ``edges`` that is transitive and Euclidean.
+    """
+    world_set: Set[World] = set(worlds)
+    edge_list = _as_edge_list(edges, "k45_closure")
+    succ = _transitive_euclidean_closure(world_set, edge_list)
     return {(w, v) for w, targets in succ.items() for v in targets}
 
 
