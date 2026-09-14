@@ -72,7 +72,16 @@ class SimplicialBeliefModel:
         world_of_facet: Dict[Facet, World] | None = None,
         projection: Dict[Facet, World] | None = None,
         validate: bool = True,
+        axiom_d: bool = True,
     ) -> None:
+        # The geometric side of the Axiom D contract. On a simplicial model, D
+        # is exactly "no isolated perspectives" (thesis p. 23): every a-node
+        # lies in some facet of S_a, and no S_a is empty. With axiom_d=False
+        # (K45, the logic of ch. 3) both are legal: an isolated a-node makes
+        # believes_facets empty there, so B_a is vacuously universal -- defunct
+        # belief, which is a state ch. 3's revision genuinely produces. Only
+        # violations() consults the flag; the semantics never does.
+        self.axiom_d: bool = axiom_d
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
@@ -140,7 +149,10 @@ class SimplicialBeliefModel:
                 problems.append(msg)
 
         for a in sorted(self.agents, key=str):
-            if not self.belief_facets.get(a):
+            # Non-emptiness of S_a is part of the D contract (an empty S_a means
+            # EVERY a-perspective is isolated); UCF and S_a ⊆ S below are
+            # structural and hold in both logics.
+            if self.axiom_d and not self.belief_facets.get(a):
                 problems.append(f"Belief subcomplex S_{a!r} is empty (must be non-empty).")
             for facet in self.belief_facets.get(a, ()):
                 if facet not in self.facets:
@@ -151,15 +163,20 @@ class SimplicialBeliefModel:
                 if msg:
                     problems.append(msg)
 
-        # Consistency/seriality: every a-coloured node sits in some facet of S_a.
-        for a in sorted(self.agents, key=str):
-            covered = {self.pi(a, F) for F in self.belief_facets.get(a, ())}
-            for n in self.nodes:
-                if n.agent == a and n not in covered:
-                    problems.append(
-                        f"Consistency violated for agent {a!r}: node {label_node(n)} "
-                        f"lies in no facet of its belief subcomplex S_{a!r}."
-                    )
+        # Consistency/seriality: every a-coloured node sits in some facet of
+        # S_a. This IS Axiom D read geometrically -- a node failing it is an
+        # "isolated perspective" (thesis p. 23), at which B_a holds vacuously
+        # for everything. Enforced only under the KD45 contract; a K45 model
+        # (axiom_d=False) admits isolated perspectives by design.
+        if self.axiom_d:
+            for a in sorted(self.agents, key=str):
+                covered = {self.pi(a, F) for F in self.belief_facets.get(a, ())}
+                for n in self.nodes:
+                    if n.agent == a and n not in covered:
+                        problems.append(
+                            f"Consistency violated for agent {a!r}: node {label_node(n)} "
+                            f"lies in no facet of its belief subcomplex S_{a!r}."
+                        )
         return problems
 
     def is_valid(self) -> bool:
@@ -180,8 +197,10 @@ class SimplicialBeliefModel:
         return "\n".join(lines)
 
     def __repr__(self) -> str:
+        belief_logic = "KD45" if self.axiom_d else "K45"
         return (
-            f"SimplicialBeliefModel(agents={len(self.agents)}, "
+            f"SimplicialBeliefModel(belief={belief_logic}, "
+            f"agents={len(self.agents)}, "
             f"nodes={len(self.nodes)}, facets={len(self.facets)})"
         )
 
@@ -289,4 +308,10 @@ def to_simplicial(
         belief_facets=belief_facets,
         world_of_facet=world_of_facet,
         projection=projection,
+        # The axiom_d contract travels from the relational model into the
+        # complex: a K45 model's worlds with empty Q produce facets outside
+        # every S_a (no self-access) and possibly isolated perspectives, which
+        # its own validation must therefore permit. (A wrapped knowledge-only
+        # frame has Q = R, reflexive, so D holds there regardless.)
+        axiom_d=getattr(model, "axiom_d", True),
     )
