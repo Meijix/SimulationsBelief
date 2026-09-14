@@ -32,22 +32,80 @@ from relational_frame import (
     Edge,
     RelationalFrame,
     World,
+    k45_closure,
     kd45_closure,
     require_all_agents,
     s5_closure,
 )
 
 
+def require_s5_relation(
+    knowledge: RelationalFrame, agent: Agent, caller: str = "knowledge_classes"
+) -> None:
+    """Raise unless ``agent``'s relation in ``knowledge`` is an equivalence (S5).
+
+    Why this guard exists. :func:`knowledge_classes` reads the partition straight
+    off the successor sets, and :func:`belief_closure` builds ``Q_a`` on top of
+    that partition. Both silently produce GARBAGE if the relation is not an
+    equivalence: a relation with no edges (only constructible with
+    ``validate=False`` -- it violates Axiom T) degenerates into one *empty*
+    pseudo-class per world, and ``belief_closure`` then swallows its whole seed
+    and returns an empty ``Q`` without a word. Absence must be shown, never
+    resolved silently (the same principle as ``require_all_agents``), so the
+    precondition the docstrings always stated is now enforced.
+
+    How the check works, and why it is exact. For a REFLEXIVE relation,
+    "every successor sees exactly the same successor set" (``R(u) = R(w)`` for
+    all ``u ∈ R(w)``) holds **iff** the relation is an equivalence: reflexivity
+    puts ``w`` in ``R(w)``; the coherence condition then gives symmetry
+    (``u ∈ R(w)`` ⟹ ``w ∈ R(w) = R(u)``) and transitivity
+    (``v ∈ R(u) = R(w)``); conversely every equivalence satisfies it because
+    ``R(w)`` is the class of ``w``. So two cheap point checks -- a self-loop per
+    world, and one set comparison per edge -- decide S5 exactly, with no need to
+    run the full frame validators over every agent.
+
+    Raises:
+        ValueError: Naming the first world without a self-loop (Axiom T), or the
+            first pair whose successor sets disagree (not transitive/symmetric).
+    """
+    for w in sorted(knowledge.worlds, key=str):
+        successors = knowledge.successors(agent, w)
+        if w not in successors:
+            raise ValueError(
+                f"{caller} needs an S5 (equivalence) knowledge relation for agent "
+                f"{agent!r}, but it is not even reflexive: {w!r} does not access "
+                f"itself (Axiom T). A relation like this is only constructible "
+                f"with validate=False; nothing is computed from it silently. "
+                f"Build knowledge with RelationalFrame.from_partial_s5(...) or "
+                f"relational_frame.s5_closure(...)."
+            )
+        for u in successors:
+            if knowledge.successors(agent, u) != successors:
+                raise ValueError(
+                    f"{caller} needs an S5 (equivalence) knowledge relation for "
+                    f"agent {agent!r}, but {w!r} and its successor {u!r} see "
+                    f"different successor sets -- the relation is not "
+                    f"transitive/symmetric, so its 'classes' are not a "
+                    f"partition. Close the seed with s5_closure first."
+                )
+
+
 def knowledge_classes(knowledge: RelationalFrame, agent: Agent) -> List[FrozenSet[World]]:
     """Return agent ``a``'s equivalence classes ``[w]_a`` under an S5 relation.
 
     Args:
-        knowledge: A frame whose relations are equivalence relations.
+        knowledge: A frame whose relations are equivalence relations. Enforced:
+            a non-S5 relation for ``agent`` raises (see :func:`require_s5_relation`)
+            instead of yielding a non-partition silently.
         agent: The agent whose partition is wanted.
 
     Returns:
         The classes, each as a frozenset, in sorted-by-first-world order.
+
+    Raises:
+        ValueError: If ``agent``'s relation is not an equivalence relation.
     """
+    require_s5_relation(knowledge, agent, "knowledge_classes")
     seen: Set[World] = set()
     out: List[FrozenSet[World]] = []
     for w in sorted(knowledge.worlds, key=str):
@@ -65,6 +123,7 @@ def belief_closure(
     seed: Iterable[Edge],
     believe_all_when_silent: bool = True,
     trim_out_of_class: bool = False,
+    axiom_d: bool = True,
 ) -> Set[Edge]:
     """Close a *belief* seed into a valid ``Q_a``, relative to the knowledge ``R_a``.
 
@@ -105,17 +164,32 @@ def belief_closure(
         knowledge: The frame holding ``R_a`` (must be S5 for ``agent``).
         agent: The agent whose belief relation is being built.
         seed: Partial ``(world, believed_world)`` edges.
-        believe_all_when_silent: If True, a class the seed ignores gets
-            ``B_a(C) = C``; if False, such a class raises.
+        believe_all_when_silent: What silence means. If True (the default, and
+            THE PROJECT'S CHOSEN CONVENTION -- see the inline note below), a
+            class the seed ignores gets ``B_a(C) = C`` ("believe exactly what
+            you know"), in BOTH logics. If False: under KD45 such a class raises
+            (D forbids the empty cluster and no minimum exists); under K45 it
+            gets the empty cluster ``B_a(C) = ∅`` -- the true minimum, read as
+            *defunct belief*: the agent believes everything vacuously there
+            (thesis ch. 3). So a defunct cluster is always an explicit request,
+            never a silent default.
         trim_out_of_class: If True, seed targets outside their source's knowledge
             class are silently dropped (repair by trimming) instead of raising.
+        axiom_d: The logic contract (KD45 with D, K45 without). It changes what
+            the relation may look like -- empty clusters legal under K45 -- but
+            NOT what silence defaults to: that is governed by
+            ``believe_all_when_silent`` above, uniformly.
 
     Returns:
         The edge set of a ``Q_a`` satisfying all four knowledge/belief conditions.
 
     Raises:
-        ValueError: If the seed puts a world outside its own knowledge class (and
-            ``trim_out_of_class`` is False), or if it is silent on a class and
+        ValueError: If ``agent``'s relation in ``knowledge`` is not an equivalence
+            relation (inherited from :func:`knowledge_classes` via
+            :func:`require_s5_relation` -- a non-S5 relation used to make this
+            function silently swallow the seed and return an empty ``Q``); if the
+            seed puts a world outside its own knowledge class (and
+            ``trim_out_of_class`` is False); or if it is silent on a class and
             ``believe_all_when_silent`` is False.
     """
     seed_edges = set(seed)
@@ -134,6 +208,11 @@ def belief_closure(
                 f"there, so the agent cannot believe them possible. No valid Q_a "
                 f"contains this seed -- widen the knowledge relation or drop the edge."
             )
+        if not believed and not believe_all_when_silent and not axiom_d:
+            # Explicit opt-out under K45: the empty cluster (defunct belief) is
+            # legal there and is the true minimum containing the seed. This is
+            # NOT the default -- see the design decision below.
+            continue
         if not believed:
             if not believe_all_when_silent:
                 raise ValueError(
@@ -143,7 +222,22 @@ def belief_closure(
                     f"believe_all_when_silent=True to default to believing exactly "
                     f"what is known."
                 )
-            believed = set(cls)  # believe exactly what you know: no false belief here
+            # PROJECT CONVENTION -- the author's design decision (2026-09-14),
+            # uniform across BOTH logics and every route: silence about belief
+            # means "believe exactly what you know", B(C) = C, i.e. Q = R on
+            # this class. Rationale: constancy already guarantees that agents
+            # KNOW what they believe in every case; choosing Q = R for
+            # unspecified belief adds the converse -- agents BELIEVE what they
+            # know -- and invents no opinion beyond the knowledge given. In
+            # particular, case-4 input (knowledge only, belief unspecified)
+            # yields Q = R whether axiom_d is on or off, and whichever entry
+            # point it comes through (from_partial with belief={}, or the
+            # knowledge-only wrapper in to_simplicial). A DEFUNCT cluster
+            # (B(C) = ∅, legal only in K45) is never a silent default: request
+            # it explicitly with believe_all_when_silent=False under
+            # axiom_d=False, or hand fully specified empty relations to the
+            # constructor.
+            believed = set(cls)
         relation |= {(w, u) for w in cls for u in believed}
     return relation
 
@@ -172,9 +266,19 @@ class KnowledgeBeliefFrame:
         belief: Dict[Agent, Iterable[Edge]],
         validate: bool = True,
         projection: Optional[Dict[World, World]] = None,
+        axiom_d: bool = True,
     ) -> None:
         self.agents: Set[Agent] = set(agents)
         self.worlds: Set[World] = set(worlds)
+        # The model's logic contract for BELIEF, fixed once at the entry point
+        # and carried by the object through the whole pipeline (to_proper copies
+        # it, to_simplicial reads it): True = KD45, False = K45 (seriality/D
+        # off; worlds with an empty belief set are legal "defunct beliefs").
+        # Knowledge is S5 regardless. What you give up with axiom_d=False is
+        # exactly the consistency axiom B_a φ -> ¬B_a ¬φ. Validation is the only
+        # consumer -- the evaluators never look at it, because quantifying over
+        # an empty Q_a(w) already yields the correct vacuous K45 truth.
+        self.axiom_d: bool = axiom_d
         # Reuse RelationalFrame for storage, successors and the KD45 validators.
         # Normalise both mappings so EVERY declared agent has an entry: an agent
         # missing from one of them then fails validation with the honest message
@@ -190,6 +294,7 @@ class KnowledgeBeliefFrame:
             agents, worlds,
             {**{a: set() for a in self.agents}, **dict(belief)},
             validate=False,
+            axiom_d=axiom_d,  # so the inner frame's repr reports K45/KD45 too
         )
         self.projection: Dict[World, World] = dict(projection or {})
         if validate:
@@ -212,6 +317,7 @@ class KnowledgeBeliefFrame:
         belief: Dict[Agent, Iterable[Edge]],
         believe_all_when_silent: bool = True,
         trim_out_of_class: bool = False,
+        axiom_d: bool = True,
     ) -> "KnowledgeBeliefFrame":
         """Build a knowledge+belief model from *partial* relations of both kinds.
 
@@ -244,6 +350,14 @@ class KnowledgeBeliefFrame:
             trim_out_of_class: passed to :func:`belief_closure`; repair a belief
                 seed that points outside its knowledge class by dropping those
                 targets, instead of raising.
+            axiom_d: the belief logic, fixed HERE for the whole pipeline. True =
+                KD45; False = K45. It does NOT change what silence means: by the
+                project's convention, a class with no belief seed gets ``Q = R``
+                there in both logics -- so case-4 input (``belief={}``) yields
+                ``Q_a = R_a`` everywhere, on every route: *agents believe what
+                they know*. A defunct (empty) cluster under K45 is an explicit
+                request via ``believe_all_when_silent=False`` -- see
+                :func:`belief_closure`.
 
         Returns:
             A fully validated :class:`KnowledgeBeliefFrame`.
@@ -297,12 +411,13 @@ class KnowledgeBeliefFrame:
         belief_relations: Dict[Agent, Set[Edge]] = {
             a: belief_closure(
                 know_frame, a, belief.get(a, set()),
-                believe_all_when_silent, trim_out_of_class,
+                believe_all_when_silent, trim_out_of_class, axiom_d,
             )
             for a in agent_set
         }
         return cls(
-            agent_set, world_set, know_frame.relations, belief_relations
+            agent_set, world_set, know_frame.relations, belief_relations,
+            axiom_d=axiom_d,
         )
 
     @classmethod
@@ -311,6 +426,7 @@ class KnowledgeBeliefFrame:
         agents: Iterable[Agent],
         worlds: Iterable[World],
         belief: Dict[Agent, Iterable[Edge]],
+        axiom_d: bool = True,
     ) -> "KnowledgeBeliefFrame":
         """Build a knowledge+belief model from *belief seeds alone* (case: only Q).
 
@@ -355,15 +471,27 @@ class KnowledgeBeliefFrame:
         world_set = set(worlds)
         agent_set = list(agents)
         require_all_agents(agent_set, belief, "from_beliefs_only", "belief")
+        # KD45 mode repairs seriality (self-loop for stranded worlds); K45 mode
+        # has nothing to repair -- a world without successors is legal, and its
+        # induced knowledge class below is just the singleton {w} (reflexive
+        # loop from the equivalence closure), on which the empty Q is trivially
+        # constant. The induction is the same either way.
         belief_relations: Dict[Agent, Set[Edge]] = {
-            a: kd45_closure(world_set, belief[a], make_serial=True)
+            a: (
+                kd45_closure(world_set, belief[a], make_serial=True)
+                if axiom_d
+                else k45_closure(world_set, belief[a])
+            )
             for a in agent_set
         }
         # R_a := equivalence closure of Q_a (minimal equivalence containing it).
         knowledge_relations: Dict[Agent, Set[Edge]] = {
             a: s5_closure(world_set, belief_relations[a]) for a in agent_set
         }
-        return cls(agent_set, world_set, knowledge_relations, belief_relations)
+        return cls(
+            agent_set, world_set, knowledge_relations, belief_relations,
+            axiom_d=axiom_d,
+        )
 
     # ------------------------------------------------------------------ #
     # Accessors
@@ -407,7 +535,13 @@ class KnowledgeBeliefFrame:
         return problems
 
     def _belief_not_kd45(self) -> List[str]:
-        return ["Belief (KD45): " + v for v in self.belief.kd45_violations()]
+        # The one place the axiom_d contract is consulted on the belief side:
+        # KD45 asks for D + 4 + 5, K45 for 4 + 5 only. The other three frame
+        # conditions (K is S5, Q ⊆ R, constancy on classes) hold in both logics
+        # and are checked unconditionally by their own validators.
+        if self.axiom_d:
+            return ["Belief (KD45): " + v for v in self.belief.kd45_violations()]
+        return ["Belief (K45): " + v for v in self.belief.k45_violations()]
 
     def _belief_not_subset_of_knowledge(self) -> List[str]:
         problems = []
@@ -474,6 +608,7 @@ class KnowledgeBeliefFrame:
                 self.knowledge.relations,
                 self.belief.relations,
                 projection={w: w for w in self.worlds},
+                axiom_d=self.axiom_d,  # the logic contract travels with the model
             )
         # >= 2 agents required (see properness.to_proper): a single non-proper agent has
         # no proper bisimilar model.
@@ -506,14 +641,22 @@ class KnowledgeBeliefFrame:
         _, belief_rel, _ = copy_and_skew(
             self.worlds, self.agents, self.belief.relations, distinguished
         )
+        # The child inherits axiom_d: its revalidation then asks the skewed Q
+        # for exactly the axioms this model declared (a K45 Q with dead ends
+        # stays K45 after the skew -- copies of a world with no successors have
+        # no successors -- and must not be rejected for missing D).
         return ProperKnowledgeBeliefFrame(
-            self.agents, new_worlds, know_rel, belief_rel, projection=projection
+            self.agents, new_worlds, know_rel, belief_rel, projection=projection,
+            axiom_d=self.axiom_d,
         )
 
     def __repr__(self) -> str:
+        # Knowledge is S5 by validation; the belief half reports the declared
+        # contract. type(self).__name__ lets the Proper subclass say so itself.
+        belief_logic = "KD45" if self.axiom_d else "K45"
         return (
-            f"KnowledgeBeliefFrame(agents={len(self.agents)}, "
-            f"worlds={len(self.worlds)})"
+            f"{type(self).__name__}(logic=S5+{belief_logic}, "
+            f"agents={len(self.agents)}, worlds={len(self.worlds)})"
         )
 
 
@@ -540,9 +683,11 @@ class ProperKnowledgeBeliefFrame(KnowledgeBeliefFrame):
         belief: Dict[Agent, Iterable[Edge]],
         validate: bool = True,
         projection: Optional[Dict[World, World]] = None,
+        axiom_d: bool = True,
     ) -> None:
         super().__init__(
-            agents, worlds, knowledge, belief, validate=validate, projection=projection
+            agents, worlds, knowledge, belief, validate=validate,
+            projection=projection, axiom_d=axiom_d,
         )
         if validate:
             problems = self.properness_violations()
@@ -552,8 +697,4 @@ class ProperKnowledgeBeliefFrame(KnowledgeBeliefFrame):
                     + "\n  - ".join(problems)
                 )
 
-    def __repr__(self) -> str:
-        return (
-            f"ProperKnowledgeBeliefFrame(agents={len(self.agents)}, "
-            f"worlds={len(self.worlds)})"
-        )
+    # __repr__ is inherited: type(self).__name__ already names this class.
