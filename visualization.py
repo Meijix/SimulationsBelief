@@ -61,7 +61,7 @@ BELIEF_PALETTE = ("#7B4FA3", "#D98A00", "#2E8B57", "#B23A48", "#3A6EA5", "#8C6D1
 # --------------------------------------------------------------------------- #
 # Public API: three functions, any model
 # --------------------------------------------------------------------------- #
-def visualize(model, agent: "Agent | None" = None) -> str:
+def visualize(model, agent: "Agent | None" = None, valuation=None) -> str:
     """Return a dependency-free text diagram of any model.
 
     * relational frame -- every world with the worlds it reaches in one step
@@ -72,18 +72,21 @@ def visualize(model, agent: "Agent | None" = None) -> str:
 
     Args:
         agent: If given, show only that agent's relation; otherwise show all.
+        valuation: Relational models only -- a Kripke valuation ``v : P -> 2^W``;
+            each world line then carries its literals, e.g. ``w1 (¬P, Q) -> ...``.
     """
     kind = _kind(model)
     if kind == "simplicial":
         return model.describe()
     if kind == "knowledge_belief":
+        belief_logic = "KD45" if getattr(model, "axiom_d", True) else "K45"
         return (
             "KNOWLEDGE (S5):\n"
-            + _visualize_frame(model.knowledge, agent)
-            + "\nBELIEF (KD45):\n"
-            + _visualize_frame(model.belief, agent)
+            + _visualize_frame(model.knowledge, agent, valuation)
+            + f"\nBELIEF ({belief_logic}):\n"
+            + _visualize_frame(model.belief, agent, valuation)
         )
-    return _visualize_frame(model, agent)
+    return _visualize_frame(model, agent, valuation)
 
 
 def show(
@@ -98,6 +101,8 @@ def show(
     omit_self_loops: bool | None = None,
     undirected_symmetric: bool | None = None,
     highlight_missing: bool = True,
+    valuation=None,
+    assignment=None,
 ) -> str:
     """Draw any model to a file and return the path. The one function to call.
 
@@ -128,28 +133,58 @@ def show(
             Default: inferred (on for S5, whose relations are symmetric).
         highlight_missing: Draw the edges an invalid frame is missing, and its
             dead-end worlds, in red.
+        valuation: The logical layer to display. For a RELATIONAL model, a
+            Kripke valuation ``v : P -> 2^W``: every world is labelled with its
+            literals, thesis Figure-33 style (``w1`` over ``¬Pa, Pb``). For a
+            SIMPLICIAL model, a shortcut for the canonical vertex route: the
+            valuation is turned into the induced vertex assignment
+            (``assignment.assignment_from_model``: 1 where the agent knows the
+            atom, 0 where it knows the negation, 2 otherwise) and drawn as
+            ``assignment`` below.
+        assignment: Simplicial models only -- a vertex assignment
+            ``L : N -> 3^P`` (the project's canonical, chapter-3 form). Each
+            node shows the literals its perspective observes, thesis Figure 5-9
+            style (``a1`` with ``(¬Mb, Mc)``); value 2 draws nothing, so an
+            unadorned node reads "no hard information". Takes precedence over
+            ``valuation`` if both are given.
 
     Returns:
         The path to the generated file.
 
     Raises:
         RuntimeError: If the Graphviz ``dot`` binary is not on ``PATH``.
-        TypeError: If ``model`` is not one of the project's models.
+        TypeError: If ``model`` is not one of the project's models, or
+            ``assignment`` is passed for a non-simplicial model.
     """
     kind = _kind(model)
     caption = title if title is not None else name
     if kind == "simplicial":
+        if assignment is None and valuation is not None:
+            # The canonical vertex-based route: a Kripke valuation reaches the
+            # complex as the assignment it induces on the perspectives
+            # (1 = knows the atom, 0 = knows its negation, 2 = cannot tell).
+            from assignment import assignment_from_model
+
+            assignment = assignment_from_model(model, valuation)
         if dim == 3:
-            path = _show_simplicial_3d(model, name, output_dir, caption)
+            path = _show_simplicial_3d(model, name, output_dir, caption,
+                                       assignment=assignment)
         else:
-            path = _show_simplicial(model, name, output_dir, caption, image_format)
+            path = _show_simplicial(model, name, output_dir, caption, image_format,
+                                    assignment=assignment)
     else:
+        if assignment is not None:
+            raise TypeError(
+                "assignment is a vertex labelling for SIMPLICIAL models; for a "
+                "relational model pass valuation (v : P -> 2^W) instead."
+            )
         dot_source = to_dot(
             model,
             title=caption,
             omit_self_loops=omit_self_loops,
             undirected_symmetric=undirected_symmetric,
             highlight_missing=highlight_missing,
+            valuation=valuation,
         )
         path = _write_and_run_dot(dot_source, name, image_format, output_dir)
     if open:
@@ -186,22 +221,58 @@ def to_dot(
     omit_self_loops: bool | None = None,
     undirected_symmetric: bool | None = None,
     highlight_missing: bool = True,
+    valuation=None,
 ) -> str:
     """Return Graphviz DOT source for a relational or knowledge+belief model.
 
     Use this to export a figure without the ``dot`` binary, or to tweak the source
     by hand; :func:`show` calls it for you. The arguments are those of
-    :func:`show`; ``None`` means "infer from the model". Simplicial models have no
-    DOT form -- draw them with :func:`show`.
+    :func:`show`; ``None`` means "infer from the model". With ``valuation``,
+    every world is labelled with its literals (see :func:`world_literals`).
+    Simplicial models have no DOT form -- draw them with :func:`show`.
     """
     kind = _kind(model)
     if kind == "knowledge_belief":
-        return _dot_knowledge_belief(model, title, omit_self_loops)
+        return _dot_knowledge_belief(model, title, omit_self_loops, valuation)
     if kind == "frame":
         return _dot_frame(
-            model, title, omit_self_loops, undirected_symmetric, highlight_missing
+            model, title, omit_self_loops, undirected_symmetric, highlight_missing,
+            valuation,
         )
     raise TypeError("Simplicial models have no DOT form; use show(model, name).")
+
+
+def world_literals(valuation, world) -> List[str]:
+    """Render a world's atoms as literals, thesis Figure-33 style: ``¬Pa, Pb``.
+
+    A Kripke valuation ``v : P -> 2^W`` is TOTAL: every atom it mentions is
+    either true or false at each world, so both polarities are informative and
+    both are shown (``P`` if ``world ∈ v(P)``, ``¬P`` otherwise). Atoms are
+    sorted for a stable, comparable label.
+    """
+    return [
+        (str(atom) if world in trues else f"¬{atom}")
+        for atom, trues in sorted(valuation.items(), key=lambda kv: str(kv[0]))
+    ]
+
+
+def node_literals(assignment, node) -> List[str]:
+    """Render a perspective's observed literals, thesis Figure 5-9 style.
+
+    A vertex assignment ``L : N -> 3^P`` is PARTIAL: value 1 renders as ``P``,
+    value 0 as ``¬P``, and value 2 ("doesn't know") renders as NOTHING -- silence
+    is the point of the third value, so an uncertain atom must not clutter the
+    node. A node with no observations gets an empty list (drawn bare, like
+    ``b1`` in the thesis's Figure 5).
+    """
+    out: List[str] = []
+    for atom, value in sorted(assignment.get(node, {}).items(), key=lambda kv: str(kv[0])):
+        if value == 1:
+            out.append(str(atom))
+        elif value == 0:
+            out.append(f"¬{atom}")
+        # value 2: deliberately omitted
+    return out
 
 
 def agent_colors(model) -> Dict["Agent", str]:
@@ -248,7 +319,9 @@ def _is_s5(frame: "RelationalFrame") -> bool:
 # --------------------------------------------------------------------------- #
 # Text diagrams
 # --------------------------------------------------------------------------- #
-def _visualize_frame(frame: "RelationalFrame", agent: "Agent | None" = None) -> str:
+def _visualize_frame(
+    frame: "RelationalFrame", agent: "Agent | None" = None, valuation=None
+) -> str:
     """Text diagram of one relational frame (see :func:`visualize`)."""
     chosen = [agent] if agent is not None else sorted(frame.agents, key=str)
     lines = []
@@ -260,9 +333,18 @@ def _visualize_frame(frame: "RelationalFrame", agent: "Agent | None" = None) -> 
             successors = frame.successors(a, w)
             targets = sorted(successors, key=str)
             rendered = ", ".join(f"{t}{' (self)' if t == w else ''}" for t in targets)
-            # A world with no successor is not serial (Axiom D): a dead end.
-            marker = "" if successors else "   <- NOT SERIAL (dead end, Axiom D)"
-            lines.append(f"    {w} -> {{{rendered}}}{marker}")
+            # The world's literals, when a valuation is displayed: w1 (¬P, Q) -> ...
+            lits = f" ({', '.join(world_literals(valuation, w))})" if valuation else ""
+            # A world with no successor: under KD45 that breaks Axiom D (an
+            # error); under K45 it is a legal defunct-belief world -- name each
+            # for what it is instead of always shouting NOT SERIAL.
+            if successors:
+                marker = ""
+            elif frame.axiom_d:
+                marker = "   <- NOT SERIAL (dead end, Axiom D)"
+            else:
+                marker = "   <- defunct (no successors; legal in K45)"
+            lines.append(f"    {w}{lits} -> {{{rendered}}}{marker}")
     return "\n".join(lines)
 
 
@@ -277,6 +359,24 @@ def _dot_escape(value) -> str:
 def _dot_id(value) -> str:
     """Return a safely double-quoted DOT identifier for any world/agent label."""
     return f'"{_dot_escape(value)}"'
+
+
+def _world_label_attr(valuation, world) -> str:
+    """DOT ``label=...`` attribute for a world carrying its valuation literals.
+
+    Returns an empty string when there is nothing to show, so callers can splice
+    the result into an attribute list unconditionally. The literals go on a
+    second line under the world name (the DOT escape ``\\n``), Figure-33 style.
+    Only the label attribute changes -- the node's DOT identifier stays the bare
+    world name, so edges keep pointing at the same node.
+    """
+    if not valuation:
+        return ""
+    literals = world_literals(valuation, world)
+    if not literals:
+        return ""
+    text = _dot_escape(str(world)) + "\\n(" + _dot_escape(", ".join(literals)) + ")"
+    return f'label="{text}"'
 
 
 def _html_escape(value) -> str:
@@ -342,6 +442,7 @@ def _dot_frame(
     omit_self_loops: bool | None,
     undirected_symmetric: bool | None,
     highlight_missing: bool,
+    valuation=None,
 ) -> str:
     """DOT for one frame, one colour per agent (see :func:`to_dot`)."""
     # Style defaults: knowledge (S5) is symmetric and reflexive, so it reads best
@@ -352,24 +453,35 @@ def _dot_frame(
         undirected_symmetric = s5 if undirected_symmetric is None else undirected_symmetric
 
     colors = agent_colors(frame)
-    # Caption shows validity so valid and invalid models are told apart at a glance.
-    violations = frame.kd45_violations()
-    status = "valid KD45" if not violations else f"INVALID: {len(violations)} violation(s)"
+    # Caption shows validity so valid and invalid models are told apart at a
+    # glance -- judged against the frame's DECLARED logic (violations() consults
+    # axiom_d), not blanket KD45: a legal K45 frame must not read as broken.
+    violations = frame.violations()
+    logic = frame.logic_label()
+    status = f"valid {logic}" if not violations else f"INVALID: {len(violations)} violation(s)"
     lines = _dot_header(f"{title} — {status}" if title else status)
 
-    # Worlds that are a dead end for at least one agent (seriality violation).
+    # Worlds that are a dead end for at least one agent. Under KD45 that is a
+    # seriality violation and gets the red error styling; under K45 (axiom_d
+    # off) a dead end is a legal defunct-belief world, so nothing to flag.
     dead_end_worlds: Set = set()
-    if highlight_missing:
+    if highlight_missing and frame.axiom_d:
         for stuck in frame.dead_ends().values():
             dead_end_worlds |= stuck
     for w in sorted(frame.worlds, key=str):
+        # The valuation label rides along with whatever styling the world gets:
+        # attributes are collected and joined, so dead-end highlighting and the
+        # literals never fight over the bracket.
+        attrs = []
+        label = _world_label_attr(valuation, w)
+        if label:
+            attrs.append(label)
         if w in dead_end_worlds:
-            lines.append(
-                f'    {_dot_id(w)} [fillcolor="#FDE7E7", color="{MISSING_COLOR}", '
-                f'style="filled,dashed", penwidth=2];'
-            )
-        else:
-            lines.append(f"    {_dot_id(w)};")
+            attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
+                      'style="filled,dashed"', "penwidth=2"]
+        lines.append(
+            f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
+        )
 
     # One coloured edge per agent -- the colour identifies the agent, so no
     # per-edge labels are needed (the legend below maps colour -> agent).
@@ -416,7 +528,8 @@ def _dot_frame(
 # --------------------------------------------------------------------------- #
 # DOT: knowledge and belief in one figure
 # --------------------------------------------------------------------------- #
-def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None) -> str:
+def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
+                          valuation=None) -> str:
     """DOT for a knowledge+belief model, both relations in one figure.
 
     Knowledge ``R_a`` is drawn as thin, arrow-less lines (S5 is symmetric, so
@@ -429,7 +542,8 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None) -
     status = "valid" if kb.is_valid() else "INVALID"
     lines = _dot_header(f"{title} — {status}" if title else status)
     for w in sorted(kb.worlds, key=str):
-        lines.append(f"    {_dot_id(w)};")
+        label = _world_label_attr(valuation, w)
+        lines.append(f"    {_dot_id(w)}" + (f" [{label}]" if label else "") + ";")
 
     # Knowledge: thin, undirected (symmetric). Belief: bold, directed.
     for a in sorted(kb.agents, key=str):
@@ -591,7 +705,8 @@ def _spring_layout(nodes, edges, iterations: int = 250):
     return {v: (p[0], p[1]) for v, p in pos.items()}
 
 
-def _show_simplicial(model, name, output_dir, title, image_format) -> str:
+def _show_simplicial(model, name, output_dir, title, image_format,
+                     assignment=None) -> str:
     """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
 
     Each facet (a possible world) is drawn as a filled polygon over its nodes -- an
@@ -599,6 +714,11 @@ def _show_simplicial(model, name, output_dir, title, image_format) -> str:
     fill colour encodes which agents' **belief subcomplexes** the facet belongs to
     (the Figure-3 colouring); facets in no belief subcomplex are light grey. Nodes
     are coloured by agent (the shared palette).
+
+    With ``assignment`` (the canonical vertex valuation, L : N -> 3^P), each node
+    additionally shows the literals its perspective observes, under the marker --
+    the thesis's own drawing convention (Figures 5-9: ``a1`` with ``(¬Mb, Mc)``).
+    Value 2 draws nothing: a bare node means "no hard information here".
     """
     import math
 
@@ -644,6 +764,17 @@ def _show_simplicial(model, name, output_dir, title, image_format) -> str:
                    edgecolor="#222", linewidth=1.0, zorder=3)
         ax.annotate(f"{node.agent}", (x, y), color="white", ha="center", va="center",
                     fontsize=8, fontweight="bold", zorder=4)
+        if assignment is not None:
+            # The observed literals sit just below the marker (offset in POINTS,
+            # not data units, so the gap survives any zoom/layout scale). Nodes
+            # whose perspective observes nothing stay bare on purpose.
+            literals = node_literals(assignment, node)
+            if literals:
+                ax.annotate(
+                    "(" + ", ".join(literals) + ")", (x, y),
+                    xytext=(0, -16), textcoords="offset points",
+                    ha="center", va="top", fontsize=7, color="#222222", zorder=4,
+                )
 
     # Legend: agents + belief signatures.
     handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[a],
@@ -710,7 +841,7 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
     return {v: tuple(p) for v, p in pos.items()}
 
 
-def _show_simplicial_3d(model, name, output_dir, title) -> str:
+def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
     """Draw a simplicial belief model as an INTERACTIVE 3-D Plotly figure (HTML).
 
     Facets are drawn as solid simplices, coloured by which agents' **belief
@@ -786,14 +917,31 @@ def _show_simplicial_3d(model, name, output_dir, title) -> str:
                                name="1-skeleton", hoverinfo="skip", showlegend=False))
 
     # Nodes, one trace per agent (coloured, labelled by agent, class on hover).
+    # With an assignment, the visible label becomes "a (¬Mb, Mc)" -- the
+    # perspective's observed literals, thesis style -- and the hover shows the
+    # knowledge class plus the literals, so nothing is lost by rotating away.
     for a in agents:
         ns = [nd for nd in model.nodes if nd.agent == a]
+
+        def _txt(nd) -> str:
+            if assignment is None:
+                return str(a)
+            literals = node_literals(assignment, nd)
+            return f"{a} ({', '.join(literals)})" if literals else str(a)
+
+        def _hover(nd) -> str:
+            cls = ",".join(sorted(map(str, nd.cls)))
+            if assignment is None:
+                return cls
+            literals = node_literals(assignment, nd)
+            return f"{cls} | {', '.join(literals)}" if literals else cls
+
         traces.append(go.Scatter3d(
             x=[pos[nd][0] for nd in ns], y=[pos[nd][1] for nd in ns], z=[pos[nd][2] for nd in ns],
             mode="markers+text",
             marker=dict(size=6, color=colors[a], line=dict(color="#222", width=1)),
-            text=[str(a)] * len(ns), textposition="top center",
-            hovertext=[",".join(sorted(map(str, nd.cls))) for nd in ns], hoverinfo="text",
+            text=[_txt(nd) for nd in ns], textposition="top center",
+            hovertext=[_hover(nd) for nd in ns], hoverinfo="text",
             name=f"agent {a}", legendgroup=f"agent {a}",
         ))
 
