@@ -28,6 +28,6 @@ print(f"{KnowledgeBeliefFrame.is_proper(KBproperframe)}")
 
 Simp = to_simplicial(KBproperframe)
 
-show(Simp, "Simplicial Model")
+hasse.show(Simp, "Simplicial Model")
 
 #Can't get it to visualize hasse diagrams no matter what I try.
