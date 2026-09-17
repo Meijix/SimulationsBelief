@@ -4,7 +4,7 @@ from visualization import preview, show, to_dot, visualize
 from relational_frame import RelationalFrame
 from simplicial import to_simplicial
 from properness import is_proper, non_proper_worlds, explain, to_proper
-from hasse import show
+import hasse
 
 agents = {"a", "b", "c"}
 worlds = {"w1", "w2", "w3"}
@@ -28,6 +28,6 @@ print(f"{KnowledgeBeliefFrame.is_proper(KBproperframe)}")
 
 Simp = to_simplicial(KBproperframe)
 
-hasse.show(Simp, "Simplicial Model")
+hasse.preview(Simp, "Simplicial Model")
 
 #Can't get it to visualize hasse diagrams no matter what I try.
