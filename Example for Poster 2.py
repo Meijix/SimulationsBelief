@@ -10,7 +10,7 @@ import hasse
 #"Distributed Computing Through Combinatorial Topology"). The key idea is that a and b are sending messages containing a bit value back and forth, with a the first messenger being a,
 #followed by b, and so on. When a message fails to be received, the other agent stops. Note that this, too, is proper in its initial description. There's something philosphically
 #interesting about the fact that all real examples are already proper on the first description. If you agree, that makes me happy, because this is an argument I've been having with my advisor
-#Adam Bjorndahl for years (he thinks properness is overly restrictive, I think all real examples are more or less already proper). This is good to ponder!
+#Adam Bjorndahl for literal years (he thinks properness is overly restrictive, I think all real examples are more or less already proper). This is good to ponder!
 
 agents= {"a","b"}
 
