@@ -336,6 +336,57 @@ S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
 
 	It is important to note that the application of an action to an input models a distributed protocol. Indeed, simplicial action models provably define a protocol in the sense of \cite{DCTCT}, \cite{SimpDEL}, and \cite{TopPersp}, as is shown in \cite{TechMemo} and \cite{SimpAct}.
 	
+	\section{Examples}\label{sec:ex}
+	
+	In this section we explore some static examples and show how our code builds them. 
+	
+	\subsection{Example 1}\label{sec:ex1}
+	
+	This example is the main one from \cite{SimpAct} and \cite{TechMemo}. We start with the belief relational model representing the action ``$a$ sends a message to $b$ and $c$ has no idea'' and translate it into a simplicial model. There is no need to make the model proper as the initial relational is already proper to begin with. Note that this is belief, not knowledge, because $c$ always has a (potentially false) belief that the message was not sent.
+	
+	\begin{figure}\begin{center}
+		\includegraphics[scale=.4]{Poster Example 1 Relational Case}\end{center}
+		\caption{A relational model for knowledge and belief with three worlds: ``no message sent'', ``message sent but not received'', and ``message sent and received''. Agent $a$ cannot tell apart the worlds where the message was sent, agent $b$ cannot tell apart the worlds where the message was not received, and $c$ always believes no message was sent.}\label{fgr:RelEx1}
+	\end{figure}
+
+	\begin{figure}\begin{center}
+			\includegraphics[scale=.4]{Poster Example 1 Simplicial Case}\end{center}
+		\caption{The hasse diagram for a simplicial model for knowledge and belief with three facets: ``no message sent'' ($\{a_1,b_1,c_0\}$), ``message sent but not received'' ($\{a_0,b_1,c_0\}$), and ``message sent and received'' ($\{a_0,b_0,c_0\}$).}\label{fgr:SimpEx1}
+	\end{figure}
+	
+	\subsection{Example 2}\label{sec:ex2}
+	
+	This example has a practical application, being the "Alternating Message Passing Protocol" (see page 35 of the \cite{TechMemo}, or page 30 of \cite{DCTCT}). The key idea is that $a$ and $b$ are sending messages containing a bit value back and forth, with a the first messenger being $a$, followed by $b$, and so on. When a message fails to be received, the other agent stops. Note that this, too, is proper in its initial description. There's something philosphically interesting about the fact that most examples with applications seem to be proper without any need for translation. If true, this would seem to motivate properness as a restriction on relational models. See \cite{BelSimp} for some more reflection on this.
+	
+	\begin{figure}\begin{center}
+			\includegraphics[scale=.4]{Poster Example 2 Relational Case}\end{center}
+		\caption{A relational model for knowledge with nine worlds. The $a$ equivalence classes are $\{aRbS1\}$, $\{aRbS0\}$, $\{aS1bR,aS1bnR\}$, $\{aS0bR,aS0bnR\}$,a and $\{anSnRbnSnR,anRbS1,anRbS0\}$. The $b$ equivalence classes are $\{aS1bR\}$, $\{aS0bR\}$, $\{aRbS1,anRbS1\}$, $\{aRbS0,anRbS0\}$, and $\{anSRbnSnR,aS1bnR,aS0bnR\}$}\label{fgr:RelEx2}
+	\end{figure}
+
+\begin{figure}\begin{center}
+		\includegraphics[scale=.4]{Poster Example 2 Simplicial Case}\end{center}
+	\caption{The hasse diagram for a simplicial model for knowledge and belief with nine facets: ``$aRbS0$'' ($\{a_0,b_0\}$), ``$anRbS0$'' ($\{a_4,b_0\}$), ``$anRbS1$'' ($\{a_4,b_1\}$), ``$anSnRbnSnR$'' ($\{a_4,b_3\}$), ``$aRbS1$'' ($\{a_1,b_1\}$), $aS0bnR$ ($\{a_2,b_3\}$), ``$aS0bR$'' ($\{a_2,b_2\}$), ``$aS1bnR$'' ($\{a_3,b_3\}$), and ``$aS1bR$'' ($\{a_3,b_4\}$). Note that the perspectives are significantly simpler than the facets here. For example, $a_0$ is the perspective where $a$ does not receive, $a_4$ where she does, and $b_0$ is the perspective where $b$ sends a $0$. Hence, the facet that $b0\in aRbS0\cap anRbS0$ means that $b$ cannot tell apart whether or not $a$ receives the message after sending a $0$.}\label{fgr:SimpEx2}
+\end{figure}
+	
+	\subsection{Example 3}\label{sec:ex3}
+	
+	This is the main example in \cite{BelSimp}. We start with a knowledge/belief frame that is \textit{not} proper, but a seemingly sensible model of belief. We then make it proper, and turn it into a simplicial complex.
+	
+	\begin{figure}\begin{center}
+			\includegraphics[scale=.6]{Poster Example 3 Improper Relational Case}\end{center}
+		\caption{A relational model for knowledge and belief with three worlds. The knowledge relation is total, while $a$ always considers $w2$ and $w3$ possible via belief, $b$ always only $w2$, and $c$ always only $w3$.}\label{fgr:RelImpEx3}
+	\end{figure}
+
+	\begin{figure}\begin{center}
+			\includegraphics[scale=.35]{Poster Example 3 Proper Relational Case}\end{center}
+		\caption{A relational model for knowledge with nine worlds. This is the output of making Figure \ref{fgr:RelImpEx3} proper, where $a$ is the distinguished agent.}\label{fgr:RelPropEx3}
+	\end{figure}
+
+	\begin{figure}\begin{center}
+			\includegraphics[scale=.2]{Poster Example 3 Simplicial Case}\end{center}
+		\caption{The hasse diagram for a simplicial model for knowledge and belief with nine facets: ``$(w1,w1)$'' ($\{a0,b0,c0\}$), ``$(w3,w1)$'' ($\{a1,b0,c0\}$), ``$(w2,w1)$'' ($\{a2,b0,c0\}$), ``$(w2,w2)$'' ($\{a0,b1,c1\}$), ``$(w2,w2)$'' ($\{a1,b1,c1\}$), ``$(w3,w2)$'' ($\{a2,b1,c1\}$), ``$(w3,w3)$'' ($\{a0,b2,c2\}$), ``$(w2,w3)$'' ($\{a1,b2,c2\}$), and ``$(w1,w3)$'' ($\{a2,b2,c2\}$)}\label{fgr:SimpEx3}
+	\end{figure}
+	
 	\bibliographystyle{plain}	
 	\bibliography{Epistemology} 
 	
