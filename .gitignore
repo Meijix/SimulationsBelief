@@ -18,3 +18,4 @@ outputs/
 
 docs/
 tests/
+*.log
