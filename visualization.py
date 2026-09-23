@@ -384,35 +384,56 @@ def _html_escape(value) -> str:
     return str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _dot_header(caption: str) -> List[str]:
-    """Opening lines of a DOT digraph: layout, caption and default node/edge style."""
+def _dot_header() -> List[str]:
+    """Opening lines of a DOT digraph: layout and default node/edge style.
+
+    The caption and the legend are NOT here: both go into the root graph's
+    bottom label (see :func:`_dot_footer`), so neither takes part in the
+    node layout. A caption on top overlapped the edges that arc above the
+    nodes, and a legend node in ``rank=sink`` sat, with ``rankdir=LR``, in a
+    rank of its own at the far right leaving a wide empty column.
+    """
     return [
         "digraph Model {",
         "    rankdir=LR;",
         '    fontname="Helvetica"; overlap=false; nodesep=0.4; ranksep=0.6;',
-        f'    label="{_dot_escape(caption)}"; labelloc="t"; fontsize=13;',
         '    node [shape=circle, style=filled, fillcolor="#f4f6f8",'
         ' color="#333333", fontname="Helvetica", width=0.5];',
         '    edge [penwidth=1.6, arrowsize=0.8, fontname="Helvetica"];',
     ]
 
 
-def _dot_legend(cells: List[str], anchor) -> List[str]:
-    """A single horizontal legend strip pinned to the bottom of the graph."""
-    if not cells:
-        return []
-    lines = [
-        "    legend [shape=none, margin=0, label=<",
-        '      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="14" CELLPADDING="0"><TR>',
-        *("        " + c for c in cells),
-        "      </TR></TABLE>",
-        "    >];",
-        "    { rank=sink; legend; }",
+def _dot_footer(caption: str, cells: List[str]) -> List[str]:
+    """Caption and legend under the drawing, then close the graph.
+
+    Both are one HTML-like root label at ``labelloc="b"``: first row the
+    caption, second row the legend cells in a single horizontal strip. Being
+    the graph label, it is centred under the drawing whatever the rank
+    direction and never collides with nodes or edges.
+    """
+    rows = [
+        "        <TR><TD COLSPAN=\"99\" ALIGN=\"CENTER\">"
+        f"<FONT POINT-SIZE=\"13\">{_html_escape(caption)}</FONT></TD></TR>",
     ]
-    if anchor is not None:
-        # Invisible edge from a real node pulls the legend to the bottom.
-        lines.append(f"    {_dot_id(anchor)} -> legend [style=invis];")
-    return lines
+    if cells:
+        # Nested table: the legend cells keep their own spacing while the
+        # caption row spans the full width above them.
+        rows += [
+            "        <TR><TD ALIGN=\"CENTER\">",
+            '          <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="14" CELLPADDING="0"><TR>',
+            *("            " + c for c in cells),
+            "          </TR></TABLE>",
+            "        </TD></TR>",
+        ]
+    return [
+        '    labelloc="b"; fontsize=11;',
+        "    label=<",
+        '      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">',
+        *rows,
+        "      </TABLE>",
+        "    >;",
+        "}",
+    ]
 
 
 def _agent_cell(agent, color: str) -> str:
@@ -459,7 +480,8 @@ def _dot_frame(
     violations = frame.violations()
     logic = frame.logic_label()
     status = f"valid {logic}" if not violations else f"INVALID: {len(violations)} violation(s)"
-    lines = _dot_header(f"{title} — {status}" if title else status)
+    caption = f"{title} — {status}" if title else status
+    lines = _dot_header()
 
     # Worlds that are a dead end for at least one agent. Under KD45 that is a
     # seriality violation and gets the red error styling; under K45 (axiom_d
@@ -519,9 +541,7 @@ def _dot_frame(
             cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
         if dead_end_worlds:
             cells.append(_note_cell("&#9711; dead end", MISSING_COLOR))
-        anchor = sorted(frame.worlds, key=str)
-        lines += _dot_legend(cells, anchor[0] if anchor else None)
-    lines.append("}")
+    lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
 
@@ -540,7 +560,8 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
     omit_self_loops = True if omit_self_loops is None else omit_self_loops
     colors = agent_colors(kb)
     status = "valid" if kb.is_valid() else "INVALID"
-    lines = _dot_header(f"{title} — {status}" if title else status)
+    caption = f"{title} — {status}" if title else status
+    lines = _dot_header()
     for w in sorted(kb.worlds, key=str):
         label = _world_label_attr(valuation, w)
         lines.append(f"    {_dot_id(w)}" + (f" [{label}]" if label else "") + ";")
@@ -576,9 +597,7 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
     if cells:
         cells.append(_note_cell("&#9472; knowledge (thin)"))
         cells.append(_note_cell("&#10142; belief (bold)"))
-        anchor = sorted(kb.worlds, key=str)
-        lines += _dot_legend(cells, anchor[0] if anchor else None)
-    lines.append("}")
+    lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
 
@@ -782,16 +801,25 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     for sig, col in sorted(sig_color.items(), key=lambda item: (len(item[0]), item[0])):
         label = "belief: " + ("+".join(map(str, sig)) if sig else "none")
         handles.append(Patch(facecolor=col, alpha=0.5, label=label))
-    ax.legend(handles=handles, loc="upper left", fontsize=8, framealpha=0.9)
+    # Legend strip BELOW the drawing (same page layout as the DOT figures:
+    # drawing / caption / legend), instead of a box inside the axes that
+    # covered part of the complex. Anchored under the axes and wrapped in a
+    # few columns; bbox_inches="tight" below grows the page to fit it.
+    ncol = min(len(handles), 4)
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.06),
+              ncol=ncol, fontsize=8, frameon=False)
 
-    ax.set_title(title, fontsize=12)
+    # Caption under the drawing too (above the legend), like the DOT figures.
+    ax.set_title(title, fontsize=12, y=-0.04, va="top")
     ax.set_axis_off()
     ax.set_aspect("equal")
-    fig.tight_layout()
+    # Margins hug the drawing: the caption/legend live outside the axes and
+    # bbox_inches="tight" (savefig) makes room for them.
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
 
     os.makedirs(output_dir, exist_ok=True)
     image_path = os.path.join(output_dir, f"{os.path.basename(name)}.{image_format}")
-    fig.savefig(image_path, dpi=130, bbox_inches="tight")
+    fig.savefig(image_path, dpi=130, bbox_inches="tight", pad_inches=0.15)
     plt.close(fig)
     return image_path
 

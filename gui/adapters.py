@@ -39,10 +39,24 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from knowledge_belief import KnowledgeBeliefFrame  # noqa: E402
+from assignment import assignment_from_model, nu_violations  # noqa: E402
+from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes  # noqa: E402
+from properness import cheapest_distinguished_agent  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
 from simplicial import to_simplicial  # noqa: E402
-from visualization import show, visualize  # noqa: E402
+from visualization import PALETTE, show, visualize  # noqa: E402
+
+
+def agent_color_map(agents: List[str]) -> Dict[str, str]:
+    """Colour per agent, IDENTICAL to the figures' assignment.
+
+    ``visualization`` colours agents by sorted position over the Okabe-Ito
+    palette; replicating that rule here lets the GUI paint each agent's chip
+    with the same colour his edges have in every figure -- the visual thread
+    that ties editor and output together.
+    """
+    ordered = sorted(agents, key=str)
+    return {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(ordered)}
 
 # All figures go to the same folder the CLI scripts use (git-ignored), but
 # resolved against the repo root so it does not depend on the caller's cwd.
@@ -266,12 +280,20 @@ def parse_relation(
 # Modal operators bind like negation (K_a p & q  ==  (K_a p) & q), which is
 # the convention the thesis uses when dropping parentheses.
 # ---------------------------------------------------------------------------
+# An atom is any alphanumeric name, INCLUDING one that starts with a digit
+# ("1", "42", "3p"): the thesis writes atoms as bare numerals in several
+# examples, and nothing in the grammar competes for a numeral, so there is no
+# reason to reserve leading digits. Requiring a letter first was a bug -- "1"
+# then matched no alternative at all and the tokenizer reported the whole rest
+# of the formula as one unrecognised symbol.
+_ATOM = r"[A-Za-z0-9][A-Za-z0-9_]*"
+
 _TOKEN = re.compile(
     r"\s*(?:"
     r"(?P<modal>[KB]_[A-Za-z0-9]+)"
     r"|(?P<imp>->|→)"
     r"|(?P<sym>[()&|~!¬⊥∧∨])"
-    r"|(?P<name>[A-Za-z][A-Za-z0-9_]*)"
+    r"|(?P<name>" + _ATOM + r")"
     r")"
 )
 
@@ -337,9 +359,23 @@ def parse_formula(text: str, agents: List[str], atoms: List[str]):
         if len(tok) > 2 and tok[0] in "KB" and tok[1] == "_":
             agent = tok[2:]
             if agent not in agents:
-                raise ValueError(
-                    f"'{tok}': el agente '{agent}' no existe (hay: {agents})"
-                )
+                # `[KB]_[A-Za-z0-9]+` is greedy, so "K_a1" swallows the digit and
+                # asks for an agent "a1". Now that atoms may start with a digit
+                # that is genuinely ambiguous, so back off to the longest prefix
+                # that IS a declared agent with a declared atom left over, and
+                # push that atom back into the stream: "K_a1" -> K_a applied to 1.
+                # Longest-first keeps a real agent "a1" winning over "a" + "1".
+                for cut in range(len(agent) - 1, 0, -1):
+                    if agent[:cut] in agents and agent[cut:] in atoms:
+                        tokens.insert(i, agent[cut:])
+                        agent = agent[:cut]
+                        break
+                else:
+                    raise ValueError(
+                        f"'{tok}': el agente '{agent}' no existe (hay: {agents}); "
+                        f"si querías aplicar un modal a un átomo, sepáralos con un "
+                        f"espacio, p. ej. 'K_a 1'"
+                    )
             return (tok[0], agent, parse_unary())
         if tok == "(":
             node = parse_imp()
@@ -348,7 +384,7 @@ def parse_formula(text: str, agents: List[str], atoms: List[str]):
             return node
         if tok in ("bot", "⊥"):
             return ("bot",)
-        if re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", tok):
+        if re.fullmatch(_ATOM, tok):
             if tok not in atoms:
                 raise ValueError(
                     f"el átomo '{tok}' no está declarado (hay: {sorted(atoms)}); "
@@ -370,6 +406,7 @@ def evaluate_formula(
     atoms: Dict[str, List[str]],
     axiom_d: bool,
     text: str,
+    believe_all_when_silent: bool = True,
 ) -> List[Tuple[str, bool]]:
     """Evaluate a formula at EVERY world of the drawn model (Kripke side).
 
@@ -388,7 +425,8 @@ def evaluate_formula(
     formula = parse_formula(text, agents, list(atoms))
     knowledge, belief = seeds_from_editor(agents, worlds, per_agent)
     kb = KnowledgeBeliefFrame.from_partial(
-        agents, worlds, knowledge, belief, axiom_d=axiom_d
+        agents, worlds, knowledge, belief, axiom_d=axiom_d,
+        believe_all_when_silent=believe_all_when_silent,
     )
     valuation = {atom: set(ws) for atom, ws in atoms.items()}
     return [
@@ -446,6 +484,36 @@ def preview_figure(
 
 
 @dataclass
+class StepReport:
+    """What one pipeline step did, in the three terms the user cares about.
+
+    The pipeline is a chain of closures and translations, and every link can
+    (a) succeed, (b) succeed after FILLING IN things the user never drew, or
+    (c) refuse. Reporting only (a)/(c) hides the most confusing case: a model
+    that ran, but not the one the user thought they drew. So each step says:
+
+        completed -- what a closure or a convention added on the user's behalf
+        missing   -- what is still unspecified, and what that silence means
+        failed    -- the conditions that made this step refuse (empty if it ran)
+
+    ``failed`` being non-empty is what stops the pipeline; earlier steps keep
+    their figures, so the user sees how far the translation got.
+    """
+
+    name: str
+    completed: List[str] = field(default_factory=list)
+    missing: List[str] = field(default_factory=list)
+    failed: List[str] = field(default_factory=list)
+
+    @property
+    def status(self) -> str:
+        """'failed', 'completed' (ran but filled things in) or 'ok'."""
+        if self.failed:
+            return "failed"
+        return "completed" if self.completed else "ok"
+
+
+@dataclass
 class PipelineResult:
     """Everything the page needs to display one run, already flattened.
 
@@ -455,12 +523,146 @@ class PipelineResult:
     """
 
     log: List[str] = field(default_factory=list)
+    # The log's numbers in structured form, for the GUI's stat tiles:
+    # (value, label) pairs, e.g. ("9", "mundos · propio"). Same information as
+    # ``log`` -- readable at a glance instead of as prose.
+    stats: List[Tuple[str, str]] = field(default_factory=list)
+    # Qualitative flags as (text, quasar-colour) chips: validity, logic, propriety.
+    badges: List[Tuple[str, str]] = field(default_factory=list)
     # (caption, absolute path to the PNG) in pipeline order.
     figures: List[Tuple[str, Path]] = field(default_factory=list)
     # Interactive 3-D plotly page for the simplicial model (an .html file).
     html_3d: Path | None = None
     # (caption, ASCII diagram) -- the zero-dependency view of each model.
     text_diagrams: List[Tuple[str, str]] = field(default_factory=list)
+    # One report per pipeline step, in order: what was completed, what is
+    # missing, and what failed. The run stopped at the first step with
+    # ``failed`` non-empty.
+    steps: List[StepReport] = field(default_factory=list)
+
+    @property
+    def failed_step(self) -> StepReport | None:
+        """The step that stopped the run, or None if the pipeline completed."""
+        return next((s for s in self.steps if s.failed), None)
+
+
+
+# ---------------------------------------------------------------------------
+# Per-step diagnostics: what got completed, what is missing, what failed.
+# ---------------------------------------------------------------------------
+def _fmt_edges(edges, limit: int = 6) -> str:
+    """Render an edge set compactly, truncated so a message stays readable."""
+    shown = sorted((f"{w}→{u}" for (w, u) in edges))
+    head = ", ".join(shown[:limit])
+    return head + (f" … (+{len(shown) - limit})" if len(shown) > limit else "")
+
+
+def diagnose_general(
+    agents, worlds, knowledge_seed, belief_seed, kb, believe_all_when_silent,
+) -> StepReport:
+    """Report what the closures added to the model the user actually drew.
+
+    Two very different things get filled in here and both surprise people:
+
+        * the S5 closure completes each knowledge relation (a drawn pair forces
+          reflexivity, symmetry and transitivity across the whole class);
+        * a knowledge class with NO belief marked gets the project convention
+          Q = R ("believe exactly what you know") -- or, under K45 with the
+          opt-in, the defunct cluster Q = ∅.
+
+    Neither is an error, but both mean the model that ran is bigger than the
+    drawing, so they are reported as `completed` rather than left silent.
+    """
+    step = StepReport("1 · Modelo general (clausuras)")
+    for agent in sorted(agents, key=str):
+        seeded_k = set(knowledge_seed.get(agent, set()))
+        added_k = set(kb.knowledge.relations[agent]) - seeded_k
+        if added_k:
+            step.completed.append(
+                f"conocimiento de {agent!r}: la clausura S5 agregó "
+                f"{len(added_k)} arista(s) — {_fmt_edges(added_k)}"
+            )
+        # Which knowledge classes had no belief drawn at all.
+        seeded_b = set((belief_seed or {}).get(agent, set()))
+        for cls in knowledge_classes(kb.knowledge, agent):
+            if any(w in cls for (w, _) in seeded_b):
+                continue
+            worlds_txt = "{" + ", ".join(sorted(map(str, cls))) + "}"
+            if believe_all_when_silent:
+                step.completed.append(
+                    f"creencia de {agent!r} en {worlds_txt}: no se marcó ninguna, "
+                    f"se completó con Q = R (cree exactamente lo que sabe)"
+                )
+            else:
+                step.completed.append(
+                    f"creencia de {agent!r} en {worlds_txt}: no se marcó ninguna "
+                    f"y el opt-in K45 está activo, quedó difunta (Q = ∅)"
+                )
+    # Worlds nobody put in a class become singleton classes -- easy to miss.
+    for agent in sorted(agents, key=str):
+        singles = [
+            w for w in sorted(worlds, key=str)
+            if kb.knowledge.successors(agent, w) == {w}
+        ]
+        if singles:
+            step.missing.append(
+                f"{agent!r} distingue {len(singles)} mundo(s) por separado "
+                f"({', '.join(map(str, singles))}): no estaban en ninguna clase "
+                f"dibujada, así que quedaron como clases unitarias"
+            )
+    return step
+
+
+def diagnose_proper(kb, proper) -> StepReport:
+    """Report whether copies were needed, and which agent was skewed and why."""
+    step = StepReport("2 · Modelo propio (copias + sesgo)")
+    if not proper.projection or len(proper.worlds) == len(kb.worlds):
+        step.completed.append(
+            "el modelo ya era propio: no hizo falta copiar nada"
+        )
+        return step
+    copies = len(proper.worlds) // max(len(kb.worlds), 1)
+    cheapest = cheapest_distinguished_agent(
+        kb.knowledge.relations, kb.belief.relations, agents=kb.agents
+    )
+    step.completed.append(
+        f"no era propio: se crearon {copies} copias "
+        f"({len(kb.worlds)} → {len(proper.worlds)} mundos), bisimilares al original"
+    )
+    step.completed.append(
+        f"agente distinguido {cheapest!r}: es el de menos aristas no reflexivas, "
+        f"así cruzan menos aristas entre copias y la figura queda más limpia"
+    )
+    return step
+
+
+def diagnose_simplicial(proper, sm, valuation) -> StepReport:
+    """Report the translation's shape, and where a valuation is not representable."""
+    step = StepReport("3 · Modelo simplicial (mundos → facetas)")
+    step.completed.append(
+        f"cada mundo se volvió una faceta: {len(proper.worlds)} mundos → "
+        f"{len(sm.facets)} facetas, {len(sm.nodes)} nodos"
+    )
+    if not valuation:
+        step.missing.append(
+            "sin átomos declarados: las figuras no etiquetan mundos ni vértices, "
+            "y el evaluador de fórmulas queda deshabilitado"
+        )
+        return step
+    # NU: an atom true at a world that NO perspective observes is not
+    # representable in the vertex-based semantics -- the one real gap here.
+    assignment = assignment_from_model(sm, valuation)
+    gaps = nu_violations(sm, assignment, valuation)
+    for atom, facet in gaps[:6]:
+        world = sm.world_of_facet.get(facet, facet)
+        step.missing.append(
+            f"átomo {atom!r} es verdadero en el mundo {world!r} pero ningún agente "
+            f"lo observa allí: el esquema NU (P → ∨_a B_a P) falla, así que esa "
+            f"verdad no es representable en la semántica por vértices"
+        )
+    if len(gaps) > 6:
+        step.missing.append(f"… y {len(gaps) - 6} fallo(s) de NU más")
+    return step
 
 
 def run_pipeline(
@@ -490,6 +692,7 @@ def run_pipeline_from_seeds(
     belief: Dict[str, Set[Tuple[str, str]]],
     axiom_d: bool,
     atoms: Optional[Dict[str, List[str]]] = None,
+    believe_all_when_silent: bool = True,
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
 
@@ -514,6 +717,11 @@ def run_pipeline_from_seeds(
         knowledge, belief: per-agent edge seeds for ``from_partial``.
         axiom_d: True = KD45 belief, False = K45 (defunct beliefs allowed);
             fixed here once and carried by the model through the pipeline.
+        believe_all_when_silent: what a knowledge class with NO belief marked
+            means. True (the project convention) = "believe exactly what you
+            know", Q = R there. False = the defunct cluster Q = ∅, which only
+            K45 legalises -- so it needs ``axiom_d=False`` as well. Turning off
+            Axiom D alone only PERMITS defunct belief; this is what produces it.
     """
     if not agents or not worlds:
         raise ValueError("se necesita al menos un agente y un mundo")
@@ -522,14 +730,34 @@ def run_pipeline_from_seeds(
     result = PipelineResult()
 
     # -- Step 1: the general model (closures fill in S5 / belief-in-class). --
-    kb = KnowledgeBeliefFrame.from_partial(
-        agents, worlds, knowledge, belief, axiom_d=axiom_d
-    )
+    # Each step is wrapped: a refusal is recorded as the step's `failed` and the
+    # run STOPS there, keeping whatever earlier steps already produced. That is
+    # the point -- the user sees how far the translation got and what blocked it,
+    # instead of an all-or-nothing error.
+    try:
+        kb = KnowledgeBeliefFrame.from_partial(
+            agents, worlds, knowledge, belief, axiom_d=axiom_d,
+            believe_all_when_silent=believe_all_when_silent,
+        )
+    except ValueError as exc:
+        step = StepReport("1 · Modelo general (clausuras)")
+        step.failed.append(str(exc))
+        result.steps.append(step)
+        result.badges.append(("rechazado en el paso 1", "negative"))
+        return result
+    result.steps.append(diagnose_general(
+        agents, worlds, knowledge, belief, kb, believe_all_when_silent
+    ))
     result.log.append(
         f"Modelo general: {len(kb.worlds)} mundos, válido: {kb.is_valid()}, "
         f"propio: {kb.is_proper()}, lógica de creencia: "
         f"{'KD45' if axiom_d else 'K45'}"
     )
+    result.badges.append(
+        ("válido", "positive") if kb.is_valid() else ("inválido", "negative")
+    )
+    result.badges.append(("KD45" if axiom_d else "K45", "primary"))
+    result.stats.append((str(len(kb.worlds)), "mundos · general"))
     result.figures.append((
         "Fig. 1 · modelo general (conocimiento delgado, creencia gruesa)",
         Path(show(kb, "gui_fig1_general", "Modelo general",
@@ -538,10 +766,21 @@ def run_pipeline_from_seeds(
     result.text_diagrams.append(("Modelo general", visualize(kb)))
 
     # -- Step 2: properness (copies + skewed distinguished agent). ----------
-    proper = kb.to_proper()
+    try:
+        proper = kb.to_proper()
+    except ValueError as exc:
+        step = StepReport("2 · Modelo propio (copias + sesgo)")
+        step.failed.append(str(exc))
+        result.steps.append(step)
+        result.badges.append(("rechazado en el paso 2", "negative"))
+        return result
+    result.steps.append(diagnose_proper(kb, proper))
     result.log.append(
         f"to_proper → {len(proper.worlds)} mundos, propio: {proper.is_proper()}"
     )
+    if proper.is_proper():
+        result.badges.append(("propio", "positive"))
+    result.stats.append((str(len(proper.worlds)), "mundos · propio"))
     # The valuation follows the worlds: each copy inherits its original's
     # atoms via the projection ρ (thesis p. 13). An already-proper model comes
     # back with an empty projection, meaning the worlds did not change.
@@ -566,11 +805,25 @@ def run_pipeline_from_seeds(
     result.text_diagrams.append(("Modelo propio", visualize(proper)))
 
     # -- Step 3: the simplicial belief model. --------------------------------
-    sm = to_simplicial(proper)
+    try:
+        sm = to_simplicial(proper)
+    except ValueError as exc:
+        step = StepReport("3 · Modelo simplicial (mundos → facetas)")
+        step.failed.append(str(exc))
+        result.steps.append(step)
+        result.badges.append(("rechazado en el paso 3", "negative"))
+        return result
+    # `lifted`, NOT `valuation`: sm is built from the PROPER model, whose worlds
+    # are copies (w, u). Comparing against the original world names would never
+    # match and NU violations would go silently undetected.
+    result.steps.append(diagnose_simplicial(proper, sm, lifted))
     sizes = ", ".join(f"S_{a}={len(sm.belief_facets[a])}" for a in sorted(sm.agents))
     result.log.append(
         f"to_simplicial → {len(sm.facets)} facetas; subcomplejos de creencia: {sizes}"
     )
+    result.stats.append((str(len(sm.facets)), "facetas"))
+    for a in sorted(sm.agents, key=str):
+        result.stats.append((str(len(sm.belief_facets[a])), f"S_{a}"))
     result.figures.append((
         "Fig. 3 · modelo simplicial de creencia",
         Path(show(sm, "gui_fig3_simplicial", "Modelo simplicial",
