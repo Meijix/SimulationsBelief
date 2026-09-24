@@ -233,7 +233,8 @@ def to_dot(
     """
     kind = _kind(model)
     if kind == "knowledge_belief":
-        return _dot_knowledge_belief(model, title, omit_self_loops, valuation)
+        return _dot_knowledge_belief(model, title, omit_self_loops, valuation,
+                                     undirected_symmetric, highlight_missing)
     if kind == "frame":
         return _dot_frame(
             model, title, omit_self_loops, undirected_symmetric, highlight_missing,
@@ -549,22 +550,66 @@ def _dot_frame(
 # DOT: knowledge and belief in one figure
 # --------------------------------------------------------------------------- #
 def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
-                          valuation=None) -> str:
+                          valuation=None,
+                          undirected_symmetric: bool | None = None,
+                          highlight_missing: bool = True) -> str:
     """DOT for a knowledge+belief model, both relations in one figure.
 
     Knowledge ``R_a`` is drawn as thin, arrow-less lines (S5 is symmetric, so
     indistinguishability has no direction); belief ``Q_a`` as bold, directed arrows
     (what the agent actually believes). Both are coloured by agent. Since
     ``Q_a ⊆ R_a``, each belief arrow sits alongside a knowledge line.
+
+    Both simplifications can be switched off to show the relation AS IT IS
+    (every edge, every direction): ``omit_self_loops=False`` draws the
+    reflexive loops of both relations, ``undirected_symmetric=False`` draws a
+    symmetric knowledge pair as two thin arrows. The GUI exposes this as
+    "show implicit edges", the way to see what the S5/KD45 closures added.
+
+    ``highlight_missing`` (default on) overlays, in red, what an INVALID model
+    is missing -- the same treatment :func:`_dot_frame` gives a single frame,
+    so a half-drawn model in the GUI preview shows what the closures will
+    fill in: the S5 edges knowledge lacks (thin dashed), the KD45 edges belief
+    lacks (bold dashed), belief arrows that leave the knowledge class (bold
+    red: ``Q_a ⊆ R_a`` fails) and, under Axiom D, the worlds where an agent
+    believes nothing (red dashed outline: seriality fails).
     """
     omit_self_loops = True if omit_self_loops is None else omit_self_loops
+    undirected_symmetric = True if undirected_symmetric is None else undirected_symmetric
     colors = agent_colors(kb)
     status = "valid" if kb.is_valid() else "INVALID"
     caption = f"{title} — {status}" if title else status
     lines = _dot_header()
+
+    # What is missing, computed up front so nodes and edges can both use it.
+    # Knowledge is measured against its S5 closure (RelationalFrame.missing_edges
+    # only covers axioms 4/5, and knowledge also needs T: reflexivity), belief
+    # against its own 4/5 closure; dead ends only count when Axiom D applies.
+    missing_k: Dict = {}
+    missing_b: Dict = {}
+    dead_end_worlds: Set = set()
+    if highlight_missing:
+        from relational_frame import s5_closure  # local: avoids an import cycle
+
+        for a in kb.agents:
+            rel = kb.knowledge.relations[a]
+            missing_k[a] = s5_closure(kb.worlds, rel) - set(rel)
+        missing_b = kb.belief.missing_edges()
+        if kb.axiom_d:
+            for stuck in kb.belief.dead_ends().values():
+                dead_end_worlds |= stuck
+
     for w in sorted(kb.worlds, key=str):
+        attrs = []
         label = _world_label_attr(valuation, w)
-        lines.append(f"    {_dot_id(w)}" + (f" [{label}]" if label else "") + ";")
+        if label:
+            attrs.append(label)
+        if w in dead_end_worlds:
+            attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
+                      'style="filled,dashed"', "penwidth=2"]
+        lines.append(
+            f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
+        )
 
     # Knowledge: thin, undirected (symmetric). Belief: bold, directed.
     for a in sorted(kb.agents, key=str):
@@ -574,7 +619,7 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
         for (s, t) in _sorted_edges(relation):
             if omit_self_loops and s == t:
                 continue
-            if s != t and (t, s) in relation:
+            if undirected_symmetric and s != t and (t, s) in relation:
                 key = frozenset((s, t))
                 if key in drawn:
                     continue
@@ -584,19 +629,67 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
                 )
             else:
                 lines.append(f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", penwidth=0.7];')
+    outside_knowledge = False
     for a in sorted(kb.agents, key=str):
         color = colors[a]
         for (s, t) in _sorted_edges(kb.belief.relations[a]):
             if omit_self_loops and s == t:
                 continue
+            # A belief arrow with no knowledge edge underneath breaks Q_a ⊆ R_a:
+            # drawn in red so the offending arrow itself is the diagnosis.
+            if highlight_missing and (s, t) not in kb.knowledge.relations[a]:
+                outside_knowledge = True
+                lines.append(
+                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{MISSING_COLOR}", '
+                    'penwidth=2.6, arrowsize=1.0];'
+                )
+            else:
+                lines.append(
+                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", penwidth=2.6, arrowsize=1.0];'
+                )
+
+    # Overlay of what is missing (dashed red): thin for knowledge, bold for
+    # belief. Knowledge follows the undirected convention of the drawn edges.
+    any_missing = False
+    for a in sorted(kb.agents, key=str):
+        drawn_m: Set[frozenset] = set()
+        for (s, t) in _sorted_edges(missing_k.get(a, ())):
+            if omit_self_loops and s == t:
+                continue
+            any_missing = True
+            if undirected_symmetric and s != t and (t, s) in missing_k[a]:
+                key = frozenset((s, t))
+                if key in drawn_m:
+                    continue
+                drawn_m.add(key)
+                lines.append(
+                    f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, dir=none, '
+                    f'color="{MISSING_COLOR}", penwidth=0.7];'
+                )
+            else:
+                lines.append(
+                    f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
+                    f'color="{MISSING_COLOR}", penwidth=0.7];'
+                )
+        for (s, t) in _sorted_edges(missing_b.get(a, ())):
+            if omit_self_loops and s == t:
+                continue
+            any_missing = True
             lines.append(
-                f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", penwidth=2.6, arrowsize=1.0];'
+                f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
+                f'color="{MISSING_COLOR}", penwidth=2.6, arrowsize=1.0];'
             )
 
     cells = [_agent_cell(a, colors[a]) for a in sorted(kb.agents, key=str)]
     if cells:
         cells.append(_note_cell("&#9472; knowledge (thin)"))
         cells.append(_note_cell("&#10142; belief (bold)"))
+        if any_missing:
+            cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
+        if outside_knowledge:
+            cells.append(_note_cell("&#10142; belief outside knowledge", MISSING_COLOR))
+        if dead_end_worlds:
+            cells.append(_note_cell("&#9711; dead end", MISSING_COLOR))
     lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
@@ -654,6 +747,23 @@ def _open_file(path: str) -> None:
 # --------------------------------------------------------------------------- #
 # Simplicial belief models (facets drawn as filled simplices)
 # --------------------------------------------------------------------------- #
+def facet_name(model, facet) -> str:
+    """Readable name of a facet: the world it came from.
+
+    Under the translation every facet IS a world of the proper model, so the
+    natural name of a facet is that world. Worlds of a proper model are copies
+    ``(w, u)``: rendered as ``(w, u)`` without the quotes ``str`` would add,
+    so the label stays short inside the drawing. An empty string when the
+    model does not record its worlds (hand-built complexes).
+    """
+    world = model.world_of_facet.get(facet) if hasattr(model, "world_of_facet") else None
+    if world is None:
+        return ""
+    if isinstance(world, tuple):
+        return "(" + ", ".join(map(str, world)) + ")"
+    return str(world)
+
+
 def _belief_signature(model, facet, agents):
     """The tuple of agents whose belief subcomplex contains ``facet``."""
     return tuple(a for a in agents if facet in model.belief_facets.get(a, ()))
@@ -724,6 +834,32 @@ def _spring_layout(nodes, edges, iterations: int = 250):
     return {v: (p[0], p[1]) for v, p in pos.items()}
 
 
+def _rotate_to_horizontal(pos):
+    """Rotate a 2-D layout so its principal axis (largest spread) is horizontal.
+
+    Plain PCA on the point cloud: the eigenvector of the covariance matrix with
+    the larger eigenvalue becomes the x axis. Only used for 1-dimensional
+    complexes, whose layouts are essentially a line; rotating a genuinely 2-D
+    drawing would gain nothing.
+    """
+    import math
+
+    pts = list(pos.values())
+    n = len(pts)
+    mx = sum(p[0] for p in pts) / n
+    my = sum(p[1] for p in pts) / n
+    sxx = sum((p[0] - mx) ** 2 for p in pts) / n
+    syy = sum((p[1] - my) ** 2 for p in pts) / n
+    sxy = sum((p[0] - mx) * (p[1] - my) for p in pts) / n
+    # Angle of the principal eigenvector of [[sxx, sxy], [sxy, syy]].
+    theta = 0.5 * math.atan2(2 * sxy, sxx - syy)
+    c, s_ = math.cos(-theta), math.sin(-theta)
+    return {
+        v: ((p[0] - mx) * c - (p[1] - my) * s_, (p[0] - mx) * s_ + (p[1] - my) * c)
+        for v, p in pos.items()
+    }
+
+
 def _show_simplicial(model, name, output_dir, title, image_format,
                      assignment=None) -> str:
     """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
@@ -754,7 +890,40 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     pos = _spring_layout(model.nodes, edge_pairs)
     sig_color = _signature_colors(model, agents)
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    # A 1-dimensional complex (two agents: every facet is an edge) is a graph
+    # whose spring layout comes out as a line or a thin zigzag at some
+    # arbitrary angle -- on the square canvas that meant a 45° diagonal in a
+    # sea of white. Rotate it so its long axis is horizontal, then size the
+    # canvas to the drawing's own aspect ratio (wide and low for a path).
+    one_dimensional = all(len(F) <= 2 for F in model.facets)
+    if one_dimensional and len(pos) > 1:
+        pos = _rotate_to_horizontal(pos)
+    xs = [p[0] for p in pos.values()] or [0.0]
+    ys = [p[1] for p in pos.values()] or [0.0]
+    spread_x = max(xs) - min(xs) or 1.0
+    spread_y = max(ys) - min(ys) or 1.0
+    # Page layout in INCHES, top to bottom: drawing / caption / legend. The
+    # caption and legend get a fixed strip at the bottom of the figure (so
+    # they never overlap the drawing however flat it is) and the drawing gets
+    # the rest. Sizes below are in inches; fractions are derived from them.
+    legend_rows = math.ceil((len(agents) + len(sig_color)) / 4)
+    legend_in = 0.24 * legend_rows + 0.08      # measured: ~0.24in per row at 8pt
+    legend_y0 = 0.06                           # gap under the legend
+    caption_y = legend_y0 + legend_in + 0.06   # caption sits right above it
+    strip_in = caption_y + 0.32                # + the caption's own height
+    if one_dimensional:
+        # Give a flat drawing some height of its own (room for the node
+        # markers and their literal labels) and keep the aspect ratio equal.
+        pad_y = 0.09 * spread_x
+        width = 9.0
+        draw_in = width * (spread_y + 2 * pad_y) / (spread_x * 1.08)
+        height = max(1.6, min(7.0, draw_in)) + strip_in
+    else:
+        width, height = 8.0, 6.4 + strip_in
+    fig, ax = plt.subplots(figsize=(width, height))
+    if one_dimensional:
+        ax.set_xlim(min(xs) - 0.04 * spread_x, max(xs) + 0.04 * spread_x)
+        ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
     # Draw facets (filled), largest first so smaller ones stay visible.
     for facet in sorted(model.facets, key=lambda F: -len(F)):
@@ -770,6 +939,25 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
             ax.add_patch(Polygon(pts, closed=True, facecolor=col, edgecolor=col,
                                  alpha=0.35, linewidth=1.5, zorder=1))
+        # Name the facet by its world at the centroid, so the reader can match
+        # each triangle to a world of the proper model (and to the Hasse
+        # diagram, whose facet boxes carry the same name). White pad behind
+        # the text keeps it legible over the fill and the crossing edges.
+        # (``fname``, not ``name``: ``name`` is this function's output file.)
+        fname = facet_name(model, facet)
+        if fname:
+            cx = sum(p[0] for p in pts) / len(pts)
+            cy = sum(p[1] for p in pts) / len(pts)
+            # On an edge-facet the label rides just above the line; on a
+            # filled facet it sits at the centroid.
+            lift = (0, 9) if len(pts) == 2 else (0, 0)
+            ax.annotate(
+                fname, (cx, cy), xytext=lift, textcoords="offset points",
+                ha="center", va="bottom" if len(pts) == 2 else "center",
+                fontsize=7, color="#222222", zorder=5,
+                bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
+                          edgecolor=col, linewidth=0.8, alpha=0.9),
+            )
 
     # The 1-skeleton, faintly.
     for (u, v) in edge_pairs:
@@ -801,21 +989,22 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     for sig, col in sorted(sig_color.items(), key=lambda item: (len(item[0]), item[0])):
         label = "belief: " + ("+".join(map(str, sig)) if sig else "none")
         handles.append(Patch(facecolor=col, alpha=0.5, label=label))
-    # Legend strip BELOW the drawing (same page layout as the DOT figures:
-    # drawing / caption / legend), instead of a box inside the axes that
-    # covered part of the complex. Anchored under the axes and wrapped in a
-    # few columns; bbox_inches="tight" below grows the page to fit it.
+    # Caption and legend strip BELOW the drawing (same page layout as the DOT
+    # figures: drawing / caption / legend), instead of a legend box inside the
+    # axes that covered part of the complex. Both are placed in FIGURE
+    # coordinates computed from the strip height in inches, so they sit at
+    # the same distance from the drawing whatever the drawing's shape.
     ncol = min(len(handles), 4)
-    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.06),
-              ncol=ncol, fontsize=8, frameon=False)
-
-    # Caption under the drawing too (above the legend), like the DOT figures.
-    ax.set_title(title, fontsize=12, y=-0.04, va="top")
+    fig.legend(handles=handles, loc="lower center",
+               bbox_to_anchor=(0.5, legend_y0 / height), ncol=ncol, fontsize=8,
+               frameon=False)
+    fig.text(0.5, caption_y / height, title, ha="center", va="bottom", fontsize=12)
     ax.set_axis_off()
     ax.set_aspect("equal")
-    # Margins hug the drawing: the caption/legend live outside the axes and
-    # bbox_inches="tight" (savefig) makes room for them.
-    fig.subplots_adjust(left=0.02, right=0.98, top=0.98, bottom=0.02)
+    # The axes take everything above the strip; bbox_inches="tight" (savefig)
+    # then trims the outer white margins.
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.98,
+                        bottom=(strip_in + 0.06) / height)
 
     os.makedirs(output_dir, exist_ok=True)
     image_path = os.path.join(output_dir, f"{os.path.basename(name)}.{image_format}")
@@ -932,6 +1121,19 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
                 name=label, legendgroup=label, showlegend=show_in_legend,
                 hovertext=world, hoverinfo="text",
             ))
+
+    # Facet names at the centroids (one text trace for all of them). The hover
+    # already says the world, but a label survives rotation and screenshots.
+    named = [(F, facet_name(model, F)) for F in model.facets]
+    named = [(F, n) for F, n in named if n]
+    if named:
+        cents = [[sum(pos[nd][k] for nd in F) / len(F) for k in range(3)] for F, _ in named]
+        traces.append(go.Scatter3d(
+            x=[c[0] for c in cents], y=[c[1] for c in cents], z=[c[2] for c in cents],
+            mode="text", text=[n for _, n in named], textposition="middle center",
+            textfont=dict(size=10, color="#222222"),
+            name="facetas", hoverinfo="skip", showlegend=False,
+        ))
 
     # 1-skeleton edges (faint).
     ex, ey, ez = [], [], []
