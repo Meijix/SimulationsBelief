@@ -54,6 +54,73 @@ print(hasse.show(
     output_dir=OUT,
 ))
 
+# --- figura 2g: el complejo simplicial "normal" (dibujo geometrico) ---------
+# Con dos agentes cada faceta es una arista, asi que el complejo es el camino
+# b0 - a0 - b1 - a1 (SR, SnR, nS): visualization.show lo dibuja horizontal,
+# con cada faceta rellena del color de su firma de creencia y nombrada por su
+# mundo. Complementa a la reticula de caras de la figura 2.
+print(visualization.show(
+    Simp, "desastre_geometrico",
+    title="Desastre natural — complejo simplicial",
+    output_dir=OUT,
+))
+
+# --- figuras 1v/2v: los mismos modelos CON la valuacion de C ----------------
+# El ejemplo habla de un atomo, C = "la carretera esta libre", y de como el
+# anuncio de ¬C "simplemente invierte los valores de C". Se generan los dos
+# estados: ANTES (v(C) = {SnR, SR}: en los mundos donde Alice manda C la
+# carretera se reporta libre; en nS no se mando nada, C es falsa) y DESPUES
+# del anuncio ¬C (v(C) = {nS}: los valores invertidos). En cada estado Barb
+# tiene una creencia falsa en SnR: antes cree ¬C siendo C verdadera (solo ve
+# nS, donde no llego nada); despues cree C siendo C falsa.
+from assignment import assignment_from_model, nu_violations
+from semantics import holds_kripke
+
+VALUACIONES = {
+    "antes":   {"C": {"SnR", "SR"}},   # C tal como se mando por radio
+    "despues": {"C": {"nS"}},          # tras el anuncio ¬C: valores invertidos
+}
+FORMULAS = {
+    "C":       ("atom", "C"),
+    "B_b C":   ("B", "b", ("atom", "C")),
+    "B_b ¬C":  ("B", "b", ("not", ("atom", "C"))),
+    "B_a C":   ("B", "a", ("atom", "C")),
+}
+for etapa, val in VALUACIONES.items():
+    print(f"\n== {etapa} del anuncio ¬C: v(C) = {sorted(val['C'])} ==")
+    # Figura relacional: los mundos llevan sus literales (C / ¬C) como
+    # segunda linea de la etiqueta; misma funcion que la figura 1.
+    print(visualization.show(
+        KBframe, f"desastre_{etapa}_relacional",
+        title=f"Desastre natural — {etapa} de ¬C (modelo relacional K+B)",
+        output_dir=OUT, valuation=val,
+    ))
+    # Figura simplicial: la valuacion de mundos induce la asignacion de
+    # vertices (lo que cada perspectiva SABE de C: 1 = C, 0 = ¬C, 2 = nada),
+    # y cada cara del reticulo muestra los literales que sus vertices observan.
+    asg = assignment_from_model(Simp, val)
+    # Dibujo geometrico con la valuacion: cada vertice muestra el literal que
+    # observa (C / ¬C; nada si no sabe), cada faceta su mundo.
+    print(visualization.show(
+        Simp, f"desastre_{etapa}_geometrico",
+        title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
+        output_dir=OUT, valuation=val,
+    ))
+    print(hasse.show(
+        Simp, f"desastre_{etapa}_simplicial",
+        title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
+        output_dir=OUT, assignment=asg,
+    ))
+    # NU: una verdad que ningun agente observa no es representable por
+    # vertices. Aqui no ocurre (Alice siempre sabe el valor de C en su clase).
+    gaps = nu_violations(Simp, asg, val)
+    print("  violaciones NU:", gaps if gaps else "ninguna")
+    # La creencia falsa de Barb, comprobada mundo por mundo.
+    for w in ("nS", "SnR", "SR"):
+        fila = "  ".join(f"{k}={'T' if holds_kripke(KBframe, val, w, f) else 'F'}"
+                         for k, f in FORMULAS.items())
+        print(f"  {w:>4}: {fila}")
+
 # --- figura 3: esquema de la revision de creencias -------------------------
 # Regla especificada en el articulo, aun no implementada: esta figura es un
 # esquema, no la salida del codigo.
