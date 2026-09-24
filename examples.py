@@ -19,7 +19,9 @@ at a single model in the REPL, use ``visualization.preview(model)``.
 import itertools
 import sys
 
+import hasse
 from relational_frame import RelationalFrame, k45_closure, kd45_closure, s5_closure
+from simplicial import to_simplicial
 from visualization import show as _show, visualize
 
 # Run with `--open` to also open each rendered image in your viewer.
@@ -206,6 +208,24 @@ def muddy_children() -> None:
     # which turns the 3-child model into its natural cube.
     path = show(muddy, "muddy_children", "Muddy children · 3 kids · knowledge (S5)")
     print(indent(f"Rendered -> {path}"))
+
+    # The same model as a simplicial complex. It is already proper -- each child
+    # sees the other two, so the three classes of a world meet only in that
+    # world -- and to_simplicial takes an S5 frame directly (belief = knowledge).
+    # Every world becomes a triangle (one vertex per child: "what I see"), and
+    # two worlds that one child cannot tell apart share that child's vertex.
+    simp = to_simplicial(muddy)
+    print(f"Simplicial: {len(simp.facets)} facets, {len(simp.nodes)} vertices")
+    path = show(simp, "muddy_children_simplicial",
+                "Muddy children · simplicial complex")
+    print(indent(f"Rendered -> {path}"))
+
+    # The face lattice (Hasse diagram) of that complex: vertices, edges and
+    # triangles ordered by inclusion, the way the paper draws simplicial models.
+    path = hasse.show(simp, "muddy_children_hasse",
+                      "Muddy children · Hasse diagram", open=_OPEN)
+    print(indent(f"Rendered -> {path}"))
+
 
 
 # --------------------------------------------------------------------------- #
