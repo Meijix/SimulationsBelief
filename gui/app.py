@@ -254,7 +254,7 @@ def _figure_img(path) -> None:
     """
     ui.html(
         f'<img src="{_url(path)}" style="display:block;margin:0 auto;'
-        'max-width:100%;max-height:420px;width:auto;height:auto">'
+        'max-width:100%;max-height:520px;width:auto;height:auto">'
     ).classes("w-full")
 
 
@@ -444,7 +444,28 @@ def index() -> None:
                     if axiom_d_in.value:
                         silent_defunct_in.value = False
 
+                # Cambiar la lógica repinta la vista previa: la lista "por
+                # completar" y los mundos en rojo salen del contrato del
+                # marco (KD45 exige seriedad, K45 no), así que sin repintar
+                # la vista previa seguía juzgando con el axioma anterior.
                 axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
+                axiom_d_in.on_value_change(lambda _: update_preview())
+
+                # Las figuras relacionales omiten lo que la lógica ya implica:
+                # los lazos reflexivos y la segunda flecha de cada par
+                # simétrico (S5 se dibuja sin dirección). Este interruptor
+                # los dibuja todos, tal cual están en la relación: es la
+                # forma de VER lo que las clausuras añadieron. Repinta la
+                # vista previa al instante y, si ya hay resultados, vuelve a
+                # correr el pipeline para que las Figuras 1 y 2 coincidan.
+                explicit_in = ui.switch(
+                    "Mostrar aristas implícitas (lazos y simetría)", value=False,
+                    on_change=lambda _: explicit_changed(),
+                )
+                ui.label(
+                    "Dibuja los lazos reflexivos y ambas direcciones de cada "
+                    "par simétrico en vez de darlos por sobreentendidos."
+                ).classes("text-xs text-grey-5 -mt-2")
 
             # ---- Editor de relaciones por agente --------------------------- #
             editor_box = ui.column().classes("w-full gap-4")
@@ -671,7 +692,7 @@ def index() -> None:
             try:
                 path, violations = preview_figure(
                     state["agents"], state["worlds"], state["per_agent"],
-                    state["atoms"],
+                    state["atoms"], explicit_in.value, axiom_d_in.value,
                 )
             except ValueError as exc:
                 with badge_slot:
@@ -751,8 +772,14 @@ def index() -> None:
         """Estado vacío ilustrado: nunca una columna en blanco sin mensaje."""
         with results, ui.column().classes("w-full items-center py-16 gap-2"):
             ui.icon("account_tree", size="64px").classes("text-grey-9")
-            ui.label("Corre el pipeline para ver las Figuras 1 → 3") \
+            ui.label("Corre el pipeline para ver las Figuras 1 → 4") \
                 .classes("text-grey-5")
+
+    async def explicit_changed() -> None:
+        """Interruptor de aristas implícitas: vista previa ya, pipeline si hubo."""
+        update_preview()
+        if state.get("ran"):
+            await run_clicked()
 
     async def run_clicked() -> None:
         results.clear()
@@ -769,7 +796,7 @@ def index() -> None:
                 run_pipeline_from_seeds,
                 state["agents"], state["worlds"], knowledge, belief,
                 axiom_d_in.value, state["atoms"],
-                not silent_defunct_in.value,
+                not silent_defunct_in.value, explicit_in.value,
             )
         except ValueError as exc:
             # Un ValueError es el núcleo rechazando el modelo (S5/KD45/propiedad).
@@ -817,6 +844,7 @@ def index() -> None:
         finally:
             run_btn.props(remove="loading")
 
+        state["ran"] = True
         results.clear()
         with results:
             # Métricas de la corrida como stat-tiles + chips de estado (los
@@ -886,7 +914,8 @@ def index() -> None:
                         "? lo que sigue sin especificar y qué significa ese silencio"
                     ).classes("text-xs italic text-grey-5 mt-3")
 
-            # Las figuras del pipeline, en orden, como en thesis_example.py.
+            # Las figuras del pipeline, en orden, como en thesis_example.py,
+            # más la Fig. 4 (retículo de caras) que añade adapters.
             for caption, path in out.figures:
                 figure_card(caption, path)
 
@@ -898,10 +927,15 @@ def index() -> None:
                     # La página plotly es clara: va sobre la misma lámina
                     # que las figuras PNG para que no sea un bloque blanco
                     # suelto sobre marino.
+                    # sanitize=False: ui.html sanea el HTML por defecto y
+                    # ELIMINA los <iframe>, con lo que la vista 3D quedaba
+                    # como una tarjeta vacía. El src es un archivo propio
+                    # servido desde outputs/, no contenido externo.
                     ui.html(
                         f'<iframe src="{_url(out.html_3d)}" '
                         'style="width:100%;height:560px;border:none;'
-                        'display:block;border-radius:.375rem"></iframe>'
+                        'display:block;border-radius:.375rem"></iframe>',
+                        sanitize=False,
                     ).classes("w-full fig-frame")
                     ui.label("Arrastra para rotar; rueda para acercar.") \
                         .classes("text-xs italic text-grey-5")

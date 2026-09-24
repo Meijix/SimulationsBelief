@@ -45,6 +45,7 @@ from properness import cheapest_distinguished_agent  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
 from simplicial import to_simplicial  # noqa: E402
 from visualization import PALETTE, show, visualize  # noqa: E402
+import hasse  # noqa: E402  -- retículo de caras (Fig. 4)
 
 
 def agent_color_map(agents: List[str]) -> Dict[str, str]:
@@ -445,13 +446,35 @@ def _valuation_of(atoms: Optional[Dict[str, List[str]]]):
     return valuation or None
 
 
+def edge_style(explicit_edges: bool) -> dict:
+    """``show`` keyword arguments for the GUI's "show implicit edges" switch.
+
+    Off (the default) leaves ``show`` to its inferred style: S5 knowledge is
+    drawn undirected and without reflexive loops, because symmetry and
+    reflexivity are implied by the logic. On, every edge is drawn as it is in
+    the relation: loops on every world and both arrows of a symmetric pair.
+    That is the picture of what the closures actually added, which is what
+    someone checking a model by hand wants to see.
+    """
+    if not explicit_edges:
+        return {}
+    return {"omit_self_loops": False, "undirected_symmetric": False}
+
+
 def preview_figure(
     agents: List[str],
     worlds: List[str],
     per_agent: Dict[str, List[dict]],
     atoms: Optional[Dict[str, List[str]]] = None,
+    explicit_edges: bool = False,
+    axiom_d: bool = True,
 ) -> Tuple[Path, List[str]]:
     """Render the model EXACTLY as drawn -- no closures, no validation gate.
+
+    ``axiom_d`` is the logic the user declared for belief (KD45 on, K45 off)
+    and MUST reach the preview: the violation list and the red dead-end
+    worlds both come from the frame's own contract, so under K45 a world
+    that believes nothing is legal and is neither listed nor painted.
 
     This powers the GUI's live preview: on every edit the user sees the frame
     they have entered SO FAR, before asking for the pipeline. Two deliberate
@@ -476,10 +499,11 @@ def preview_figure(
     """
     knowledge, belief = seeds_from_editor(agents, worlds, per_agent)
     kb = KnowledgeBeliefFrame(
-        agents, worlds, knowledge, belief, validate=False
+        agents, worlds, knowledge, belief, validate=False, axiom_d=axiom_d,
     )
     path = Path(show(kb, "gui_preview", "Modelo tal como se ingresa",
-                     output_dir=str(OUTPUTS), valuation=_valuation_of(atoms)))
+                     output_dir=str(OUTPUTS), valuation=_valuation_of(atoms),
+                     **edge_style(explicit_edges)))
     return path, kb.violations()
 
 
@@ -693,6 +717,7 @@ def run_pipeline_from_seeds(
     axiom_d: bool,
     atoms: Optional[Dict[str, List[str]]] = None,
     believe_all_when_silent: bool = True,
+    explicit_edges: bool = False,
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
 
@@ -717,6 +742,8 @@ def run_pipeline_from_seeds(
         knowledge, belief: per-agent edge seeds for ``from_partial``.
         axiom_d: True = KD45 belief, False = K45 (defunct beliefs allowed);
             fixed here once and carried by the model through the pipeline.
+        explicit_edges: draw reflexive loops and both directions of symmetric
+            pairs in the relational figures (see :func:`edge_style`).
         believe_all_when_silent: what a knowledge class with NO belief marked
             means. True (the project convention) = "believe exactly what you
             know", Q = R there. False = the defunct cluster Q = ∅, which only
@@ -761,7 +788,8 @@ def run_pipeline_from_seeds(
     result.figures.append((
         "Fig. 1 · modelo general (conocimiento delgado, creencia gruesa)",
         Path(show(kb, "gui_fig1_general", "Modelo general",
-                  output_dir=str(OUTPUTS), valuation=valuation)),
+                  output_dir=str(OUTPUTS), valuation=valuation,
+                  **edge_style(explicit_edges))),
     ))
     result.text_diagrams.append(("Modelo general", visualize(kb)))
 
@@ -794,12 +822,12 @@ def run_pipeline_from_seeds(
         "Fig. 2a · modelo propio, conocimiento R_a (S5)",
         Path(show(proper.knowledge, "gui_fig2_knowledge",
                   "Propio · conocimiento R_a", output_dir=str(OUTPUTS),
-                  valuation=lifted)),
+                  valuation=lifted, **edge_style(explicit_edges))),
     ))
     result.figures.append((
         "Fig. 2b · modelo propio, creencia Q_a (KD45)",
         Path(show(proper.belief, "gui_fig2_belief", "Propio · creencia Q_a",
-                  omit_self_loops=True, output_dir=str(OUTPUTS),
+                  omit_self_loops=not explicit_edges, output_dir=str(OUTPUTS),
                   valuation=lifted)),
     ))
     result.text_diagrams.append(("Modelo propio", visualize(proper)))
@@ -833,5 +861,24 @@ def run_pipeline_from_seeds(
                                dim=3, output_dir=str(OUTPUTS),
                                valuation=lifted))
     result.text_diagrams.append(("Modelo simplicial", str(sm)))
+
+    # -- Fig. 4: the face lattice (Hasse diagram) of the complex. -------------
+    # The combinatorial reading of Fig. 3: which simplices exist and which is a
+    # face of which; facet boxes carry the SAME world names Fig. 3 prints at
+    # the centroids, so the two figures can be read together. The empty face
+    # is left out (noise for this purpose). Always the textbook bottom-up
+    # drawing (rankdir=BT): hasse.py suggests columns (LR) for wide middle
+    # rows when the file is viewed on its own, but in the GUI the figure sits
+    # in a wide column with a height cap, so a wide-and-low picture is the one
+    # that stays readable; the LR variant became a tall, unreadable strip.
+    lattice = hasse.face_lattice(sm, include_empty=False, assignment=lifted)
+    result.figures.append((
+        "Fig. 4 · retículo de caras del complejo (diagrama de Hasse): "
+        "una caja por simplejo, una fila por dimensión, y una línea cuando "
+        "uno es cara inmediata del otro",
+        Path(hasse.show(lattice, "gui_fig4_hasse", "Retículo de caras",
+                        output_dir=str(OUTPUTS), rankdir="BT")),
+    ))
+    result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
 
     return result
