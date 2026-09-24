@@ -63,7 +63,7 @@ from __future__ import annotations
 from itertools import product
 from typing import Dict, Hashable, Iterable, List, Set, Tuple
 
-from simplicial import Facet, Node, SimplicialBeliefModel
+from simplicial import Facet, Node, SimplicialBeliefModel, label_facet, label_node
 
 Atom = Hashable
 # L : node -> {atom -> value in {0, 1, 2}}. Missing node or atom means 2.
@@ -118,6 +118,65 @@ def is_consistent_facet(facet: Facet, assignment: Assignment) -> bool:
     return not facet_inconsistencies(facet, assignment)
 
 
+def consistency_violations(
+    model: SimplicialBeliefModel, assignment: Assignment
+) -> List[str]:
+    """Return a message per inconsistent facet of ``model`` under ``assignment``.
+
+    A facet is inconsistent when two of its perspectives observe the SAME atom
+    with opposite values -- ``P`` and ``¬P`` holding together at one facet. Each
+    message names the offending facet, the atom, and the two nodes that clash,
+    so the condition that produced the failure is readable off the error.
+
+    Empty list means every facet is consistent.
+    """
+    problems: List[str] = []
+    for facet in sorted(model.facets, key=label_facet):
+        for atom, node_true, node_false in facet_inconsistencies(facet, assignment):
+            problems.append(
+                f"Facet {label_facet(facet)} is inconsistent on atom {atom!r}: "
+                f"{label_node(node_true)} observes it TRUE (1) while "
+                f"{label_node(node_false)} observes it FALSE (0), so the facet "
+                f"would satisfy both {atom!r} and its negation."
+            )
+    return problems
+
+
+def require_consistent(
+    model: SimplicialBeliefModel, assignment: Assignment
+) -> None:
+    """Raise unless every facet of ``model`` is consistent under ``assignment``.
+
+    Facet consistency (thesis p. 19) is a PRECONDITION of the chapter-3
+    semantics, not an optional check. :func:`holds` reads an atom as true when
+    *some* node of the facet observes 1 and never consults the 0s, precisely
+    because a consistent facet cannot carry both. On an inconsistent facet that
+    shortcut silently returns a verdict the model does not support: ``P`` comes
+    out true while a perspective in the very same facet observes ``¬P``.
+
+    So this refuses rather than answering. Note that :func:`maximal_complex`
+    cannot trip it -- it builds the complex out of consistent facets by
+    construction -- but a model assembled by hand, or paired with an assignment
+    it was not built from, can.
+
+    Raises:
+        ValueError: listing every clash, naming facet, atom and both nodes.
+    """
+    problems = consistency_violations(model, assignment)
+    if not problems:
+        return
+    raise ValueError(
+        f"{len(problems)} facet-consistency violation(s): an atom is observed "
+        f"TRUE by one perspective of a facet and FALSE by another, so that facet "
+        f"would satisfy an atom and its negation at once. The chapter-3 semantics "
+        f"is undefined there, so nothing is evaluated.\n  - "
+        + "\n  - ".join(problems)
+        + "\nFix the assignment (value 2 = 'says nothing' clashes with nothing), "
+        "or build the complex with maximal_complex(), which keeps only the "
+        "consistent facets."
+    )
+
+
 def maximal_complex(
     agents: Iterable[Hashable],
     nodes: Iterable[Node],
@@ -164,6 +223,7 @@ def holds(
     assignment: Assignment,
     facet: Facet,
     formula,
+    check_consistency: bool = True,
 ) -> bool:
     """Decide ``M, facet |= formula`` under the chapter-3 semantics.
 
@@ -171,9 +231,34 @@ def holds(
     atom with value 1 (which validates NU). ``B_a`` quantifies over the facets of
     ``S_a`` sharing ``a``'s node; ``K_a`` (extension) over all facets sharing it.
 
+    Facet consistency is checked FIRST, once, over the whole model -- not just
+    over ``facet``, because the modal clauses evaluate at other facets too. The
+    atomic clause below is only sound on a consistent facet (it reads the 1s and
+    never the 0s), so without the check an inconsistent model answers with a
+    verdict it does not support instead of failing. See :func:`require_consistent`.
+
+    Args:
+        check_consistency: only for the internal recursion, which must not
+            re-validate the model at every node of the formula. Callers that
+            have just validated the pair may pass False; everyone else should
+            leave it True.
+
     Raises:
-        ValueError: On an unknown connective.
+        ValueError: If some facet is inconsistent (``P`` and ``¬P`` together),
+            or on an unknown connective.
     """
+    if check_consistency:
+        require_consistent(model, assignment)
+    return _holds(model, assignment, facet, formula)
+
+
+def _holds(
+    model: SimplicialBeliefModel,
+    assignment: Assignment,
+    facet: Facet,
+    formula,
+) -> bool:
+    """The recursion of :func:`holds`, with consistency already established."""
     tag = formula[0]
     if tag == "atom":
         # THE vertex-based atomic clause (the "lift" applied on the fly): an
@@ -186,28 +271,28 @@ def holds(
     if tag == "bot":
         return False
     if tag == "imp":
-        return (not holds(model, assignment, facet, formula[1])) or holds(
+        return (not _holds(model, assignment, facet, formula[1])) or holds(
             model, assignment, facet, formula[2]
         )
     if tag == "not":
-        return not holds(model, assignment, facet, formula[1])
+        return not _holds(model, assignment, facet, formula[1])
     if tag == "and":
-        return holds(model, assignment, facet, formula[1]) and holds(
+        return _holds(model, assignment, facet, formula[1]) and holds(
             model, assignment, facet, formula[2]
         )
     if tag == "or":
-        return holds(model, assignment, facet, formula[1]) or holds(
+        return _holds(model, assignment, facet, formula[1]) or holds(
             model, assignment, facet, formula[2]
         )
     if tag == "B":
         return all(
-            holds(model, assignment, Y, formula[2])
+            _holds(model, assignment, Y, formula[2])
             for Y in model.believes_facets(formula[1], facet)
         )
     if tag == "K":  # extension beyond L_B: all of S sharing the agent's node
         p = model.pi(formula[1], facet)
         return all(
-            holds(model, assignment, Y, formula[2])
+            _holds(model, assignment, Y, formula[2])
             for Y in model.facets
             if model.pi(formula[1], Y) == p
         )
@@ -291,7 +376,17 @@ def lift_to_facets(
 
     Returns:
         ``atom -> set of facets`` covering every atom the assignment mentions.
+
+    Raises:
+        ValueError: If some facet is inconsistent. The lift reads only the 1s,
+            so on an inconsistent facet it would quietly report the atom as
+            holding while a vertex of that same facet observes its negation --
+            and the chapter-2 valuation it produces cannot express the clash
+            at all (a facet is either in ``L'(P)`` or not). Failing here keeps
+            the inconsistency from being laundered into a well-formed-looking
+            facet valuation.
     """
+    require_consistent(model, assignment)
     # Collect the atoms actually mentioned; unmentioned atoms are value 2 at
     # every node, so their lift would be the empty set -- omitting them keeps
     # the result as partial as the input (and holds() treats both the same).
@@ -322,11 +417,12 @@ def nu_violations(
     schema ``P → ∨_a B_a P`` for that valuation. An empty result means the
     valuation is faithfully representable in the chapter-3 semantics.
     """
+    require_consistent(model, assignment)  # once, not per (atom, facet) pair
     out: List[Tuple[Atom, Facet]] = []
     for atom, true_worlds in valuation.items():
         true_set = set(true_worlds)
         for facet, world in model.world_of_facet.items():
-            facet_truth = holds(model, assignment, facet, ("atom", atom))
+            facet_truth = _holds(model, assignment, facet, ("atom", atom))
             if facet_truth != (world in true_set):
                 out.append((atom, facet))
     return out
