@@ -90,6 +90,7 @@ from visualization import (
     _open_file,
     _signature_colors,
     _write_and_run_dot,
+    node_literals,
 )
 
 __all__ = [
@@ -131,6 +132,30 @@ def _vertex_label(vertex: Vertex) -> str:
         members = ",".join(sorted(map(str, vertex.cls)))
         return f"{vertex.agent}:{{{members}}}"
     return str(vertex)
+
+
+def _face_literals(assignment, face: Face) -> List[str]:
+    """The hard information a face carries: the union of its vertices' literals.
+
+    Why the union is the right reading. In the vertex-based semantics (thesis
+    ch. 3, ``assignment.py``) each vertex is a perspective observing some literals
+    (value 1 -> ``P``, 0 -> ``¬P``, 2 -> nothing). A face is a set of perspectives
+    that hold *simultaneously*, so the information available at the face is
+    everything its perspectives observe, combined. Climbing the Hasse diagram one
+    level therefore ACCUMULATES literals: a vertex shows one agent's observations,
+    an edge what two agents jointly settle, and a facet -- via exactly this union
+    -- the lift that defines atomic truth at the world (``X ⊨ P`` iff some vertex
+    of ``X`` carries ``P``). The lattice becomes an *information lattice*.
+
+    Consistency is not re-checked here on purpose: for a consistent facet the
+    union can never contain both ``P`` and ``¬P``, and for an INCONSISTENT one it
+    will show both -- which is precisely the diagnostic you want visible in a
+    drawing rather than silently resolved.
+    """
+    literals: set[str] = set()
+    for vertex in face:
+        literals.update(node_literals(assignment, vertex))
+    return sorted(literals)
 
 
 def _face_sort_key(face: Face) -> Tuple[int, Tuple[str, ...]]:
@@ -305,25 +330,29 @@ class FaceLattice:
 # Building a lattice from any accepted input
 # --------------------------------------------------------------------------- #
 def face_lattice(complex_like, *, include_empty: bool = True,
-                 compact: bool = True) -> FaceLattice:
+                 compact: bool = True, assignment=None) -> FaceLattice:
     """Coerce anything that describes a complex into a :class:`FaceLattice`.
 
-    Accepts a :class:`FaceLattice` (returned unchanged), a
+    Accepts a :class:`FaceLattice` (returned unchanged -- an ``assignment`` given
+    here is ignored, the lattice's labels were already built), a
     :class:`simplicial.SimplicialBeliefModel` (recognised by duck typing, so this
     module keeps no import of the model layer), or an iterable of maximal
-    simplices.
+    simplices. ``assignment`` is the vertex valuation ``L : N -> 3^P`` of the
+    canonical chapter-3 semantics; it only applies on the model path, where the
+    vertices are perspectives.
     """
     if isinstance(complex_like, FaceLattice):
         return complex_like
     if hasattr(complex_like, "facets") and hasattr(complex_like, "agents"):
         return from_simplicial_model(
-            complex_like, include_empty=include_empty, compact=compact
+            complex_like, include_empty=include_empty, compact=compact,
+            assignment=assignment,
         )
     return FaceLattice(complex_like, include_empty=include_empty)
 
 
 def from_simplicial_model(model, *, include_empty: bool = True,
-                          compact: bool = True) -> FaceLattice:
+                          compact: bool = True, assignment=None) -> FaceLattice:
     """Build the face lattice of a :class:`simplicial.SimplicialBeliefModel`.
 
     The facets of the model *are* the maximal simplices, so the lattice itself is
@@ -348,6 +377,14 @@ def from_simplicial_model(model, *, include_empty: bool = True,
             are unreadable in a box; the full text is kept as the node's Graphviz
             **tooltip**, which SVG output shows on hover. Pass ``compact=False`` to
             print the classes in the boxes.
+        assignment: The vertex valuation ``L : N -> 3^P`` (thesis ch. 3,
+            ``assignment.py``). Every face then carries an extra label line with
+            the literals its perspectives jointly observe (see
+            :func:`_face_literals`): a vertex shows one agent's observations, and
+            each level up accumulates them, so the diagram reads as an
+            *information lattice* -- at the top, a facet's line is exactly the
+            lifted atomic truth of its world. Value 2 (unknown) prints nothing,
+            so a bare face means "no hard information here yet".
     """
     agents = sorted(model.agents, key=str)
     agent_color = {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(agents)}
@@ -389,6 +426,16 @@ def from_simplicial_model(model, *, include_empty: bool = True,
             colour = agent_color[nodes[0].agent]
             lattice.fills[face] = colour + "33"
             lattice.outlines[face] = colour
+        if assignment is not None:
+            # The information line: what this face's perspectives jointly
+            # observe. Added LAST so it always sits under the face's name --
+            # vertices read "a0 / (¬Mb, Mc)", facets "w1 / a0 b1 c0 / (Ma, Mc)".
+            # An empty union adds no line: silence (value 2) stays silent, the
+            # thesis's own drawing convention.
+            literals = _face_literals(assignment, face)
+            if literals:
+                rows.append("(" + ", ".join(literals) + ")")
+                lattice.tooltips[face] += " | " + ", ".join(literals)
         lattice.labels[face] = "\n".join(rows)
 
     lattice.legend_cells = [
@@ -431,6 +478,7 @@ def to_dot(
     rankdir: str = "BT",
     dimension_axis: bool = True,
     legend: bool = True,
+    assignment=None,
 ) -> str:
     """Return Graphviz DOT source for the Hasse diagram of a complex.
 
@@ -439,6 +487,9 @@ def to_dot(
 
     Args:
         title: Caption above the diagram (defaults to a short description).
+        assignment: Vertex valuation ``L : N -> 3^P`` to display -- each face gets
+            a line with the literals its perspectives jointly observe (simplicial
+            models only; see :func:`from_simplicial_model`).
         include_empty: Draw the empty face at the bottom. ``None`` keeps whatever
             the lattice was built with.
         max_dimension: Draw only faces up to this dimension -- the ``k``-skeleton.
@@ -451,7 +502,7 @@ def to_dot(
         dimension_axis: Draw the "dim k" column on the left labelling each row.
         legend: Draw the colour legend (only present for simplicial models).
     """
-    lattice = face_lattice(complex_like)
+    lattice = face_lattice(complex_like, assignment=assignment)
 
     # Which faces to draw. Filtering happens here, not in the lattice, so the same
     # lattice object can be drawn at several depths without being rebuilt.
@@ -491,7 +542,6 @@ def to_dot(
         # same ranks out as columns for lattices that are too wide to read flat.
         f"    rankdir={rankdir};",
         '    fontname="Helvetica"; nodesep=0.30; ranksep=0.55; splines=true;',
-        f'    label="{_dot_escape(caption)}"; labelloc="t"; fontsize=13;',
         '    node [shape=box, style="rounded,filled", fontname="Helvetica",'
         f' fontsize=10, margin="0.09,0.05", fillcolor="{FILL_DEFAULT}",'
         f' color="{LINE_DEFAULT}", penwidth=1.1];',
@@ -499,9 +549,28 @@ def to_dot(
         # arrowhead would be redundant clutter. The edges are still *directed* for
         # the layout engine -- that is what pins each face above its own faces.
         '    edge [dir=none, color="#8a8a8a", penwidth=1.0];',
-        "",
-        "    // Faces: one box each, thicker outline for the maximal ones (facets).",
     ]
+
+    # The "dim k" axis labels are declared BEFORE the faces: dot orders the
+    # nodes of a rank by first appearance, so declaring them first puts the
+    # axis at the left edge (top edge for rankdir=LR) instead of dangling at
+    # the far right past the last box, which left a wide empty strip.
+    axis_ids: List[str] = []
+    if dimension_axis:
+        lines += ["", "    // Dimension axis, one label per row."]
+        for dim in sorted(rows):
+            axis = f'"dim{dim}"'
+            axis_ids.append(axis)
+            lines.append(
+                f'    {axis} [shape=plaintext, style="", label="dim {dim}",'
+                ' fontcolor="#888888", fontsize=10];'
+            )
+        if len(axis_ids) > 1:
+            # Invisible chain keeps the labels lined up in a single column
+            # (row for rankdir=LR) instead of floating into an arbitrary spot.
+            lines.append("    " + " -> ".join(axis_ids) + " [style=invis];")
+
+    lines += ["", "    // Faces: one box each, thicker outline for the maximal ones (facets)."]
 
     for face in faces:
         attrs = [f'label="{_dot_label(lattice.label(face))}"']
@@ -527,37 +596,40 @@ def to_dot(
     # covering edges go up exactly one step), but saying it explicitly guarantees
     # the rows even when a dimension is filtered out or a face is isolated.
     lines += ["", "    // One row per dimension."]
-    axis_ids: List[str] = []
     for dim in sorted(rows):
         members = " ".join(ids[f] + ";" for f in rows[dim])
         if dimension_axis:
-            axis = f'"dim{dim}"'
-            axis_ids.append(axis)
-            lines.append(
-                f'    {axis} [shape=plaintext, style="", label="dim {dim}",'
-                ' fontcolor="#888888", fontsize=10];'
-            )
-            members = f"{axis}; " + members
+            members = f'"dim{dim}"; ' + members
         lines.append(f"    {{ rank=same; {members} }}")
 
-    if dimension_axis and len(axis_ids) > 1:
-        # Invisible chain keeps the "dim k" labels lined up in a single column
-        # (row for rankdir=LR) instead of floating into an arbitrary spot.
-        lines.append("    " + " -> ".join(axis_ids) + " [style=invis];")
-
+    # Caption and legend go UNDER the drawing as the graph's own label, in one
+    # HTML-like table (caption row, then the legend strip). Neither is a node,
+    # so they take no rank: the old legend node in ``rank=min`` sat beside the
+    # vertex row (at the far right with rankdir=BT) and stretched the picture
+    # with empty space; a caption on top competed with the top row of boxes.
+    rows_html = [
+        '        <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="13">'
+        f"{_html_escape(caption)}</FONT></TD></TR>",
+    ]
     if legend and lattice.legend_cells:
-        lines += [
-            "",
-            "    // Legend, pinned to the lowest rank (the bottom of the drawing).",
-            "    legend [shape=none, margin=0, style=\"\", label=<",
-            '      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="0"><TR>',
-            *("        " + cell for cell in lattice.legend_cells),
-            "      </TR></TABLE>",
-            "    >];",
-            "    { rank=min; legend; }",
+        rows_html += [
+            '        <TR><TD ALIGN="CENTER">',
+            '          <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="0"><TR>',
+            *("            " + cell for cell in lattice.legend_cells),
+            "          </TR></TABLE>",
+            "        </TD></TR>",
         ]
-
-    lines.append("}")
+    lines += [
+        "",
+        "    // Caption + legend, centred under the drawing.",
+        '    labelloc="b"; fontsize=11;',
+        "    label=<",
+        '      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">',
+        *rows_html,
+        "      </TABLE>",
+        "    >;",
+        "}",
+    ]
     return "\n".join(lines)
 
 
@@ -577,6 +649,7 @@ def show(
     rankdir: str = "BT",
     dimension_axis: bool = True,
     legend: bool = True,
+    assignment=None,
 ) -> str:
     """Draw the Hasse diagram to ``<output_dir>/<name>.<image_format>`` and return the path.
 
@@ -596,6 +669,7 @@ def show(
         rankdir=rankdir,
         dimension_axis=dimension_axis,
         legend=legend,
+        assignment=assignment,
     )
     path = _write_and_run_dot(source, name, image_format, output_dir)
     if open:
@@ -665,6 +739,7 @@ def _demo() -> None:
         },
     )
     model = to_simplicial(kb.to_proper())
+    
     lattice = face_lattice(model, include_empty=False)
     print(visualize(lattice))
     # 39 faces with 21 of them on the middle row: flat as "BT", so lay the
