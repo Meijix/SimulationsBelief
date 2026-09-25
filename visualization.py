@@ -103,6 +103,7 @@ def show(
     highlight_missing: bool = True,
     valuation=None,
     assignment=None,
+    logic: str | None = None,
 ) -> str:
     """Draw any model to a file and return the path. The one function to call.
 
@@ -128,6 +129,11 @@ def show(
             viewers; pass ``open=True`` for an interactive one-off.
         output_dir: Directory for generated files (default :data:`OUTPUT_DIR`).
         image_format: Any format ``dot``/matplotlib supports (``png``, ``svg``, ...).
+        logic: Relational frames only. ``"S5"`` says the frame is MEANT as
+            knowledge even if it is not one yet (a half-drawn preview): the
+            style is the knowledge style and what is missing is measured
+            against the S5 closure (reflexivity and symmetry included) instead
+            of the frame's KD45/K45 contract. ``None`` (default) infers.
         omit_self_loops: Hide reflexive edges. Default: inferred (hidden for S5).
         undirected_symmetric: Draw a symmetric pair as one arrow-less edge.
             Default: inferred (on for S5, whose relations are symmetric).
@@ -185,6 +191,7 @@ def show(
             undirected_symmetric=undirected_symmetric,
             highlight_missing=highlight_missing,
             valuation=valuation,
+            logic=logic,
         )
         path = _write_and_run_dot(dot_source, name, image_format, output_dir)
     if open:
@@ -222,6 +229,7 @@ def to_dot(
     undirected_symmetric: bool | None = None,
     highlight_missing: bool = True,
     valuation=None,
+    logic: str | None = None,
 ) -> str:
     """Return Graphviz DOT source for a relational or knowledge+belief model.
 
@@ -238,7 +246,7 @@ def to_dot(
     if kind == "frame":
         return _dot_frame(
             model, title, omit_self_loops, undirected_symmetric, highlight_missing,
-            valuation,
+            valuation, logic=logic,
         )
     raise TypeError("Simplicial models have no DOT form; use show(model, name).")
 
@@ -465,12 +473,21 @@ def _dot_frame(
     undirected_symmetric: bool | None,
     highlight_missing: bool,
     valuation=None,
+    logic: str | None = None,
 ) -> str:
-    """DOT for one frame, one colour per agent (see :func:`to_dot`)."""
+    """DOT for one frame, one colour per agent (see :func:`to_dot`).
+
+    ``logic="S5"`` declares the frame as KNOWLEDGE regardless of its current
+    shape: the knowledge style applies, validity is judged as an equivalence
+    relation, and the red overlay shows what the S5 closure would add. Without
+    it, an incomplete knowledge frame would be judged (and completed) as a
+    KD45 belief frame -- wrong loops, wrong verdict.
+    """
+    as_knowledge = logic == "S5"
     # Style defaults: knowledge (S5) is symmetric and reflexive, so it reads best
     # as undirected edges with the assumed self-loops hidden; belief keeps arrows.
     if omit_self_loops is None or undirected_symmetric is None:
-        s5 = _is_s5(frame)
+        s5 = as_knowledge or _is_s5(frame)
         omit_self_loops = s5 if omit_self_loops is None else omit_self_loops
         undirected_symmetric = s5 if undirected_symmetric is None else undirected_symmetric
 
@@ -478,9 +495,19 @@ def _dot_frame(
     # Caption shows validity so valid and invalid models are told apart at a
     # glance -- judged against the frame's DECLARED logic (violations() consults
     # axiom_d), not blanket KD45: a legal K45 frame must not read as broken.
-    violations = frame.violations()
-    logic = frame.logic_label()
-    status = f"valid {logic}" if not violations else f"INVALID: {len(violations)} violation(s)"
+    if as_knowledge:
+        from properness import equivalence_violations  # local: no import cycle
+        from relational_frame import s5_closure
+
+        violations = equivalence_violations(frame)
+        logic_name = "S5"
+        missing = {a: s5_closure(frame.worlds, frame.relations[a]) - set(frame.relations[a])
+                   for a in frame.agents}
+    else:
+        violations = frame.violations()
+        logic_name = frame.logic_label()
+        missing = frame.missing_edges()
+    status = f"valid {logic_name}" if not violations else f"INVALID: {len(violations)} violation(s)"
     caption = f"{title} — {status}" if title else status
     lines = _dot_header()
 
@@ -488,7 +515,7 @@ def _dot_frame(
     # seriality violation and gets the red error styling; under K45 (axiom_d
     # off) a dead end is a legal defunct-belief world, so nothing to flag.
     dead_end_worlds: Set = set()
-    if highlight_missing and frame.axiom_d:
+    if highlight_missing and frame.axiom_d and not as_knowledge:
         for stuck in frame.dead_ends().values():
             dead_end_worlds |= stuck
     for w in sorted(frame.worlds, key=str):
@@ -528,9 +555,26 @@ def _dot_frame(
                 lines.append(f'    {_dot_id(source)} -> {_dot_id(target)} [color="{color}"];')
 
     # Overlay the edges that are required but missing (dashed red, no label).
+    # Follows the drawing's own conventions: loops are skipped when loops are
+    # hidden, and a missing symmetric pair is one dashed line when pairs are
+    # drawn undirected -- otherwise the overlay would show what the drawing
+    # deliberately abbreviates.
     if highlight_missing:
         for a in sorted(frame.agents, key=str):
-            for (source, target) in _sorted_edges(frame.missing_edges()[a]):
+            drawn_missing: Set[frozenset] = set()
+            for (source, target) in _sorted_edges(missing[a]):
+                if omit_self_loops and source == target:
+                    continue
+                if undirected_symmetric and source != target and (target, source) in missing[a]:
+                    key = frozenset((source, target))
+                    if key in drawn_missing:
+                        continue
+                    drawn_missing.add(key)
+                    lines.append(
+                        f'    {_dot_id(source)} -> {_dot_id(target)} '
+                        f'[style=dashed, dir=none, color="{MISSING_COLOR}"];'
+                    )
+                    continue
                 lines.append(
                     f'    {_dot_id(source)} -> {_dot_id(target)} '
                     f'[style=dashed, color="{MISSING_COLOR}"];'
@@ -538,7 +582,7 @@ def _dot_frame(
 
     cells = [_agent_cell(a, colors[a]) for a in sorted(frame.agents, key=str)]
     if cells:
-        if highlight_missing and any(frame.missing_edges().values()):
+        if highlight_missing and any(missing.values()):
             cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
         if dead_end_worlds:
             cells.append(_note_cell("&#9711; dead end", MISSING_COLOR))
