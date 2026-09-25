@@ -77,7 +77,7 @@ Depends only on ``relational_frame``.
 """
 
 from __future__ import annotations
-from typing import Dict, List, Optional, Set
+from typing import Dict, Iterable, List, Optional, Set
 from relational_frame import Agent, Edge, RelationalFrame, World
 
 
@@ -355,6 +355,66 @@ class ProperRelationalFrame(RelationalFrame):
         return properness_violations(self)
 
 
+def skew_cost(relations: Dict[Agent, Set[Edge]], agent: Agent) -> int:
+    """How many edges :func:`copy_and_skew` will route ACROSS copies for ``agent``.
+
+    The distinguished agent's edge ``w -> w2`` becomes ``(w, u) -> (w2, u2)`` with
+    ``g(u2) = g(u) - g(w) + g(w2) (mod |W|)``, so ``u2 == u`` exactly when
+    ``w2 == w``. Reflexive edges therefore stay INSIDE a copy and every other edge
+    jumps between copies -- once per copy, i.e. ``|W|`` times each.
+
+    So the cross-copy edge count is ``(non-reflexive edges) * |W|``, and since
+    ``|W|`` is the same whoever is distinguished, the non-reflexive count alone
+    ranks the candidates. Those jumps are the long lines that span the whole
+    drawing; every other agent's edges stay local. Minimising this is what makes
+    the proper diagram readable -- see :func:`cheapest_distinguished_agent`.
+
+    Args:
+        relations: ``agent -> edge set``. Pass several families' worth summed by
+            the caller when more than one relation gets skewed (knowledge AND
+            belief, in :meth:`knowledge_belief.KnowledgeBeliefFrame.to_proper`).
+        agent: The candidate distinguished agent.
+
+    Returns:
+        The number of non-reflexive edges ``agent`` owns.
+    """
+    return sum(1 for (w, u) in relations.get(agent, ()) if w != u)
+
+
+def cheapest_distinguished_agent(
+    *families: Dict[Agent, Set[Edge]],
+    agents: Iterable[Agent],
+) -> Agent:
+    """Pick the distinguished agent that keeps the proper diagram cleanest.
+
+    Every agent produces a proper model of the same size -- ``|W|`` copies of
+    ``|W|`` worlds, with the same total edge count -- so the choice is purely
+    about READABILITY: the distinguished agent is the only one whose edges cross
+    between copies, and those crossings are what turn the picture into a hairball.
+    Picking the agent with the fewest non-reflexive edges minimises them.
+
+    All families that will be skewed with the SAME distinguished agent must be
+    passed together, because the cost is their sum. Counting only one of them was
+    a real bug: with complete knowledge every agent ties on ``|R_a|``, the tie
+    broke alphabetically, and the alphabetically-first agent could easily be the
+    one with the *most* belief edges -- the worst choice available.
+
+    Ties break on the sorted agent name, so the result is deterministic.
+
+    Args:
+        *families: one or more ``agent -> edge set`` mappings that get skewed.
+        agents: The candidates to choose among.
+
+    Returns:
+        The agent minimising the total cross-copy cost.
+    """
+    candidates = sorted(agents, key=str)
+    return min(
+        candidates,
+        key=lambda a: sum(skew_cost(family, a) for family in families),
+    )
+
+
 def to_proper(
     frame: RelationalFrame,
     distinguished_agent: Optional[Agent] = None,
@@ -373,6 +433,9 @@ def to_proper(
         frame: A knowledge (S5) frame -- the equivalence relations that properness
             is about; the construction preserves its axioms.
         distinguished_agent: The agent whose relation is skewed. Defaults to the
+            one with the fewest non-reflexive edges, which minimises the edges
+            that cross between copies and so keeps the drawing readable
+            (:func:`cheapest_distinguished_agent`); any agent is equally
             agent with the FEWEST edges (ties broken by name). Any agent works, and
             the size of the result never depends on the choice -- always ``|W|^2``
             worlds, and every original edge yields exactly ``|W|`` copies whether
@@ -419,7 +482,7 @@ def to_proper(
     distinguished = (
         distinguished_agent
         if distinguished_agent is not None
-        else min(sorted(frame.agents, key=str), key=lambda a: len(frame.relations[a]))
+        else cheapest_distinguished_agent(frame.relations, agents=frame.agents)
     )
     if distinguished not in frame.agents:
         raise ValueError(
