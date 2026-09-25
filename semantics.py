@@ -112,16 +112,20 @@ def holds_kripke(model, valuation: Valuation, world: World, formula) -> bool:
         )
         return all(holds_kripke(model, valuation, u, formula[2]) for u in successors)
     if tag == "B":
-        if not isinstance(model, KnowledgeBeliefFrame):
+        if isinstance(model, KnowledgeBeliefFrame):
+            successors = model.believes(formula[1], world)
+        elif model.logic_label() == "S5":
             raise ValueError(
-                "B_a needs a belief relation, but this is a plain RelationalFrame "
-                "(knowledge only). Use a KnowledgeBeliefFrame, or express the "
-                "formula with K_a."
+                "B_a needs a belief relation, but this RelationalFrame is a "
+                "knowledge (S5) frame. Express the formula with K_a, or use a "
+                "KnowledgeBeliefFrame."
             )
-        return all(
-            holds_kripke(model, valuation, u, formula[2])
-            for u in model.believes(formula[1], world)
-        )
+        else:
+            # A plain KD45/K45 frame IS a belief relation (a pure-belief
+            # model): B_a quantifies over its successors, exactly as K_a does
+            # over a pure-knowledge frame.
+            successors = model.successors(formula[1], world)
+        return all(holds_kripke(model, valuation, u, formula[2]) for u in successors)
     raise ValueError(f"Unknown connective {tag!r} in formula {formula!r}.")
 
 
