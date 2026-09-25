@@ -41,7 +41,13 @@ if str(ROOT) not in sys.path:
 
 from assignment import assignment_from_model, nu_violations  # noqa: E402
 from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes  # noqa: E402
-from properness import cheapest_distinguished_agent  # noqa: E402
+from properness import (  # noqa: E402
+    cheapest_distinguished_agent,
+    equivalence_violations,
+    is_proper as frame_is_proper,
+    to_proper as frame_to_proper,
+)
+from relational_frame import RelationalFrame  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
 from simplicial import to_simplicial  # noqa: E402
 from visualization import PALETTE, show, visualize  # noqa: E402
@@ -103,6 +109,29 @@ DEFAULT_EDITOR = {
 # figures label worlds/vertices with their literals when atoms are present.
 # ---------------------------------------------------------------------------
 _NASA_W = ["TTT", "TTX", "TXT", "TXX", "XTT", "XTX", "XXT", "XXX"]
+
+# Los tres TIPOS DE MODELO que el núcleo sabe construir, tal como los expone
+# la GUI. La clave viaja por todo el adaptador (``kind``) y decide qué marco
+# se construye, qué axiomas se comprueban y hasta dónde llega el pipeline:
+#
+#   kb         KnowledgeBeliefFrame: conocimiento S5 + creencia KD45/K45, y
+#              el pipeline completo (propio -> simplicial -> Hasse).
+#   knowledge  RelationalFrame S5 (sólo conocimiento). Las filas del editor
+#              son clases; no hay creencia. Propio y simplicial funcionan
+#              (todo el complejo es el subcomplejo de creencia de cada uno).
+#   belief     RelationalFrame KD45/K45 (sólo creencia). Cada fila es "desde
+#              estos mundos se creen aquellos"; no hay clases. La propiedad y
+#              la traducción simplicial NECESITAN S5, así que el pipeline
+#              termina en el paso 1 y lo dice.
+KINDS = {
+    "kb": "Conocimiento y creencia",
+    "knowledge": "Sólo conocimiento (S5)",
+    "belief": "Sólo creencia (KD45 / K45)",
+}
+
+# Niños embarrados con dos niños: un mundo por reparto de barro, y cada niño
+# no distingue los dos mundos que sólo difieren en SU propio estado.
+_MUDDY_W = ["limpios", "a", "b", "ab"]
 EXAMPLES = {
     "tesis": {
         "label": "Tesis · Figuras 1 → 3",
@@ -147,6 +176,42 @@ EXAMPLES = {
         "atoms": {"c": ["cara"]},
         "axiom_d": True,
     },
+    "ninos": {
+        # examples.py (muddy children), como modelo de PURO CONOCIMIENTO:
+        # sin creencia que dibujar, el pipeline hace propio + simplicial con
+        # S_a = S para todos.
+        "label": "Niños embarrados · sólo conocimiento",
+        "kind": "knowledge",
+        "agents": ["a", "b"],
+        "worlds": list(_MUDDY_W),
+        "per_agent": {
+            "a": [{"cls": ["limpios", "a"], "bel": []},
+                  {"cls": ["b", "ab"], "bel": []}],
+            "b": [{"cls": ["limpios", "b"], "bel": []},
+                  {"cls": ["a", "ab"], "bel": []}],
+        },
+        "atoms": {"Ma": ["a", "ab"], "Mb": ["b", "ab"]},
+        "axiom_d": True,
+    },
+    "clima": {
+        # examples2.py (el clima de mañana), como modelo de PURA CREENCIA: cada
+        # fila dice desde qué mundos se creen cuáles; la clausura KD45 añade
+        # lo que transitividad y euclideanidad exigen. Los lazos en "nube" y
+        # "sol" hacen el papel del make_serial=True del script.
+        "label": "Clima de mañana · sólo creencia",
+        "kind": "belief",
+        "agents": ["alicia", "beto"],
+        "worlds": ["lluvia", "nube", "sol"],
+        "per_agent": {
+            "alicia": [{"cls": ["lluvia"], "bel": ["nube"]},
+                       {"cls": ["sol"], "bel": ["lluvia"]},
+                       {"cls": ["nube"], "bel": ["nube"]}],
+            "beto": [{"cls": ["lluvia", "nube"], "bel": ["sol"]},
+                     {"cls": ["sol"], "bel": ["sol"]}],
+        },
+        "atoms": {"llueve": ["lluvia"]},
+        "axiom_d": True,
+    },
 }
 
 
@@ -154,8 +219,18 @@ def seeds_from_editor(
     agents: List[str],
     worlds: List[str],
     per_agent: Dict[str, List[dict]],
+    kind: str = "kb",
 ) -> Tuple[Dict[str, Set[Tuple[str, str]]], Dict[str, Set[Tuple[str, str]]]]:
     """Turn the visual editor's classes/beliefs into ``from_partial`` seeds.
+
+    ``kind`` (see ``KINDS``) changes what a row MEANS:
+
+        * ``"kb"``: a knowledge class plus the worlds believed inside it;
+        * ``"knowledge"``: a knowledge class; the belief column is ignored;
+        * ``"belief"``: "from these worlds, these are believed" -- the sources
+          play the role of the class (still disjoint across rows: a world has
+          ONE belief set), but the believed worlds are not restricted to them,
+          because without knowledge there is no class to stay inside.
 
     The editor speaks in the thesis's own vocabulary (knowledge classes and
     believed subsets); the core speaks in edges. The translation is mechanical:
@@ -182,22 +257,62 @@ def seeds_from_editor(
         seen: Set[str] = set()
         for row in per_agent.get(agent, []):
             cls = [w for w in row["cls"] if w in worlds]
-            bel = [w for w in row["bel"] if w in cls]
+            bel = [w for w in row["bel"] if w in (worlds if kind == "belief" else cls)]
             overlap = seen & set(cls)
             if overlap:
                 raise ValueError(
-                    f"el agente '{agent}' tiene {sorted(overlap)} en dos clases "
-                    "distintas; las clases de conocimiento deben ser disjuntas "
-                    "(la clausura S5 las fusionaría en silencio)"
+                    f"el agente '{agent}' tiene {sorted(overlap)} en dos filas "
+                    "distintas; "
+                    + ("cada mundo lleva UN solo conjunto de mundos creídos"
+                       if kind == "belief" else
+                       "las clases de conocimiento deben ser disjuntas "
+                       "(la clausura S5 las fusionaría en silencio)")
                 )
             seen |= set(cls)
-            knowledge[agent] |= {(x, y) for x in cls for y in cls}
-            belief[agent] |= {(x, b) for x in cls for b in bel}
-    # No believed world anywhere -> case-3 input for from_partial (knowledge
-    # only, Q_a defaults to R_a), signalled by an EMPTY mapping, not empty sets.
-    if not any(belief.values()):
+            if kind != "belief":
+                knowledge[agent] |= {(x, y) for x in cls for y in cls}
+            if kind != "knowledge":
+                belief[agent] |= {(x, b) for x in cls for b in bel}
+    if kind == "kb" and not any(belief.values()):
+        # No believed world anywhere -> case-3 input for from_partial
+        # (knowledge only, Q_a defaults to R_a): an EMPTY mapping, not empty
+        # sets. Pure-belief mode must NOT collapse: there every agent's entry
+        # is the relation itself, empty or not.
         belief = {}
     return knowledge, belief
+
+
+def build_general(
+    kind: str,
+    agents: List[str],
+    worlds: List[str],
+    knowledge: Dict[str, Set[Tuple[str, str]]],
+    belief: Dict[str, Set[Tuple[str, str]]],
+    axiom_d: bool,
+    believe_all_when_silent: bool = True,
+):
+    """Step 1 for any kind: the closed, VALIDATED general model.
+
+    One place decides which constructor each kind uses, so the preview, the
+    formula evaluator and the pipeline all build the same object:
+
+        kb         KnowledgeBeliefFrame.from_partial  (S5 + KD45/K45 closures)
+        knowledge  RelationalFrame.from_partial_s5    (S5 closure)
+        belief     RelationalFrame.from_partial       (KD45/K45 closure; no
+                   make_serial: a world that believes nothing is an error
+                   under KD45 and a legal defunct belief under K45)
+
+    Raises ``ValueError`` with the core's own message when the closed model
+    still violates its logic (e.g. seriality under KD45).
+    """
+    if kind == "knowledge":
+        return RelationalFrame.from_partial_s5(agents, worlds, knowledge)
+    if kind == "belief":
+        return RelationalFrame.from_partial(agents, worlds, belief, axiom_d=axiom_d)
+    return KnowledgeBeliefFrame.from_partial(
+        agents, worlds, knowledge, belief, axiom_d=axiom_d,
+        believe_all_when_silent=believe_all_when_silent,
+    )
 
 
 def parse_names(text: str) -> List[str]:
@@ -408,8 +523,13 @@ def evaluate_formula(
     axiom_d: bool,
     text: str,
     believe_all_when_silent: bool = True,
+    kind: str = "kb",
 ) -> List[Tuple[str, bool]]:
     """Evaluate a formula at EVERY world of the drawn model (Kripke side).
+
+    ``kind`` picks the model (see :func:`build_general`); the core then says
+    which operator fits: ``K_a`` on a pure-belief frame or ``B_a`` on a
+    pure-knowledge one is refused with its own message.
 
     The model is completed with the same closures the pipeline uses
     (``from_partial``), so the answer refers to the model the pipeline would
@@ -424,16 +544,27 @@ def evaluate_formula(
         ValueError: parse errors, undeclared atoms/agents, or an invalid model.
     """
     formula = parse_formula(text, agents, list(atoms))
-    knowledge, belief = seeds_from_editor(agents, worlds, per_agent)
-    kb = KnowledgeBeliefFrame.from_partial(
-        agents, worlds, knowledge, belief, axiom_d=axiom_d,
-        believe_all_when_silent=believe_all_when_silent,
-    )
+    knowledge, belief = seeds_from_editor(agents, worlds, per_agent, kind)
+    kb = build_general(kind, agents, worlds, knowledge, belief, axiom_d,
+                       believe_all_when_silent)
+    if kind == "knowledge" and _uses(formula, "B"):
+        raise ValueError("un modelo de sólo conocimiento no tiene creencia: "
+                         "usa K_a en lugar de B_a")
+    if kind == "belief" and _uses(formula, "K"):
+        raise ValueError("un modelo de sólo creencia no tiene conocimiento: "
+                         "usa B_a en lugar de K_a")
     valuation = {atom: set(ws) for atom, ws in atoms.items()}
     return [
         (w, holds_kripke(kb, valuation, w, formula))
         for w in sorted(worlds, key=str)
     ]
+
+
+def _uses(formula, tag: str) -> bool:
+    """Does the tuple formula contain a connective ``tag`` (``"K"``/``"B"``)?"""
+    if not isinstance(formula, tuple):
+        return False
+    return formula[0] == tag or any(_uses(part, tag) for part in formula[1:])
 
 
 def _valuation_of(atoms: Optional[Dict[str, List[str]]]):
@@ -468,8 +599,14 @@ def preview_figure(
     atoms: Optional[Dict[str, List[str]]] = None,
     explicit_edges: bool = False,
     axiom_d: bool = True,
+    kind: str = "kb",
 ) -> Tuple[Path, List[str]]:
     """Render the model EXACTLY as drawn -- no closures, no validation gate.
+
+    ``kind`` decides the frame and the judge: a pure-knowledge drawing is
+    rendered with ``logic="S5"`` so what is missing is measured against the
+    S5 closure, and a pure-belief one carries the user's Axiom D so a world
+    that believes nothing is red under KD45 and plain under K45.
 
     ``axiom_d`` is the logic the user declared for belief (KD45 on, K45 off)
     and MUST reach the preview: the violation list and the red dead-end
@@ -497,12 +634,28 @@ def preview_figure(
     Raises:
         ValueError: from :func:`seeds_from_editor`, e.g. overlapping classes.
     """
-    knowledge, belief = seeds_from_editor(agents, worlds, per_agent)
+    knowledge, belief = seeds_from_editor(agents, worlds, per_agent, kind)
+    valuation = _valuation_of(atoms)
+    if kind == "knowledge":
+        frame = RelationalFrame(agents, worlds, knowledge, validate=False)
+        path = Path(show(frame, "gui_preview", "Modelo tal como se ingresa",
+                         output_dir=str(OUTPUTS), valuation=valuation,
+                         logic="S5", **edge_style(explicit_edges)))
+        return path, equivalence_violations(frame)
+    if kind == "belief":
+        frame = RelationalFrame(agents, worlds, belief, validate=False,
+                                axiom_d=axiom_d)
+        # Belief has nothing implicit: every loop and every direction is
+        # information, so the drawing shows them all whatever the switch.
+        path = Path(show(frame, "gui_preview", "Modelo tal como se ingresa",
+                         output_dir=str(OUTPUTS), valuation=valuation,
+                         omit_self_loops=False, undirected_symmetric=False))
+        return path, frame.violations()
     kb = KnowledgeBeliefFrame(
         agents, worlds, knowledge, belief, validate=False, axiom_d=axiom_d,
     )
     path = Path(show(kb, "gui_preview", "Modelo tal como se ingresa",
-                     output_dir=str(OUTPUTS), valuation=_valuation_of(atoms),
+                     output_dir=str(OUTPUTS), valuation=valuation,
                      **edge_style(explicit_edges)))
     return path, kb.violations()
 
@@ -528,12 +681,17 @@ class StepReport:
     completed: List[str] = field(default_factory=list)
     missing: List[str] = field(default_factory=list)
     failed: List[str] = field(default_factory=list)
+    # A step that does not APPLY to this kind of model (the simplicial
+    # translation of a pure-belief model): not an error, not silence either.
+    skipped: List[str] = field(default_factory=list)
 
     @property
     def status(self) -> str:
-        """'failed', 'completed' (ran but filled things in) or 'ok'."""
+        """'failed', 'skipped', 'completed' (ran but filled things in) or 'ok'."""
         if self.failed:
             return "failed"
+        if self.skipped:
+            return "skipped"
         return "completed" if self.completed else "ok"
 
 
@@ -579,6 +737,44 @@ def _fmt_edges(edges, limit: int = 6) -> str:
     shown = sorted((f"{w}→{u}" for (w, u) in edges))
     head = ", ".join(shown[:limit])
     return head + (f" … (+{len(shown) - limit})" if len(shown) > limit else "")
+
+
+def diagnose_general_frame(agents, worlds, seed, frame, kind: str) -> StepReport:
+    """Step-1 report for a single-relation model (pure knowledge / pure belief).
+
+    Knowledge: what the S5 closure added, and the worlds nobody put in a
+    class (singleton classes). Belief: what the 4/5 closure added, and the
+    worlds left with no belief at all -- legal defunct beliefs under K45
+    (under KD45 the constructor already refused, so they never get here).
+    """
+    step = StepReport("1 · Modelo general (clausuras)")
+    closure = "S5" if kind == "knowledge" else ("KD45" if frame.axiom_d else "K45")
+    what = "conocimiento" if kind == "knowledge" else "creencia"
+    for agent in sorted(agents, key=str):
+        added = set(frame.relations[agent]) - set(seed.get(agent, set()))
+        if added:
+            step.completed.append(
+                f"{what} de {agent!r}: la clausura {closure} agregó "
+                f"{len(added)} arista(s) — {_fmt_edges(added)}"
+            )
+    for agent in sorted(agents, key=str):
+        if kind == "knowledge":
+            singles = [w for w in sorted(worlds, key=str)
+                       if frame.successors(agent, w) == {w}]
+            if singles:
+                step.missing.append(
+                    f"{agent!r} distingue {len(singles)} mundo(s) por separado "
+                    f"({', '.join(map(str, singles))}): no estaban en ninguna "
+                    "clase dibujada, así que quedaron como clases unitarias"
+                )
+        else:
+            dead = sorted(frame.dead_ends()[agent], key=str)
+            if dead:
+                step.missing.append(
+                    f"{agent!r} no cree nada en {', '.join(map(str, dead))}: "
+                    "bajo K45 es una creencia difunta (Q = ∅), cree todo, ⊥ incluido"
+                )
+    return step
 
 
 def diagnose_general(
@@ -646,9 +842,13 @@ def diagnose_proper(kb, proper) -> StepReport:
         )
         return step
     copies = len(proper.worlds) // max(len(kb.worlds), 1)
-    cheapest = cheapest_distinguished_agent(
-        kb.knowledge.relations, kb.belief.relations, agents=kb.agents
+    # A KnowledgeBeliefFrame carries two relation families, a plain S5
+    # frame one; the skew cost is computed over whatever the model has.
+    families = (
+        (kb.knowledge.relations, kb.belief.relations)
+        if isinstance(kb, KnowledgeBeliefFrame) else (kb.relations,)
     )
+    cheapest = cheapest_distinguished_agent(*families, agents=kb.agents)
     step.completed.append(
         f"no era propio: se crearon {copies} copias "
         f"({len(kb.worlds)} → {len(proper.worlds)} mundos), bisimilares al original"
@@ -718,8 +918,15 @@ def run_pipeline_from_seeds(
     atoms: Optional[Dict[str, List[str]]] = None,
     believe_all_when_silent: bool = True,
     explicit_edges: bool = False,
+    kind: str = "kb",
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
+
+    ``kind`` (see ``KINDS``) selects the model. Pure knowledge runs the whole
+    chain (S5 is what properness and the translation need). Pure belief
+    stops after step 1 with steps 2 and 3 reported as "not applicable": there
+    is no KD45 -> S5 conversion, a belief-only model has no simplicial
+    translation, and the GUI says so instead of failing.
 
     When ``atoms`` are given, the valuation travels WITH the models the same
     way the thesis carries it: as-is on the general model, lifted through the
@@ -762,40 +969,66 @@ def run_pipeline_from_seeds(
     # the point -- the user sees how far the translation got and what blocked it,
     # instead of an all-or-nothing error.
     try:
-        kb = KnowledgeBeliefFrame.from_partial(
-            agents, worlds, knowledge, belief, axiom_d=axiom_d,
-            believe_all_when_silent=believe_all_when_silent,
-        )
+        kb = build_general(kind, agents, worlds, knowledge, belief, axiom_d,
+                           believe_all_when_silent)
     except ValueError as exc:
         step = StepReport("1 · Modelo general (clausuras)")
         step.failed.append(str(exc))
         result.steps.append(step)
         result.badges.append(("rechazado en el paso 1", "negative"))
         return result
-    result.steps.append(diagnose_general(
-        agents, worlds, knowledge, belief, kb, believe_all_when_silent
-    ))
+    if kind == "kb":
+        result.steps.append(diagnose_general(
+            agents, worlds, knowledge, belief, kb, believe_all_when_silent
+        ))
+        logic = "KD45" if axiom_d else "K45"
+        proper_now = kb.is_proper()
+        fig1_caption = "Fig. 1 · modelo general (conocimiento delgado, creencia gruesa)"
+        fig1_style = edge_style(explicit_edges)
+    elif kind == "knowledge":
+        result.steps.append(diagnose_general_frame(agents, worlds, knowledge, kb, kind))
+        logic = "S5"
+        proper_now = frame_is_proper(kb)
+        fig1_caption = "Fig. 1 · modelo general de conocimiento (S5)"
+        fig1_style = edge_style(explicit_edges)
+    else:
+        result.steps.append(diagnose_general_frame(agents, worlds, belief, kb, kind))
+        logic = "KD45" if axiom_d else "K45"
+        proper_now = False  # properness is a knowledge notion
+        fig1_caption = f"Fig. 1 · modelo general de creencia ({logic})"
+        fig1_style = {"omit_self_loops": False, "undirected_symmetric": False}
     result.log.append(
         f"Modelo general: {len(kb.worlds)} mundos, válido: {kb.is_valid()}, "
-        f"propio: {kb.is_proper()}, lógica de creencia: "
-        f"{'KD45' if axiom_d else 'K45'}"
+        f"propio: {proper_now}, lógica: {logic}"
     )
     result.badges.append(
         ("válido", "positive") if kb.is_valid() else ("inválido", "negative")
     )
-    result.badges.append(("KD45" if axiom_d else "K45", "primary"))
+    result.badges.append((logic, "primary"))
     result.stats.append((str(len(kb.worlds)), "mundos · general"))
     result.figures.append((
-        "Fig. 1 · modelo general (conocimiento delgado, creencia gruesa)",
+        fig1_caption,
         Path(show(kb, "gui_fig1_general", "Modelo general",
-                  output_dir=str(OUTPUTS), valuation=valuation,
-                  **edge_style(explicit_edges))),
+                  output_dir=str(OUTPUTS), valuation=valuation, **fig1_style)),
     ))
     result.text_diagrams.append(("Modelo general", visualize(kb)))
 
+    if kind == "belief":
+        # No KD45 -> S5 conversion exists (examples3.py makes the point): a
+        # pure-belief model has no proper form and no simplicial translation.
+        why = ("la propiedad y la traducción simplicial necesitan conocimiento "
+               "S5; un modelo de sólo creencia termina en el paso 1. Para "
+               "traducirlo, cambia a «conocimiento y creencia» y da las clases")
+        for name in ("2 · Modelo propio (copias + sesgo)",
+                     "3 · Modelo simplicial (mundos → facetas)"):
+            step = StepReport(name)
+            step.skipped.append(why)
+            result.steps.append(step)
+        return result
+
     # -- Step 2: properness (copies + skewed distinguished agent). ----------
     try:
-        proper = kb.to_proper()
+        proper = kb.to_proper() if kind == "kb" else frame_to_proper(kb)
     except ValueError as exc:
         step = StepReport("2 · Modelo propio (copias + sesgo)")
         step.failed.append(str(exc))
@@ -803,10 +1036,11 @@ def run_pipeline_from_seeds(
         result.badges.append(("rechazado en el paso 2", "negative"))
         return result
     result.steps.append(diagnose_proper(kb, proper))
+    proper_ok = proper.is_proper() if kind == "kb" else frame_is_proper(proper)
     result.log.append(
-        f"to_proper → {len(proper.worlds)} mundos, propio: {proper.is_proper()}"
+        f"to_proper → {len(proper.worlds)} mundos, propio: {proper_ok}"
     )
-    if proper.is_proper():
+    if proper_ok:
         result.badges.append(("propio", "positive"))
     result.stats.append((str(len(proper.worlds)), "mundos · propio"))
     # The valuation follows the worlds: each copy inherits its original's
@@ -816,20 +1050,28 @@ def run_pipeline_from_seeds(
         lift_valuation(valuation, proper.projection)
         if valuation and proper.projection else valuation
     )
-    # The two relations are rendered separately (same convention as
-    # thesis_example.py): knowledge undirected S5, belief with KD45 arrows.
-    result.figures.append((
-        "Fig. 2a · modelo propio, conocimiento R_a (S5)",
-        Path(show(proper.knowledge, "gui_fig2_knowledge",
-                  "Propio · conocimiento R_a", output_dir=str(OUTPUTS),
-                  valuation=lifted, **edge_style(explicit_edges))),
-    ))
-    result.figures.append((
-        "Fig. 2b · modelo propio, creencia Q_a (KD45)",
-        Path(show(proper.belief, "gui_fig2_belief", "Propio · creencia Q_a",
-                  omit_self_loops=not explicit_edges, output_dir=str(OUTPUTS),
-                  valuation=lifted)),
-    ))
+    if kind == "kb":
+        # The two relations are rendered separately (same convention as
+        # thesis_example.py): knowledge undirected S5, belief with KD45 arrows.
+        result.figures.append((
+            "Fig. 2a · modelo propio, conocimiento R_a (S5)",
+            Path(show(proper.knowledge, "gui_fig2_knowledge",
+                      "Propio · conocimiento R_a", output_dir=str(OUTPUTS),
+                      valuation=lifted, **edge_style(explicit_edges))),
+        ))
+        result.figures.append((
+            "Fig. 2b · modelo propio, creencia Q_a (KD45)",
+            Path(show(proper.belief, "gui_fig2_belief", "Propio · creencia Q_a",
+                      omit_self_loops=not explicit_edges, output_dir=str(OUTPUTS),
+                      valuation=lifted)),
+        ))
+    else:
+        result.figures.append((
+            "Fig. 2 · modelo propio de conocimiento R_a (S5)",
+            Path(show(proper, "gui_fig2_knowledge", "Propio · conocimiento R_a",
+                      output_dir=str(OUTPUTS), valuation=lifted,
+                      **edge_style(explicit_edges))),
+        ))
     result.text_diagrams.append(("Modelo propio", visualize(proper)))
 
     # -- Step 3: the simplicial belief model. --------------------------------

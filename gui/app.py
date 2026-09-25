@@ -42,6 +42,14 @@ herramienta y su presentación se vean como una sola cosa:
 
 CÓMO SE INGRESAN LOS MODELOS. Todo es interactivo y se propaga en cadena:
 
+    * El TIPO DE MODELO (selector arriba del editor) elige qué construye el
+      núcleo: conocimiento y creencia (KnowledgeBeliefFrame, pipeline
+      completo), sólo conocimiento (RelationalFrame S5, pipeline completo
+      con S_a = S) o sólo creencia (RelationalFrame KD45/K45: sin propiedad
+      ni traducción simplicial, el pipeline termina en el paso 1 y lo dice).
+      Las filas del editor cambian de significado con él, y los
+      interruptores que no aplican se deshabilitan (``sync_switches``).
+
     * AGENTES y MUNDOS se agregan tecleando CUALQUIER nombre en su campo y
       pulsando Enter (o el botón +); cada uno aparece como chip removible.
       Se eligió campo + botón en lugar del modo "valores nuevos" del selector
@@ -84,6 +92,7 @@ from nicegui import app, run as io, ui
 # sys.path[0], y adapters se encarga de poner la raíz del repo en el path.
 from adapters import (
     EXAMPLES,
+    KINDS,
     OUTPUTS,
     agent_color_map,
     evaluate_formula,
@@ -318,6 +327,9 @@ def index() -> None:
     state = {
         "agents": [], "worlds": [], "per_agent": {},
         "atoms": {},  # atomo -> mundos donde es VERDADERO (la valuacion v)
+        # Tipo de modelo (clave de adapters.KINDS): decide qué construye el
+        # núcleo, qué columnas tiene el editor y hasta dónde llega el pipeline.
+        "kind": "kb",
     }
 
     def load_example(key: str) -> None:
@@ -327,7 +339,13 @@ def index() -> None:
         state["worlds"] = ex["worlds"]
         state["per_agent"] = ex["per_agent"]
         state["atoms"] = ex["atoms"]
+        # El tipo se fija en el estado ANTES de mover el selector: así el
+        # on_change del selector (set_kind) ve que no hay cambio y no repinta
+        # a medias; la sincronización y el repintado se hacen aquí, una vez.
+        state["kind"] = ex.get("kind", "kb")
+        kind_in.value = state["kind"]
         axiom_d_in.value = ex["axiom_d"]
+        sync_switches()
         repaint_all()
 
     # ---- Lightbox: cualquier figura, a pantalla completa con un clic ------- #
@@ -397,6 +415,13 @@ def index() -> None:
             # ---- Identificadores ------------------------------------------- #
             with ui.card().classes(CARD).props(FLAT):
                 _card_title("Agentes y mundos")
+                # Los tres tipos de modelo del núcleo. Cambiarlo repinta el
+                # editor (las filas cambian de significado), ajusta qué
+                # interruptores aplican y rehace la vista previa.
+                kind_in = ui.select(
+                    KINDS, value="kb", label="tipo de modelo",
+                    on_change=lambda e: set_kind(e.value),
+                ).props("dense outlined options-dense").classes("w-full")
                 with ui.row().classes("w-full no-wrap items-center gap-2"):
                     agent_input = ui.input("nuevo agente") \
                         .props("dense outlined").classes("grow")
@@ -428,7 +453,7 @@ def index() -> None:
                 # sin creencia marcada.
                 silent_defunct_in = ui.switch(
                     "Creencia vacía si no se marca nada (Q = ∅)", value=False,
-                ).bind_enabled_from(axiom_d_in, "value", lambda d: not d)
+                )
                 ui.label(
                     "Sólo con K45. Apagada, una clase sin creencia marcada "
                     "cree lo que sabe (Q = R)."
@@ -449,6 +474,7 @@ def index() -> None:
                 # marco (KD45 exige seriedad, K45 no), así que sin repintar
                 # la vista previa seguía juzgando con el axioma anterior.
                 axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
+                axiom_d_in.on_value_change(lambda _: sync_switches())
                 axiom_d_in.on_value_change(lambda _: update_preview())
 
                 # Las figuras relacionales omiten lo que la lógica ya implica:
@@ -513,6 +539,35 @@ def index() -> None:
     # Altas y bajas de identificadores y átomos. Cada operación muta ``state``
     # y repinta chips + editor + átomos + vista previa; no hay más sincronía.
     # ----------------------------------------------------------------------- #
+    def sync_switches() -> None:
+        """Qué interruptores aplican al tipo de modelo elegido.
+
+        Sólo conocimiento: S5 es reflexivo, luego serial: el Axioma D no
+        decide nada, ni la creencia vacía. Sólo creencia: no hay clase a la
+        que volver, así que "cree lo que sabe" no existe (el silencio es
+        inválido bajo KD45 y difunto bajo K45), y tampoco hay aristas
+        implícitas que mostrar: cada lazo y cada dirección es información.
+        """
+        kind = state["kind"]
+        axiom_d_in.set_enabled(kind != "knowledge")
+        silent_defunct_in.set_enabled(kind == "kb" and not axiom_d_in.value)
+        explicit_in.set_enabled(kind != "belief")
+
+    def set_kind(kind: str) -> None:
+        """Cambia el tipo de modelo y repinta todo lo que depende de él."""
+        if kind == state["kind"]:
+            return
+        state["kind"] = kind
+        if kind == "knowledge":
+            # Las creencias marcadas no tienen sentido sin creencia: se
+            # descartan para que la vista previa y el pipeline coincidan
+            # con lo que el editor muestra.
+            for rows in state["per_agent"].values():
+                for row in rows:
+                    row["bel"] = []
+        sync_switches()
+        repaint_all()
+
     def paint_chips() -> None:
         # Cada chip de agente lleva el MISMO color que sus aristas en las
         # figuras (agent_color_map replica la regla de visualization).
@@ -638,34 +693,46 @@ def index() -> None:
                             f"background:{colors[agent]}"
                         )
                         ui.label(f"Agente {agent}").classes("font-semibold")
+                    kind = state["kind"]
                     for i, row in enumerate(rows):
                         with ui.row().classes("w-full no-wrap items-center gap-2"):
-                            # Clase de conocimiento: chips de mundos. Cambiarla
-                            # repinta, porque las opciones de creencia dependen
-                            # de la clase elegida.
+                            # Primera columna: la clase de conocimiento, o en
+                            # sólo creencia los mundos DESDE los que se cree.
+                            # Cambiarla repinta, porque las opciones de
+                            # creencia dependen de la clase elegida.
                             ui.select(
                                 state["worlds"], multiple=True, value=row["cls"],
-                                label="clase (indistinguibles)",
+                                label=("desde (mundos)" if kind == "belief"
+                                       else "clase (indistinguibles)"),
                                 on_change=lambda e, r=row: set_cls(r, e.value),
                             ).props("use-chips dense").classes("grow")
-                            # Mundos creídos: restringidos a la clase, así una
-                            # creencia fuera de la clase es inexpresable.
-                            ui.select(
-                                row["cls"], multiple=True, value=row["bel"],
-                                label="cree (vacío = lo que sabe)",
-                                on_change=lambda e, r=row: set_bel(r, e.value),
-                            ).props("use-chips dense").classes("grow")
+                            # Mundos creídos: restringidos a la clase (así una
+                            # creencia fuera de la clase es inexpresable), o a
+                            # todos los mundos cuando no hay clase. Sin
+                            # creencia, la columna no existe.
+                            if kind != "knowledge":
+                                ui.select(
+                                    state["worlds"] if kind == "belief" else row["cls"],
+                                    multiple=True, value=row["bel"],
+                                    label=("cree (mundos)" if kind == "belief"
+                                           else "cree (vacío = lo que sabe)"),
+                                    on_change=lambda e, r=row: set_bel(r, e.value),
+                                ).props("use-chips dense").classes("grow")
                             ui.button(
                                 icon="delete",
                                 on_click=lambda _, a=agent, k=i: remove_row(a, k),
                             ).props("flat dense color=grey")
                     ui.button(
-                        "añadir clase", icon="add",
-                        on_click=lambda _, a=agent: add_row(a),
+                        "añadir fila" if kind == "belief" else "añadir clase",
+                        icon="add", on_click=lambda _, a=agent: add_row(a),
                     ).props("flat dense")
-                    ui.markdown(
-                        "Mundos fuera de toda clase quedan como clases unitarias."
-                    ).classes("text-xs text-grey-5")
+                    ui.markdown({
+                        "kb": "Mundos fuera de toda clase quedan como clases unitarias.",
+                        "knowledge": "Mundos fuera de toda clase quedan como clases "
+                                     "unitarias (el agente los distingue).",
+                        "belief": "Mundos sin fila no creen nada: inválido bajo KD45, "
+                                  "creencia difunta bajo K45.",
+                    }[kind]).classes("text-xs text-grey-5")
 
     def update_preview() -> None:
         """Re-renderiza el modelo tal como está ingresado (sin clausuras).
@@ -693,6 +760,7 @@ def index() -> None:
                 path, violations = preview_figure(
                     state["agents"], state["worlds"], state["per_agent"],
                     state["atoms"], explicit_in.value, axiom_d_in.value,
+                    state["kind"],
                 )
             except ValueError as exc:
                 with badge_slot:
@@ -715,9 +783,14 @@ def index() -> None:
                         ui.label(v).classes("font-mono text-xs")
 
     def set_cls(row: dict, cls: list) -> None:
-        """Actualiza una clase y poda las creencias que quedaron fuera de ella."""
+        """Actualiza una clase y poda las creencias que quedaron fuera de ella.
+
+        En sólo creencia no hay clase que respetar: la primera columna son
+        los mundos de origen y la creencia puede apuntar a cualquier mundo.
+        """
         row["cls"] = cls
-        row["bel"] = [w for w in row["bel"] if w in cls]
+        if state["kind"] != "belief":
+            row["bel"] = [w for w in row["bel"] if w in cls]
         paint_editor()  # las opciones del selector de creencia cambiaron
         update_preview()
 
@@ -744,7 +817,7 @@ def index() -> None:
             rows = evaluate_formula(
                 state["agents"], state["worlds"], state["per_agent"],
                 state["atoms"], axiom_d_in.value, formula_input.value or "",
-                not silent_defunct_in.value,
+                not silent_defunct_in.value, state["kind"],
             )
         except ValueError as exc:
             with formula_out:
@@ -790,13 +863,14 @@ def index() -> None:
                 ui.label("Generando figuras…").classes("text-grey-5")
         try:
             knowledge, belief = seeds_from_editor(
-                state["agents"], state["worlds"], state["per_agent"]
+                state["agents"], state["worlds"], state["per_agent"],
+                state["kind"],
             )
             out = await io.io_bound(
                 run_pipeline_from_seeds,
                 state["agents"], state["worlds"], knowledge, belief,
                 axiom_d_in.value, state["atoms"],
-                not silent_defunct_in.value, explicit_in.value,
+                not silent_defunct_in.value, explicit_in.value, state["kind"],
             )
         except ValueError as exc:
             # Un ValueError es el núcleo rechazando el modelo (S5/KD45/propiedad).
@@ -882,6 +956,7 @@ def index() -> None:
                             "ok": ("check_circle", POSTER["green"]),
                             "completed": ("auto_fix_high", POSTER["cyan"]),
                             "failed": ("cancel", POSTER["pink"]),
+                            "skipped": ("block", "#9e9e9e"),
                         }[step.status]
                         with ui.row().classes("w-full items-center gap-2 mt-3"):
                             ui.icon(icon).style(f"color:{color}")
@@ -889,6 +964,13 @@ def index() -> None:
                             if step.status == "ok":
                                 ui.label("tal cual se dibujó") \
                                     .classes("text-xs text-grey-5")
+                            if step.status == "skipped":
+                                ui.label("no aplica a este tipo de modelo") \
+                                    .classes("text-xs text-grey-5")
+                        for text in step.skipped:
+                            with ui.row().classes("w-full no-wrap items-start gap-2 ml-8"):
+                                ui.label("–").classes("font-bold text-grey-5")
+                                ui.label(text).classes("text-sm text-grey-4")
                         for text in step.failed:
                             with ui.column().classes(
                                 "w-full gap-0 ml-8 p-2 rounded poster-bad"
@@ -951,6 +1033,7 @@ def index() -> None:
     # Primer pintado: el ejemplo de la tesis con su vista previa, y el estado
     # vacío ilustrado en la zona de resultados.
     load_example("tesis")
+    sync_switches()
     paint_results_placeholder()
 
 
