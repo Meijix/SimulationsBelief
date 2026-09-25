@@ -39,6 +39,7 @@ brew install graphviz        # macOS
 
 ## Usage
 ```bash
+.venv/bin/python example_val.py          # a small model WITH a valuation, step by step
 .venv/bin/python thesis_example.py       # the thesis Figures 1 -> 2 -> 3, end to end
 .venv/bin/python examples.py             # run the feature demos
 .venv/bin/python examples.py --open      # ...and open each image in your viewer
