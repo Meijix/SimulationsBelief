@@ -398,7 +398,7 @@ def index() -> None:
                 {k: ex["label"] for k, ex in EXAMPLES.items()},
                 value=None, label="cargar ejemplo",
                 on_change=lambda e: load_example(e.value),
-            ).props("dense outlined options-dense").classes("min-w-[240px]")
+            ).props("dense outlined options-dense").classes("min-w-[360px]")
             # Lima con texto marino: el único botón lleno de la página.
             run_btn = ui.button("Correr pipeline", icon="play_arrow",
                                 on_click=lambda: run_clicked()) \
