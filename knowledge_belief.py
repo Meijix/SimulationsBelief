@@ -25,7 +25,8 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet, Iterable, List, Optional, Set
 
-from properness import copy_and_skew, is_proper as _frame_is_proper
+from properness import cheapest_distinguished_agent, copy_and_skew
+from properness import is_proper as _frame_is_proper
 from properness import properness_violations as _frame_properness_violations
 from relational_frame import (
     Agent,
@@ -621,12 +622,18 @@ class KnowledgeBeliefFrame:
         # family properness is about). Size is invariant under the choice; the
         # sparse default only minimises the cross-copy edges. Same agent for
         # both families either way.
+        # BOTH families are skewed with this same agent, so the cost is their
+        # SUM. Ranking on knowledge alone was wrong: when knowledge is complete
+        # every agent ties on |R_a|, the tie broke alphabetically, and the
+        # winner could be the agent with the MOST belief edges -- the messiest
+        # diagram available. Belief is exactly what separates the candidates.
         distinguished = (
             distinguished_agent
             if distinguished_agent is not None
-            else min(
-                sorted(self.agents, key=str),
-                key=lambda a: len(self.knowledge.relations[a]),
+            else cheapest_distinguished_agent(
+                self.knowledge.relations,
+                self.belief.relations,
+                agents=self.agents,
             )
         )
         if distinguished not in self.agents:
