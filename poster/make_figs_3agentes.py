@@ -88,3 +88,28 @@ for etapa, val in VALUACIONES.items():
             for k, f in FORMULAS.items()
         )
         print(f"  {w:>3}: {fila}")
+
+# ------------------------------------------ la revision de creencias
+# El anuncio de ¬C no sirve aqui: es falso en el mundo real, asi que tendria
+# que borrar el mundo donde estan. El anuncio que SI hace trabajo geometrico
+# es S = "Ana si transmitio": verdadero en R, RN y NN, y mata exactamente nS,
+# que es el unico mundo que Carla creia posible desde RN. Ahi la creencia se
+# queda sin suelo y la regla R_c tiene que decidir a donde va.
+import revision as rev
+
+S_TRUE = {"R", "RN", "NN"}          # donde vale "Ana si transmitio"
+CREE_C = "nS"                       # lo que Carla creia desde el mundo real RN
+
+carla = rev.revise_after_announcement(Simp, "c", CREE_C, S_TRUE)
+
+print("\n" + "=" * 70)
+print("REVISION DE CREENCIAS  ·  anuncio S, verdadero en", sorted(S_TRUE))
+print("=" * 70)
+print(rev.describe(Simp, carla))
+print("  decidida sin empate:", carla.is_decided())
+
+print(visualization.show(
+    Simp, "d3_revision",
+    title="Desastre con tres agentes — Carla revisa tras el anuncio S",
+    output_dir=OUT, valuation=VALUACIONES["antes"], revision=carla,
+))
