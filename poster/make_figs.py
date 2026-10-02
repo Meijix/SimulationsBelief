@@ -49,9 +49,20 @@ print(visualization.show(
 # son aristas y el dibujo geometrico de visualization.show degenera en una
 # linea recta.
 print(hasse.show(
-    Simp, "desastre_simplicial",
+    Simp, "desastre_hasse",
     title="Desastre natural — complejo simplicial (reticula de caras)",
     output_dir=OUT,
+))
+
+# --- figura 2c: el complejo por GRAPHVIZ (deja .dot editable) --------------
+# visualization.show despacha los modelos simpliciales a matplotlib, que dibuja
+# simplices rellenos pero no deja fuente editable: no hay .dot junto al .png.
+# engine="dot" los manda por Graphviz. Con dos agentes cada faceta tiene dos
+# vertices, asi que ES una arista y el grafo representa el complejo sin perdida.
+print(visualization.show(
+    Simp, "desastre_complejo",
+    title="Desastre natural — complejo simplicial",
+    output_dir=OUT, engine="dot",
 ))
 
 # --- figura 2g: el complejo simplicial "normal" (dibujo geometrico) ---------
@@ -101,14 +112,22 @@ for etapa, val in VALUACIONES.items():
     asg = assignment_from_model(Simp, val)
     # Dibujo geometrico con la valuacion: cada vertice muestra el literal que
     # observa (C / ¬C; nada si no sabe), cada faceta su mundo.
+    # Dibujo geometrico (matplotlib): simplices rellenos, sin fuente editable.
     print(visualization.show(
         Simp, f"desastre_{etapa}_geometrico",
         title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
         output_dir=OUT, valuation=val,
     ))
-    print(hasse.show(
-        Simp, f"desastre_{etapa}_simplicial",
+    # El mismo complejo por Graphviz: deja .dot junto al .png, como el resto de
+    # las figuras del cartel, para poder retocarlo sin volver a correr el modelo.
+    print(visualization.show(
+        Simp, f"desastre_{etapa}_complejo",
         title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
+        output_dir=OUT, valuation=val, engine="dot",
+    ))
+    print(hasse.show(
+        Simp, f"desastre_{etapa}_hasse",
+        title=f"Desastre natural — {etapa} de ¬C (reticula de caras)",
         output_dir=OUT, assignment=asg,
     ))
     # NU: una verdad que ningun agente observa no es representable por
