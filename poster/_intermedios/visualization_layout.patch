@@ -1,0 +1,198 @@
+diff --git a/visualization.py b/visualization.py
+index 6b30824..ddcb9a3 100644
+--- a/visualization.py
++++ b/visualization.py
+@@ -813,6 +813,21 @@ def _belief_signature(model, facet, agents):
+     return tuple(a for a in agents if facet in model.belief_facets.get(a, ()))
+ 
+ 
++def _node_key(node):
++    """A canonical, run-stable sort key for a simplicial node.
++
++    ``str(node)`` is NOT usable: a Node carries a frozenset, whose repr orders
++    its elements by hash, so the same node stringifies differently on every
++    run. Sorting by it was the hidden source of figures that changed each time
++    the script was re-run.
++    """
++    agent = getattr(node, "agent", None)
++    cls = getattr(node, "cls", None)
++    if agent is None or cls is None:
++        return (str(node), ())
++    return (str(agent), tuple(sorted(str(w) for w in cls)))
++
++
+ def _signature_colors(model, agents) -> Dict[tuple, str]:
+     """Map each belief signature to a fill colour (the empty one stays neutral grey)."""
+     signatures = {_belief_signature(model, f, agents) for f in model.facets}
+@@ -828,7 +843,11 @@ def _skeleton_edges(model):
+     for facet in model.facets:
+         for u, v in itertools.combinations(facet, 2):
+             edges.add(frozenset((u, v)))
+-    return [tuple(e) for e in edges]
++    # Sorted: the accumulation order of the spring forces changes the result
++    # in the last floating-point digits, and a set gives a different order
++    # on every run.
++    return sorted((tuple(sorted(e, key=_node_key)) for e in edges),
++                  key=lambda e: tuple(map(_node_key, e)))
+ 
+ 
+ def _spring_layout(nodes, edges, iterations: int = 250):
+@@ -839,7 +858,12 @@ def _spring_layout(nodes, edges, iterations: int = 250):
+     """
+     import math
+ 
+-    nodes = list(nodes)
++    # Sort before placing: the caller passes a SET, whose iteration order
++    # changes with PYTHONHASHSEED, so without this the starting circle -- and
++    # therefore the whole drawing -- came out different on every run. The
++    # figures committed to the repo could not be reproduced by re-running the
++    # script, which is exactly what "deterministic" above is supposed to mean.
++    nodes = sorted(nodes, key=_node_key)
+     n = len(nodes)
+     if n == 0:
+         return {}
+@@ -904,6 +928,84 @@ def _rotate_to_horizontal(pos):
+     }
+ 
+ 
++def _strip_order(model):
++    """Node order n0..n_{k+m-2} such that every window of m is a facet, or None.
++
++    A great many of these complexes are **strips**: the facets form a chain,
++    each glued to the next along a shared face. The spring layout only sees the
++    1-skeleton, so it has no idea the facets are 2-cells that must not overlap,
++    and it happily folds the chain over itself. When the chain exists we can
++    place it exactly instead of guessing: unfold it into a zigzag, which is the
++    canonical picture of a triangle strip and never self-intersects.
++
++    Returns None whenever the facets are not a simple chain, so the caller falls
++    back to the spring layout.
++    """
++    # Sorted, like the node order in _spring_layout: model.facets is a set, so
++    # without this the chain could be walked from either end on different runs
++    # and the drawing came out mirrored at random.
++    facets = sorted((frozenset(F) for F in model.facets),
++                    key=lambda F: sorted(map(_node_key, F)))
++    if len(facets) < 2:
++        return None
++    m = len(facets[0])
++    if any(len(F) != m for F in facets) or m < 3:
++        return None                      # 1-dimensional: the old path code wins
++
++    # Dual graph: two facets are adjacent when they share a face of codim 1.
++    adj = {i: [] for i in range(len(facets))}
++    for i in range(len(facets)):
++        for j in range(i + 1, len(facets)):
++            if len(facets[i] & facets[j]) == m - 1:
++                adj[i].append(j)
++                adj[j].append(i)
++    if any(len(nb) > 2 for nb in adj.values()):
++        return None                      # branches: not a chain
++    ends = sorted(i for i, nb in adj.items() if len(nb) == 1)
++    if len(ends) != 2:
++        return None                      # a cycle, or disconnected
++
++    order, seen, cur = [ends[0]], {ends[0]}, ends[0]
++    while True:
++        nxt = [j for j in adj[cur] if j not in seen]
++        if not nxt:
++            break
++        cur = nxt[0]
++        seen.add(cur)
++        order.append(cur)
++    if len(order) != len(facets):
++        return None                      # disconnected
++
++    # Turn the facet chain into a node chain: the window of m nodes slides by
++    # one at each step, so each facet contributes exactly one new node.
++    chain = list(facets[order[0]] - facets[order[1]])          # the leading node
++    middle = facets[order[0]] & facets[order[1]]
++    # Order the shared block by how long each node survives along the chain.
++    def lifetime(n):
++        last = 0
++        for pos, idx in enumerate(order):
++            if n in facets[idx]:
++                last = pos
++        return last
++    chain += sorted(middle, key=lambda n: (lifetime(n), _node_key(n)))
++    for idx in order[1:]:
++        new = [n for n in facets[idx] if n not in chain]
++        if len(new) != 1:
++            return None                  # not a clean sliding window
++        chain.append(new[0])
++    if len(chain) != len(order) + m - 1:
++        return None
++    for pos, idx in enumerate(order):     # verify before trusting it
++        if frozenset(chain[pos:pos + m]) != facets[idx]:
++            return None
++    return chain
++
++
++def _strip_layout(chain):
++    """Place a node chain as an open zigzag: consecutive windows are triangles."""
++    return {n: (float(i), 0.0 if i % 2 == 0 else 1.5) for i, n in enumerate(chain)}
++
++
+ def _show_simplicial(model, name, output_dir, title, image_format,
+                      assignment=None) -> str:
+     """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
+@@ -931,7 +1033,8 @@ def _show_simplicial(model, name, output_dir, title, image_format,
+     agents = sorted(model.agents, key=str)
+     colors = {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(agents)}
+     edge_pairs = _skeleton_edges(model)
+-    pos = _spring_layout(model.nodes, edge_pairs)
++    chain = _strip_order(model)
++    pos = _strip_layout(chain) if chain else _spring_layout(model.nodes, edge_pairs)
+     sig_color = _signature_colors(model, agents)
+ 
+     # A 1-dimensional complex (two agents: every facet is an edge) is a graph
+@@ -940,8 +1043,19 @@ def _show_simplicial(model, name, output_dir, title, image_format,
+     # sea of white. Rotate it so its long axis is horizontal, then size the
+     # canvas to the drawing's own aspect ratio (wide and low for a path).
+     one_dimensional = all(len(F) <= 2 for F in model.facets)
+-    if one_dimensional and len(pos) > 1:
+-        pos = _rotate_to_horizontal(pos)
++    # ...and the same is true of any ELONGATED drawing, not just a path: a
++    # strip of triangles is genuinely 2-dimensional but just as flat as a
++    # line, and on the square canvas it came out as a tall ribbon in a sea of
++    # white. Rotate whenever the principal axis dominates, then fall into the
++    # same aspect-ratio sizing below.
++    flat = one_dimensional
++    if len(pos) > 1:
++        candidate = _rotate_to_horizontal(pos)
++        cxs = [p[0] for p in candidate.values()]
++        cys = [p[1] for p in candidate.values()]
++        if one_dimensional or (max(cxs) - min(cxs)) > 1.6 * ((max(cys) - min(cys)) or 1e-9):
++            pos = candidate
++            flat = True
+     xs = [p[0] for p in pos.values()] or [0.0]
+     ys = [p[1] for p in pos.values()] or [0.0]
+     spread_x = max(xs) - min(xs) or 1.0
+@@ -955,7 +1069,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
+     legend_y0 = 0.06                           # gap under the legend
+     caption_y = legend_y0 + legend_in + 0.06   # caption sits right above it
+     strip_in = caption_y + 0.32                # + the caption's own height
+-    if one_dimensional:
++    if flat:
+         # Give a flat drawing some height of its own (room for the node
+         # markers and their literal labels) and keep the aspect ratio equal.
+         pad_y = 0.09 * spread_x
+@@ -965,12 +1079,16 @@ def _show_simplicial(model, name, output_dir, title, image_format,
+     else:
+         width, height = 8.0, 6.4 + strip_in
+     fig, ax = plt.subplots(figsize=(width, height))
+-    if one_dimensional:
++    if flat:
+         ax.set_xlim(min(xs) - 0.04 * spread_x, max(xs) + 0.04 * spread_x)
+         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
+ 
+     # Draw facets (filled), largest first so smaller ones stay visible.
+-    for facet in sorted(model.facets, key=lambda F: -len(F)):
++    # Total order, not just by size: ties were broken by the set's own
++    # iteration order, so the z-order of the shared edges -- and the PNG --
++    # changed from run to run.
++    for facet in sorted(model.facets,
++                        key=lambda F: (-len(F), sorted(map(_node_key, F)))):
+         pts = [pos[n] for n in facet]
+         col = sig_color[_belief_signature(model, facet, agents)]
+         if len(pts) == 2:
