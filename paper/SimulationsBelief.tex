@@ -154,13 +154,13 @@
 	$$\varphi ::= P \, | \, \bot \, | \, \phi \lthen \psi \, | \, K_{a}\phi \, | \, B_{a}\phi$$
 	where $P \in \mathfrak{P}$ and $a \in Ag$, can be interpreted in simplicial models for knowledge as follows for any $X\in\F(S)$. One appeals to $S$ for the truth condition for $K_a$ as in simplicial models for knowledge, and to the $S_a$ for the truth condition for $B_a$ as in simplicial models for belief.
 	
-	We say that a relational model is called \defin{proper} if, for all $w \in W$, $\big|\bigcap_{a \in Ag} [w]_{a} \big| = 1$, and for all $P$ in our language and any $w\in W$, there is an $a\in Ag$ such that for all $u\in R_a(w)$, $u\in v(P)$. Call the set of such distinguished agents $d(w,P)$.\footnote{This definition of properness differs from standard presentations when the relations are not equivalence relations, as has also been noted in \cite{Lehnherr_2025}. It also differs from the presentation in \cite{BelSimp} by adding in the distinguished agent. This is because there, unlike here, atomic propositions are assigned to facets, not nodes.} Note that when a relational model is proper, the following axioms are sound for any atomic formula $P$:
+	We say that a relational model is called \defin{proper} if, for all $w \in W$, $\big|\bigcap_{a \in Ag} [w]_{a} \big| = 1$. We say a model is \defin{fully proper} if it is proper and for all $P$ in our language and any $w\in W$, there is an $a\in Ag$ such that for all $u\in R_a(w)$, $u\in v(P)$. Call the set of such distinguished agents $d(w,P)$.\footnote{This definition of properness differs from standard presentations when the relations are not equivalence relations, as has also been noted in \cite{Lehnherr_2025}. Fully properness also differs from the presentation of properness in \cite{BelSimp} by adding in the distinguished agent. This is because there, unlike here, atomic propositions are assigned to facets, not nodes.} Note that when a relational model is fully proper, the following axioms are sound for any atomic formula $P$:
 	
 	$$\textsf{NUK}:P\rightarrow\bigvee_{a\in Ag}K_aP$$
 	
 	$$\textsf{NUB}:P\rightarrow\bigvee_{a\in Ag}B_aP$$
 	
-	Here, ``NU'' stands for ``No Uncertainties''. The idea is that an atomic formula cannot be true unless there is some agent which knows/believes it. This is clearly sound in simplicial models, so the restriction of relational models to those which are proper, and hence satisfy \textsf{NUK} and \textsf{NUB}, is necessary in order to translate between the two.
+	Here, ``NU'' stands for ``No Uncertainties''. The idea is that an atomic formula cannot be true unless there is some agent which knows/believes it. This is clearly sound in simplicial models, so the restriction of relational models to those which are fully proper, and hence satisfy \textsf{NUK} and \textsf{NUB}, is necessary in order to translate between the two.
 	
 	This translation is another key result we simulate. Although the implementation of action models and especially belief revision in \cite{SimpBelRev}, \cite{SimpAct}, and \cite{TechMemo} depend heavily on the simplicial semantics, the much wider use of relational models\footnote{See \cite{DC5} for an overview, and \cite{KaSC}, \cite{KaG}, \cite{ActionDC}, \cite{CPM}, and \cite{CPaAM} for approaches closely aligned with ours, in particular in the use of action models.} means that some users may find it easier to define a model relationally and then translate it into a simplicial model to take advantage of these tools. As such, we introduce relational models, and in particular how to translate them into simplicial models, as in \cite{BelSimp}.
 	
@@ -190,13 +190,13 @@
 	In fact, these are sufficient. The following is well known: \cite{DC5, BelSimp,Bjorndahl2024}
 	
 	\begin{theorem}[Soundness and Completeness for Relational Models]
-	The smallest axiom system closed under propositional logic, \textsf{T}, \textsf{4}, \textsf{5}, \textsf{K}\footnote{$\vdash ((K_a\varphi\wedge K_a(\varphi\rightarrow\psi)\rightarrow K_a\psi)$} and the rules of inference modus ponens, necessitation\footnote{$\vdash \varphi\Rightarrow\vdash K_a\varphi$} is called $\textsf{S5}$. Relational Models for knowledge are sound and complete with respect to the axiom system $\textsf{S5}$. The smallest axiom system closed under propositional logic, \textsf{4}, \textsf{5}, \textsf{K} and the rules of inference modus ponens, necessitation is called $\textsf{K45}$. Relational Models for belief are sound and complete with respect to the axiom system $\textsf{K45}$. Let $\full$ be the axiom system for the language $\L_{KB}(Ag)$ obtained by adding the above three axiom schemes to the system \textsf{S5} for knowledge combined with \textsf{K45} for belief. Relational Models for Knowledge and Belief are sound and complete with respect to the axiom system \full. When any of these classes are proper, they are sound and complete with respect to the same axiom systems simply with the schemes \textsf{NUK} and \textsf{NUB} added in as appropriate for the relevant language.
+	The smallest axiom system closed under propositional logic, \textsf{T}, \textsf{4}, \textsf{5}, \textsf{K}\footnote{$\vdash ((K_a\varphi\wedge K_a(\varphi\rightarrow\psi)\rightarrow K_a\psi)$} and the rules of inference modus ponens, necessitation\footnote{$\vdash \varphi\Rightarrow\vdash K_a\varphi$} is called $\textsf{S5}$. Relational Models for knowledge are sound and complete with respect to the axiom system $\textsf{S5}$. The smallest axiom system closed under propositional logic, \textsf{4}, \textsf{5}, \textsf{K} and the rules of inference modus ponens, necessitation is called $\textsf{K45}$. Relational Models for belief are sound and complete with respect to the axiom system $\textsf{K45}$. Let $\full$ be the axiom system for the language $\L_{KB}(Ag)$ obtained by adding the above three axiom schemes to the system \textsf{S5} for knowledge combined with \textsf{K45} for belief. Relational Models for Knowledge and Belief are sound and complete with respect to the axiom system \full. When any of these classes are fully proper, they are sound and complete with respect to the same axiom systems simply with the schemes \textsf{NUK} and \textsf{NUB} added in as appropriate for the relevant language.
 	\end{theorem}
 
 	We can now turn to translating relational models into simplicial models. The following proposition is from \cite{BelSimp}:
 	
 	\begin{proposition}
-		Let $\N$ be a relational model for belief and knowledge. Using the L\"owenheim-Skolem theorem, fix $G$ a group of order $|W|$\footnote{Following convention, we denote the operation with concatenation and inverse with $()^{-1}$} with, and $g:W\rightarrow G$ a bijection. Moreover, let $i\in Ag$ be a distinguished agent. Define $\tilde{N}$ to be the relational model $(\tilde{W}, (\tilde{R}_a)_{a\in Ag}, (\tilde{Q}_a)_{a\in Ag}, v)$, where
+		Let $\N$ be a relational model for belief and knowledge. Using the L\"owenheim-Skolem theorem, fix $G$ a group\footnote{Following convention, we denote the operation with concatenation and inverse with $()^{-1}$} of order $|W|$ with, and $g:W\rightarrow G$ a bijection. Moreover, let $i\in Ag$ be a distinguished agent. Define $\tilde{N}$ to be the relational model $(\tilde{W}, (\tilde{R}_a)_{a\in Ag}, (\tilde{Q}_a)_{a\in Ag}, v)$, where
 		\begin{align*}
 		\tilde{W}&:=W^2\\
 		(x',y')\in\tilde{R}_a(x,y)&\text{ iff }x'\in R_a(x)\text{ and } \begin{cases}
@@ -209,12 +209,12 @@
 		\end{cases}\\
 	\tilde{v}(P)&:=\{(x,y) \in \tilde{W} \: : \: x \in v(P)\}
 		\end{align*}
-		Then $\tilde{\N}$ is a proper relational model for knowledge and belief, and projection to the first coordinate is a surjective, bounded morphism from $\tilde{\N}$ to $\N$.
+		Then $\tilde{\N}$ is a fully proper relational model for knowledge and belief, and projection to the first coordinate is a surjective, bounded morphism from $\tilde{\N}$ to $\N$.
 	\end{proposition}
 
 	The obvious parallel results for relational models for only knowledge, or only belief, also hold.
 	
-	Only proper relational models can be transformed into simplicial models. Hence, the above proposition allows us to translate any relational model for knowledge into a simplicial model.	Given a proper relational model for knowledge and belief $\N=(W,(R_a)_{a\in Ag},(Q_a)_{a\in Ag},v)$, we define a simplicial model for knowledge and belief $\M_{\N}:=(N_{\N},V_{\N},L_{\N},S_{\N},(S_{\N,a})_{a\in Ag})$ similar to as in \cite{BelSimp}:\footnote{The difference between the work presented here, and the work in \cite{BelSimp}, is that in the latter, atomic formulae are assigned to facets, and here, they are assigned to nodes.}\footnote{Observe that we do not need to use the 0 case for $L_\N$. This is because the truth value of atomic propositions does not appeal to this case. It only affects what the maximal complex is, but because we are specifying $S$ directly, this is not relevant.}
+	Only fully proper relational models can be transformed into simplicial models. Hence, the above proposition allows us to translate any relational model for knowledge into a simplicial model.	Given a fully proper relational model for knowledge and belief $\N=(W,(R_a)_{a\in Ag},(Q_a)_{a\in Ag},v)$, we define a simplicial model for knowledge and belief $\M_{\N}:=(N_{\N},V_{\N},L_{\N},S_{\N},(S_{\N,a})_{a\in Ag})$ similar to as in \cite{BelSimp}:\footnote{The difference between the work presented here, and the work in \cite{BelSimp}, is that in the latter, atomic formulae are assigned to facets, and here, they are assigned to nodes.}
 	
 \begin{align*}
 		N_{\N} &:= \{([w]_{a},a) \: : \: w \in W, a \in Ag\}\\
@@ -226,7 +226,7 @@ L_{\N}([w]_{a},a)(P) &:=\begin{cases}
 S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
 \end{align*}
 
-	where $e: N_{\N} \to 2^{W}$ is projection to the first coordinate (returning the equivalence class associated with each node), and $f \colon W \to \F(S_{\N})$ is the bijective correspondence between worlds in $W$ and facets in $S_{\N}$. What's missing are the belief subcomplexes, which we define as follows:
+	where $e: N_{\N} \to 2^{W}$ is projection to the first coordinate (returning the equivalence class associated with each node), and $f \colon W \to \F(S_{\N})$ is the bijective correspondence between worlds in $W$ and facets in $S_{\N}$.\footnote{Observe that we do not need to use the 0 case for $L_\N$. This is because the truth value of atomic propositions does not appeal to this case. It only affects what the maximal complex is, but because we are specifying $S$ directly, this is not relevant.} What's missing are the belief subcomplexes, which we define as follows:
 	$$\mathcal{F}(S_{\N,a}) := \{F\in\mathcal{F}(S_{\N}) \: : \: f^{-1}(F) Q_{a} f^{-1}(F)\},$$
 	Specifying the facets of $S_{\N,a}$ uniquely determines the simplicial complex itself; it also guarantees that $S_{\N,a}$ is a UCF subcomplex of $S_{\N}$. 
 	
@@ -335,6 +335,8 @@ S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
 	\end{definition}
 
 	It is important to note that the application of an action to an input models a distributed protocol. Indeed, simplicial action models provably define a protocol in the sense of \cite{DCTCT}, \cite{SimpDEL}, and \cite{TopPersp}, as is shown in \cite{TechMemo} and \cite{SimpAct}.
+	
+		The last piece concerns how we will represent simplicial models. In general, we will draw them with Hasse diagrams. The idea is simple - we will draw a simplicial model as a relation, or graph, where the nodes are sets in the complex, and an edge represents subset inclusion. Hence, maximal elements in this ordering are equivalent to facets, and the minimal element is the emptyset. Just above the emptyset will be singletons.
 	
 	\section{Examples}\label{sec:ex}
 	
