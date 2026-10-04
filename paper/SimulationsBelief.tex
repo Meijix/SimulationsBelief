@@ -336,9 +336,35 @@ S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
 
 	It is important to note that the application of an action to an input models a distributed protocol. Indeed, simplicial action models provably define a protocol in the sense of \cite{DCTCT}, \cite{SimpDEL}, and \cite{TopPersp}, as is shown in \cite{TechMemo} and \cite{SimpAct}.
 	
-		The last piece concerns how we will represent simplicial models. In general, we will draw them with Hasse diagrams. The idea is simple - we will draw a simplicial model as a relation, or graph, where the nodes are sets in the complex, and an edge represents subset inclusion. Hence, maximal elements in this ordering are equivalent to facets, and the minimal element is the emptyset. Just above the emptyset will be singletons.
+		The last piece concerns how we will represent simplicial models. In general, we will draw them with Hasse diagrams. The idea is simple - we will draw a simplicial model as a relation, or graph, where the nodes are sets in the complex, and an edge represents subset inclusion. Hence, maximal elements in this ordering are equivalent to facets, and the minimal element is the emptyset. Just above the emptyset will be singletons. Consider the example in Figure \ref{fgr:SimpEx0}
+		
+		\begin{figure}[htbp]
+			\begin{center}
+				\begin{tikzcd}
+					& b_0(\neg P_b) \arrow[ld, no head] \arrow[dd, no head] & a_1(P_a) \arrow[rd, no head] \arrow[dd, no head]  &                                     \\
+					c_0(\neg P_c) \arrow[rd, no head] \arrow[rru, no head] &                                                        &                                                         & c_1(P_c) \arrow[ld, no head] \\
+					& a_0(\neg P_a)                                          & b_1(P_b) \arrow[llu, no head]                                             
+				\end{tikzcd}
+				\caption{The model of 3 agents with privately held bit values prior to announcement. The three triangles correspond to the three worlds.} \label{fgr:SimpEx0}
+			\end{center}
+		\end{figure}
 	
-	\section{Examples}\label{sec:ex}
+	Figure \ref{fgr:SimpEx0} represents a knowledge cmplex. In this simplicial complex, there are three facets, namely $\{a_1,b_1,c_1\}$, $\{a_1,b_1,c_0\}$, and $\{a_0,b_0,c_0\}$. The Hasse diagram of this complex is shown in Figure \ref{fgr:HasseEx1}.
+	
+		\begin{figure}\begin{center}
+			\includegraphics[scale=.4]{HasseExample1.png}\end{center}
+		\caption{A Hasse diagram for the simplicial complex shown in Figure \ref{fgr:SimpEx0}. The highest nodes are the three facets, and the nodes just above the root are the singletons.}\label{fgr:HasseEx1}
+	\end{figure}
+
+	Sometimes, we will draw Hasse diagrams with only the faces and singletons. This is especially important in cases with dozens or more facets, or more than 4 or 5 agents, due to the combinatorial explosion in the number of faces.
+	
+	\draft{We need the simplified Hasse Diagrams here.}
+	
+	For the remainder of this paper, we will use Hasse diagrams to represent simplicial complexes.
+	
+	\section{Code}
+	
+	\section{Static Examples}\label{sec:ex}
 	
 	In this section we explore some static examples and show how our code builds them. 
 	
@@ -388,6 +414,10 @@ S_{\N} &:= \{F \subseteq N_{\N} \: : \: \bigcap_{n \in F} e(n) \neq \emptyset\}
 			\includegraphics[scale=.2]{Poster Example 3 Simplicial Case}\end{center}
 		\caption{The hasse diagram for a simplicial model for knowledge and belief with nine facets: ``$(w1,w1)$'' ($\{a0,b0,c0\}$), ``$(w3,w1)$'' ($\{a1,b0,c0\}$), ``$(w2,w1)$'' ($\{a2,b0,c0\}$), ``$(w2,w2)$'' ($\{a0,b1,c1\}$), ``$(w2,w2)$'' ($\{a1,b1,c1\}$), ``$(w3,w2)$'' ($\{a2,b1,c1\}$), ``$(w3,w3)$'' ($\{a0,b2,c2\}$), ``$(w2,w3)$'' ($\{a1,b2,c2\}$), and ``$(w1,w3)$'' ($\{a2,b2,c2\}$)}\label{fgr:SimpEx3}
 	\end{figure}
+
+	\section{Dynamic Examples}
+	
+	\section{Discussion and Future Work}
 	
 	\bibliographystyle{plain}	
 	\bibliography{Epistemology} 
