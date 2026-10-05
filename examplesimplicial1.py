@@ -27,4 +27,17 @@ model = SimplicialBeliefModel(agents, nodes, facets, belieffacets)
 
 print(model.is_valid())
 
-hasse.preview(model, "Simplicial Model")
+hasse.preview(model, "Simplicial Model 1")
+
+facet4 = frozenset({a1, b0, c0})
+facets2 = {facet1, facet2, facet3, facet4}
+
+beliefrevisionfacets = {"a": {facet1, facet2},
+                        "b": {facet1, facet2, facet4},
+                        "c": {facet1, facet2, facet4}}
+
+model2 = SimplicialBeliefModel(agents, nodes, facets2, beliefrevisionfacets)
+
+print(model2.is_valid())
+
+hasse.preview(model2, "Simplicial Model 2")
