@@ -6,18 +6,25 @@ These showcase the library's building blocks:
     2. closures          complete partial relations (belief KD45 / knowledge S5)
     3. belief_vs_knowledge  belief (KD45) vs. knowledge (S5)
     4. gallery           multi-agent frames + rendered images (valid & invalid)
-    5. muddy_children    a knowledge (S5) puzzle, rendered as its natural cube
+    5. muddy_children    a knowledge (S5) puzzle, rendered as its natural cube,
+                         then translated with to_simplicial (knowledge only,
+                         so Q_a = R_a) and drawn as a Hasse diagram
 
-Run all examples:   python examples.py
-Run one:            python examples.py muddy_children
-Open the images:    python examples.py muddy_children --open
+Run all examples:   python examples/examples.py
+Run one:            python examples/examples.py muddy_children
+Open the images:    python examples/examples.py muddy_children --open
 
 Images are written to the outputs/ folder (git-ignored). For a quick one-off look
 at a single model in the REPL, use ``visualization.preview(model)``.
 """
 
 import itertools
+import os
 import sys
+
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import hasse
 from relational_frame import RelationalFrame, k45_closure, kd45_closure, s5_closure
@@ -203,9 +210,8 @@ def muddy_children() -> None:
     print("Model valid?", muddy.is_valid())
     print(indent(visualize(muddy)))
     # A dense S5 model reads best with reflexive loops dropped and symmetric pairs
-    # merged -- that turns the 3-child model into its natural cube.
-    # The S5 style -- self-loops hidden, symmetric pairs merged -- is inferred,
-    # which turns the 3-child model into its natural cube.
+    # merged; show() infers that style from the relation, which turns the
+    # 3-child model into its natural cube.
     path = show(muddy, "muddy_children", "Muddy children · 3 kids · knowledge (S5)")
     print(indent(f"Rendered -> {path}"))
 

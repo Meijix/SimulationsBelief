@@ -1,4 +1,26 @@
+"""Natural disaster example -- a false report over a spotty radio.
+
+Story (details in the comments below): Alice (a) radios to Barb (b) that the
+road is clear (C); the message may not arrive. Three worlds: nothing sent (nS),
+sent but not received (SnR), sent and received (SR). At SnR Barb believes
+nothing was sent -- a FALSE belief -- which makes this a belief model rather
+than knowledge alone. Only this first message is built here; the second message
+(~C) described below is not modelled in this script.
+
+Route: knowledge + belief with one seed for both relations
+(``KnowledgeBeliefFrame.from_partial(agents, worlds, frameseed, frameseed)``).
+The model is already PROPER, so ``to_simplicial`` is applied directly and
+``hasse.preview`` draws the face lattice.
+
+Run:  python "examples/Natural Disaster Example.py"   (opens two previews).
+"""
+
+import os
 import sys
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from knowledge_belief import KnowledgeBeliefFrame
 from visualization import preview, show, to_dot, visualize
 from relational_frame import RelationalFrame
@@ -20,11 +42,18 @@ agents = {"a","b"}
 
 worlds = {"nS","SnR","SR"}
 
+#a: the SYMMETRIC pair SnR <-> SR -- she sent, and cannot tell whether it arrived;
+#no opinion, so her belief there is Q = R. b: the ONE-WAY edge SnR -> nS -- when
+#nothing arrives she believes nothing was sent. Under S5 that makes {nS, SnR} her
+#knowledge class, and the belief closure keeps the pointer: she believes nS at
+#both, false at SnR. At SR she received, a class of her own (Q = R by silence).
 frameseed = {"a":{("SnR","SR"),("SR","SnR")},
              "b":{("SnR","nS")}}
 
 KBframe = KnowledgeBeliefFrame.from_partial(agents, worlds, frameseed, frameseed)
 
+# Proper already: a's classes {nS}, {SnR, SR} and b's {nS, SnR}, {SR} meet in
+# singletons, so no to_proper step is needed.
 print(f"{KnowledgeBeliefFrame.is_proper(KBframe)}")
 
 preview(KBframe, "KB frame")

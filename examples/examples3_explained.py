@@ -1,4 +1,11 @@
-"""examples3.py, answered.
+"""examples3.py, answered -- design notes behind the knowledge/belief split.
+
+Story: the same three seeds on {w1, w2, w3} as examples3.py (the thesis's
+three-agent example). Routes: belief only (``from_partial`` = KD45 closure)
+versus knowledge only (``s5_closure``), and why properness -- a property of the
+S5 knowledge relations R_a -- is undefined for a KD45 belief frame Q_a. The
+proposals listed below have since been implemented (``from_partial_s5``,
+``KnowledgeBeliefFrame``, the primary definition in properness.py).
 
 from_partial(..., make_serial=True) closes each agent's seed edges under KD45 --
 transitivity + Euclideanness, plus a self-loop for isolated worlds. KD45 is BELIEF.
@@ -13,17 +20,25 @@ Solution:
 2. Add a new function from_partial_S5 that closes each edge under S5.
 3. Add a new class KnowledgeBeliefFrame to carry both relations.
 
-4. Add a new function that closes each relation of KnowledgeBeliefFrame from it corresponding closure????
+4. Add a new function that closes each relation of KnowledgeBeliefFrame from its corresponding closure????
 5. Change the properness.py to use the PRIMARY definition instead of the |.| = 1 test.
 6. Change the properness.py to use the KnowledgeBeliefFrame class instead of the RelationalFrame class.???
 7. Change properness.py to refuses non-S5 frames up front
 
-¿IS THERE KD45 -> S5 CONVERSION? Belief is not knowledge with extra STUFF added to it?
+IS THERE A KD45 -> S5 CONVERSION? Belief is not knowledge with extra STUFF added to it?
 
-Run with ``--open`` to also open each rendered figure.
+Run:  python examples/examples3_explained.py   -- a notes file: it builds RF, RF2, RF3 and
+prints nothing. The explanation lives in this docstring and the PART 1/2 blocks;
+``primary_definition_violations`` is a reference implementation. (The ``show``
+wrapper accepts ``--open`` but no figure is rendered here.)
 """
 
+import os
 import sys
+
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from knowledge_belief import KnowledgeBeliefFrame
 from properness import is_proper, joint_possibilities, non_proper_worlds
@@ -139,7 +154,8 @@ def primary_definition_violations(frame: RelationalFrame):
     ``properness.py`` implements the equivalent
     ``|intersection of R_a(w)| = 1`` form instead. 
     
-    (NEEDS TO BE CHANGED IN PROPERNESS.PY TO USE THE PRIMARY DEFINITION)
+    (DONE: properness.py now uses the primary definition; this function is kept
+    as the reference implementation it was checked against.)
     """
     return sorted(
         (x, y)

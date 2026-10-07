@@ -3,10 +3,21 @@
 Scenario: tomorrow's weather. Alice rules out sun but cannot tell rain from
 cloud; Bob is convinced it will be sunny.
 
-Run it:  python examples2.py
+Route: BELIEF ONLY. The seed edges are closed under KD45 with
+``RelationalFrame.from_partial(..., make_serial=True)``; there is no knowledge
+relation, no properness step and no simplicial translation here. Both agents
+end up with a FALSE belief at some world, which S5 knowledge could never show.
+
+Run it:  python examples/examples2.py
+         python examples/examples2.py --open   (also opens the rendered image)
 """
 
+import os
 import sys
+
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from relational_frame import RelationalFrame
 from visualization import preview, show, to_dot, visualize
@@ -17,6 +28,10 @@ worlds = {"rain", "cloud", "sun"}
 
 # --- Step 2: the edges the story gives us ------------------------------------
 # An edge  w -> u  means: "if the world were w, the agent considers u possible".
+# Alice: at `rain` she also considers `cloud` (she cannot tell them apart), and
+# at `sun` she still points to `rain` -- she has ruled sun out, so her belief is
+# FALSE there. Bob: from `rain` and from `cloud` he points to `sun` -- he
+# believes sun whatever the weather, which is false in both of those worlds.
 seed = {
     "alice": {("rain", "cloud"), ("sun", "rain")},
     "bob": {("rain", "sun"), ("cloud", "sun")},
@@ -30,6 +45,9 @@ except ValueError as exc:
     print(exc)
 
 # --- Step 4: close each relation under KD45 to get a valid frame -------------
+# make_serial=True: Bob's seed leaves `sun` with no successor, and KD45 (Axiom D)
+# demands one. The repair adds the self-loop sun -> sun: Bob believes sun when
+# it is sunny, a true belief, so the repair invents nothing false here.
 frame = RelationalFrame.from_partial(agents, worlds, seed, make_serial=True)
 print(f"\nSTEP 4: after from_partial -> {frame}, valid = {frame.is_valid()}")
 

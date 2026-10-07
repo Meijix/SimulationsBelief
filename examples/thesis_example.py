@@ -7,20 +7,30 @@ with thesis example"). It follows the thesis's own running example:
        |      to_proper: make copies, skew a distinguished agent
        v
     Figure 2  a bisimilar PROPER model
-       |      (next: the simplicial translation)
+       |      to_simplicial: worlds -> facets, (agent, knowledge class) -> nodes
        v
-    Figure 3  a simplicial belief model            [pending -- the simplicial step]
+    Figure 3  a simplicial belief model (2D image + interactive 3D HTML)
 
 The thesis presents the construction in two layers, reproduced here in order:
 
     * base case (knowledge only): a single equivalence relation R_a per agent,
     * full case (knowledge + belief): R_a plus a belief relation Q_a ⊆ R_a.
 
-Run:  python thesis_example.py
+Routes: knowledge only (``RelationalFrame`` + ``properness.to_proper``), then
+knowledge + belief (``KnowledgeBeliefFrame.to_proper`` -> ``to_simplicial``).
+Background: docs/04-figures-1-2-3.md.
+
+Run:  python examples/thesis_example.py
+      python examples/thesis_example.py --open   (also opens each figure)
 Images are written to the outputs/ folder (git-ignored).
 """
 
+import os
 import sys
+
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from knowledge_belief import KnowledgeBeliefFrame
 from properness import is_proper, to_proper

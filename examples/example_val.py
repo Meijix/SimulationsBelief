@@ -1,35 +1,41 @@
 # -*- coding: utf-8 -*-
-"""Ejemplo mínimo, paso a paso: un modelo CON VALUACIÓN LÓGICA, de punta a punta.
+"""Minimal step-by-step example: a model WITH A LOGICAL VALUATION, end to end.
 
-Los demás ejemplos del repo son estructurales (mundos y relaciones). Este añade
-la capa que les falta -- los átomos, la verdad y las fórmulas -- y sigue un solo
-modelo por los seis pasos del pipeline:
+The other examples in the repo are structural (worlds and relations). This one
+adds the layer they lack -- atoms, truth and formulas -- and follows a single
+model through the six steps of the pipeline:
 
-    1. el escenario y las relaciones (semillas crudas)
-    2. la valuación lógica  v : P -> 2^W   (qué átomo es verdadero dónde)
-    3. evaluar fórmulas en el modelo ORIGINAL (aunque sea impropio)
-    4. hacerlo propio y LEVANTAR la valuación (la verdad se conserva)
-    5. traducirlo a complejo simplicial (Lema 2.6: misma verdad en las facetas)
-    6. el enfoque canónico por VÉRTICES (átomos 1/0/2) y el esquema NU
+    1. the scenario and the relations (raw seeds)
+    2. the logical valuation  v : P -> 2^W   (which atom is true where)
+    3. evaluating formulas in the ORIGINAL model (even though it is improper)
+    4. making it proper and LIFTING the valuation (truth is preserved)
+    5. translating it to a simplicial complex (Lemma 2.6: same truth on facets)
+    6. the canonical VERTEX-based approach (atoms 1/0/2) and the NU scheme
 
-El escenario: Ana y Beto en un sótano sin ventanas. Afuera el clima es uno de
-tres mundos -- sol, nubes o lluvia -- y hay dos hechos atómicos:
+The scenario: Ana and Beto in a basement with no windows. Outside, the weather
+is one of three worlds -- sol (sunny), nubes (cloudy) or lluvia (rainy) -- and
+there are two atomic facts:
 
-    p = "llueve"      verdadero sólo en el mundo  lluvia
-    q = "hace sol"    verdadero sólo en el mundo  sol
+    p = "it is raining"   true only in world  lluvia
+    q = "it is sunny"     true only in world  sol
 
-Ana tiene un sensor de lluvia: distingue lluvia de lo demás, pero no sabe
-diferenciar sol de nubes. Beto no tiene nada: para él los tres mundos son
-indistinguibles, y CREE que hace sol -- una creencia que será falsa cuando
-llueva. Ana no declara creencias: por la convención del proyecto, eso significa
-que cree exactamente lo que sabe.
+Ana has a rain sensor: she tells rain apart from the rest, but cannot tell
+sunny from cloudy. Beto has nothing: for him the three worlds are
+indistinguishable, and he BELIEVES it is sunny -- a belief that will be false
+when it rains. Ana declares no beliefs: by the project convention, that means
+she believes exactly what she knows.
 
-Uso:
-    python3 example_val.py              # imprime los seis pasos
-    python3 example_val.py --open       # y abre las figuras que genera
+Usage:
+    python3 examples/example_val.py              # prints the six steps
+    python3 examples/example_val.py --open       # and opens the figures it generates
 """
 
+import os
 import sys
+
+# The examples live one level below the core modules. Put the repository root on
+# sys.path so ``python examples/<script>.py`` works from any working directory.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from assignment import (
     assignment_from_model,
@@ -46,13 +52,13 @@ from visualization import show as _show
 ABRIR = "--open" in sys.argv
 
 MUNDOS = ["sol", "nubes", "lluvia"]
-AGENTES = ["a", "b"]                      # a = Ana (con sensor), b = Beto
+AGENTES = ["a", "b"]                      # a = Ana (with sensor), b = Beto
 NOMBRE = {"a": "Ana", "b": "Beto"}
 
-# Las fórmulas son TUPLAS: ("atom", P) | ("bot",) | ("imp", f, g)
-#                         | ("K", agente, f) | ("B", agente, f)
-# más el azúcar ("not", f), ("and", f, g), ("or", f, g). Son recursivas: donde
-# va una f puede ir otra fórmula entera, así se anidan las modalidades.
+# Formulas are TUPLES: ("atom", P) | ("bot",) | ("imp", f, g)
+#                      | ("K", agent, f) | ("B", agent, f)
+# plus the sugar ("not", f), ("and", f, g), ("or", f, g). They are recursive:
+# wherever an f goes, a whole formula can go; that is how modalities nest.
 p = ("atom", "p")
 q = ("atom", "q")
 
@@ -62,30 +68,30 @@ def banner(titulo: str) -> None:
 
 
 def show(*args, **kwargs):
-    """Envoltorio local para que --open abra cada figura al generarla."""
+    """Local wrapper so that --open opens each figure as it is generated."""
     kwargs.setdefault("open", ABRIR)
     return _show(*args, **kwargs)
 
 
 # --------------------------------------------------------------------------- #
-# PASO 1 · El modelo: semillas crudas -> relaciones completas
+# STEP 1 · The model: raw seeds -> complete relations
 # --------------------------------------------------------------------------- #
 def paso1_modelo() -> KnowledgeBeliefFrame:
     banner("PASO 1 · El modelo (semillas crudas -> relaciones válidas)")
 
-    # Las semillas son PARCIALES: sólo escribimos las aristas que nos importan
-    # y las clausuras completan el resto (reflexividad, transitividad, etc.).
+    # Seeds are PARTIAL: we only write the edges we care about and the
+    # closures fill in the rest (reflexivity, transitivity, etc.).
     kb = KnowledgeBeliefFrame.from_partial(
         AGENTES, MUNDOS,
-        # CONOCIMIENTO: Ana no distingue sol de nubes (una sola arista basta:
-        # s5_closure la vuelve simétrica y reflexiva). Beto no distingue nada.
+        # KNOWLEDGE: Ana cannot tell sol from nubes (a single edge is enough:
+        # s5_closure makes it symmetric and reflexive). Beto tells nothing apart.
         knowledge={
             "a": {("sol", "nubes")},
             "b": {("sol", "nubes"), ("nubes", "lluvia")},
         },
-        # CREENCIA: Beto cree que hace sol, pase lo que pase. Ana calla --
-        # conjunto vacío EXPLÍCITO, que es como se declara "sin semilla"
-        # (un agente ausente del diccionario sería un error, no un silencio).
+        # BELIEF: Beto believes it is sunny, whatever happens. Ana is silent --
+        # an EXPLICIT empty set, which is how "no seed" is declared (an agent
+        # missing from the dict would be an error, not silence).
         belief={
             "a": set(),
             "b": {(w, "sol") for w in MUNDOS},
@@ -102,9 +108,9 @@ def paso1_modelo() -> KnowledgeBeliefFrame:
         for w in MUNDOS:
             print(f"    {NOMBRE[g]:5s} en {w:7s} cree {sorted(kb.believes(g, w))}")
 
-    # Ana calló, y por la convención del proyecto eso significó Q_a = R_a:
-    # "los agentes creen lo que saben". La constancia ya garantizaba el
-    # recíproco (saben lo que creen) en todos los casos.
+    # Ana was silent, and by the project convention that meant Q_a = R_a:
+    # "agents believe what they know". The constancy condition already
+    # guaranteed the converse (they know what they believe) in every case.
     iguales = all(kb.believes("a", w) == kb.knows("a", w) for w in MUNDOS)
     print(f"\n  Ana calló sobre creencias -> Q_a = R_a ('cree lo que sabe'): {iguales}")
     print(f"  Modelo válido (las 4 condiciones del marco): {kb.is_valid()}")
@@ -112,16 +118,16 @@ def paso1_modelo() -> KnowledgeBeliefFrame:
 
 
 # --------------------------------------------------------------------------- #
-# PASO 2 · La valuación lógica
+# STEP 2 · The logical valuation
 # --------------------------------------------------------------------------- #
 def paso2_valuacion() -> dict:
     banner("PASO 2 · La valuación lógica  v : P -> 2^W")
 
-    # Una valuación de Kripke es TOTAL: para cada átomo dice exactamente en qué
-    # mundos es verdadero, y en los demás es falso. (Compárese con el enfoque
-    # por vértices del paso 6, que es PARCIAL: admite "no sé".)
-    v = {"p": {"lluvia"},       # p = "llueve"
-         "q": {"sol"}}          # q = "hace sol"
+    # A Kripke valuation is TOTAL: for each atom it says exactly in which
+    # worlds it is true, and it is false in all the others. (Compare with the
+    # vertex-based approach of step 6, which is PARTIAL: it admits "don't know".)
+    v = {"p": {"lluvia"},       # p = "it is raining"
+         "q": {"sol"}}          # q = "it is sunny"
 
     print("  v(p) = {lluvia}      p = 'llueve'")
     print("  v(q) = {sol}         q = 'hace sol'")
@@ -133,14 +139,14 @@ def paso2_valuacion() -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# PASO 3 · Evaluar fórmulas (en el modelo original, aunque sea impropio)
+# STEP 3 · Evaluating formulas (in the original model, improper as it is)
 # --------------------------------------------------------------------------- #
 def paso3_formulas(kb, v) -> None:
     banner("PASO 3 · Fórmulas en el modelo original")
 
-    # holds_kripke funciona en modelos IMPROPIOS: la propiedad es un requisito
-    # de la traducción simplicial, no de la verdad. Así que podemos preguntar
-    # aquí, antes de tocar nada.
+    # holds_kripke works on IMPROPER models: properness is a requirement of
+    # the simplicial translation, not of truth. So we can ask here, before
+    # touching anything.
     real = "lluvia"
     print(f"Supongamos que el mundo real es '{real}' (llueve, no hace sol).\n")
 
@@ -170,7 +176,7 @@ def paso3_formulas(kb, v) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# PASO 4 · Hacerlo propio y levantar la valuación
+# STEP 4 · Making it proper and lifting the valuation
 # --------------------------------------------------------------------------- #
 def paso4_propio(kb, v):
     banner("PASO 4 · De impropio a propio (y la valuación viaja con el modelo)")
@@ -181,18 +187,18 @@ def paso4_propio(kb, v):
     print("  darían la misma faceta y la traducción no sería fiel. Se arregla")
     print("  copiando el modelo |W| veces y sesgando a un agente distinguido.")
 
-    propio = kb.to_proper()          # distinguido por defecto: el de menos aristas
+    propio = kb.to_proper()          # default distinguished agent: fewest edges
     print(f"\n  to_proper() -> {propio!r}")
     print(f"    {len(kb.worlds)} mundos -> {len(propio.worlds)} mundos, propio: {propio.is_proper()}")
 
-    # La valuación se LEVANTA por la proyección: cada copia (w, u) hereda los
-    # átomos de su original w. Así los átomos siguen significando lo mismo.
+    # The valuation is LIFTED through the projection: each copy (w, u) inherits
+    # the atoms of its original w. So the atoms keep meaning the same thing.
     v2 = lift_valuation(v, propio.projection)
     print(f"\n  Valuación levantada: v'(p) = {sorted(v2['p'])}")
     print("    (las tres copias del mundo 'lluvia' -- y sólo ellas -- cumplen p)")
 
-    # La proyección es un morfismo acotado, así que cada copia satisface
-    # EXACTAMENTE las mismas fórmulas que su original. Lo comprobamos.
+    # The projection is a bounded morphism, so each copy satisfies EXACTLY
+    # the same formulas as its original. We check it.
     formulas = [p, q, ("K", "a", p), ("B", "b", q), ("B", "b", ("not", p)),
                 ("K", "a", ("B", "b", q)), ("imp", ("B", "b", q), q)]
     iguales = all(
@@ -205,7 +211,7 @@ def paso4_propio(kb, v):
 
 
 # --------------------------------------------------------------------------- #
-# PASO 5 · El complejo simplicial (semántica del capítulo 2)
+# STEP 5 · The simplicial complex (chapter 2 semantics)
 # --------------------------------------------------------------------------- #
 def paso5_simplicial(propio, v2):
     banner("PASO 5 · Traducción simplicial y el Lema 2.6")
@@ -219,14 +225,14 @@ def paso5_simplicial(propio, v2):
           + ", ".join(f"|S_{g}| = {len(sm.belief_facets[g])}" for g in AGENTES)
           + f"   (de {len(sm.facets)} facetas)")
 
-    # La valuación de facetas del capítulo 2: L(P) = f[v(P)], las facetas de los
-    # mundos donde el átomo vale. Es la traducción EXACTA (representa cualquier
-    # valuación de Kripke).
+    # The chapter 2 facet valuation: L(P) = f[v(P)], the facets of the worlds
+    # where the atom holds. It is the EXACT translation (it represents any
+    # Kripke valuation).
     L2 = facet_valuation(sm, v2)
     print(f"\n  Valuación de facetas: |L(p)| = {len(L2['p'])} facetas, "
           f"|L(q)| = {len(L2['q'])} facetas")
 
-    # LEMA 2.6: la traducción preserva la verdad de TODA fórmula del lenguaje.
+    # LEMMA 2.6: the translation preserves the truth of EVERY formula.
     formulas = [p, q, ("K", "a", p), ("K", "b", p), ("B", "b", q),
                 ("B", "b", ("not", p)), ("K", "a", ("B", "b", q)),
                 ("imp", ("B", "b", q), q), ("B", "b", ("K", "a", p))]
@@ -242,15 +248,15 @@ def paso5_simplicial(propio, v2):
 
 
 # --------------------------------------------------------------------------- #
-# PASO 6 · El enfoque canónico: átomos en los VÉRTICES (1 / 0 / 2)
+# STEP 6 · The canonical approach: atoms on the VERTICES (1 / 0 / 2)
 # --------------------------------------------------------------------------- #
 def paso6_vertices(sm, v2):
     banner("PASO 6 · El enfoque por vértices (capítulo 3) y el esquema NU")
 
-    # El enfoque canónico del proyecto pone los átomos en las PERSPECTIVAS, no
-    # en las facetas, y de forma PARCIAL: 1 = lo observa verdadero, 0 = lo
-    # observa falso, 2 = no dice nada ("no sé"). Un nodo ES una clase de
-    # conocimiento, así que la asignación inducida lee lo que el agente SABE.
+    # The project's canonical approach puts atoms on the PERSPECTIVES, not on
+    # the facets, and PARTIALLY: 1 = observes it true, 0 = observes it false,
+    # 2 = says nothing ("don't know"). A node IS a knowledge class, so the
+    # induced assignment reads what the agent KNOWS.
     L3 = assignment_from_model(sm, v2)
     print(f"  Asignación bien formada (sólo valores 0/1/2): "
           f"{not assignment_violations(L3)}")
@@ -270,9 +276,9 @@ def paso6_vertices(sm, v2):
               f"{LEYENDA[node_value(L3, nodo, 'q')]:>4s}")
     print("      1 = la observa verdadera · 0 = la observa falsa · 2 = no sabe")
 
-    # NU (P -> algún agente cree P) es VÁLIDO en esta semántica: un átomo
-    # verdadero que NADIE observa simplemente no existe a nivel de faceta.
-    # Por eso hay valuaciones kripkeanas que este enfoque no puede representar.
+    # NU (P -> some agent believes P) is VALID in this semantics: a true atom
+    # that NOBODY observes simply does not exist at facet level. That is why
+    # some Kripke valuations cannot be represented by this approach.
     print("\n  El esquema NU:  P → (algún agente cree P)")
     for atomo in ("p", "q"):
         malas = nu_violations(sm, L3, {atomo: v2[atomo]})
@@ -294,8 +300,8 @@ def paso6_vertices(sm, v2):
     print("    exactamente donde NU vale; si tu valuación tiene verdades que nadie")
     print("    observa, usa facet_valuation (paso 5), que representa cualquiera.")
 
-    # Comprobación de la coincidencia, átomo por átomo, con el evaluador del
-    # capítulo 2 sobre la misma asignación levantada a facetas.
+    # Check of the agreement, atom by atom, with the chapter 2 evaluator on
+    # the same assignment lifted to facets.
     coincide_p = all(
         holds_vertices(sm, L3, F, p) == (sm.world_of_facet[F][0] == "lluvia")
         for F in sm.facets
@@ -305,7 +311,7 @@ def paso6_vertices(sm, v2):
 
 
 # --------------------------------------------------------------------------- #
-# PASO 7 · Las figuras (con la valuación dibujada)
+# STEP 7 · The figures (with the valuation drawn)
 # --------------------------------------------------------------------------- #
 def paso7_figuras(kb, v, sm, L3) -> None:
     banner("PASO 7 · Figuras con la capa lógica dibujada")
