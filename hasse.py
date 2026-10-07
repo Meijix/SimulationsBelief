@@ -65,9 +65,12 @@ else here is pure standard library.
 
 A caution about size: a complex with an ``n``-vertex facet has ``2**n`` faces, so
 the diagram grows exponentially with the dimension. Past a few hundred faces the
-picture stops being readable -- use ``max_dimension=`` to draw only the low-
-dimensional part (the skeleton), which is usually the part you were checking, and
-``rankdir="LR"`` when a middle row gets too wide for the default upward layout.
+picture stops being readable. Two ways out: ``facets_and_vertices=True`` keeps
+only the bottom row (perspectives) and the top row (worlds), joined by the
+incidence "vertex lies in facet" -- the reading that matters for a belief model,
+and the one requested in GitHub #7 -- and ``max_dimension=`` draws only the
+low-dimensional part (the skeleton). ``rankdir="LR"`` helps when a middle row
+gets too wide for the default upward layout.
 
 Isolated vertices (a model node in no facet, GitHub #12) are 0-dimensional
 maximal simplices: they are part of the lattice and sit alone on the vertex row.
@@ -492,6 +495,7 @@ def to_dot(
     *,
     include_empty: bool | None = None,
     max_dimension: int | None = None,
+    facets_and_vertices: bool = False,
     rankdir: str = "BT",
     dimension_axis: bool = True,
     legend: bool = True,
@@ -511,6 +515,15 @@ def to_dot(
             the lattice was built with.
         max_dimension: Draw only faces up to this dimension -- the ``k``-skeleton.
             The escape hatch for complexes whose full lattice is too big to read.
+        facets_and_vertices: Draw ONLY the vertices and the facets (GitHub #7),
+            with a line from each vertex up to every facet containing it. For a
+            simplicial belief model that is the perspectives row and the worlds
+            row joined by "this agent's perspective is part of this world" --
+            everything the belief reading needs, without the ``2**n`` middle
+            rows. The lines are incidences, not covering relations, so this is
+            a bipartite incidence diagram rather than a Hasse diagram proper;
+            the rows are still ranked by dimension. The empty face is dropped
+            unless ``include_empty=True`` is asked for explicitly.
         rankdir: ``"BT"`` (default) grows the dimension upwards, the textbook
             Hasse layout -- but a lattice with a wide middle row then comes out
             as a very flat strip. ``"LR"`` puts the dimensions in columns instead,
@@ -524,9 +537,13 @@ def to_dot(
     # Which faces to draw. Filtering happens here, not in the lattice, so the same
     # lattice object can be drawn at several depths without being rebuilt.
     def keep(face: Face) -> bool:
-        if not face and include_empty is False:
-            return False
+        if not face:
+            # The bottom element: by default follow the lattice, but in the
+            # vertices-and-facets view it is pure noise unless asked for.
+            return include_empty is True if facets_and_vertices else include_empty is not False
         if max_dimension is not None and len(face) - 1 > max_dimension:
+            return False
+        if facets_and_vertices and len(face) != 1 and not lattice.is_facet(face):
             return False
         return True
 
@@ -536,6 +553,7 @@ def to_dot(
     if len(faces) > CROWDED:
         warnings.warn(
             f"{len(faces)} faces: the Hasse diagram will be very dense. Consider "
+            f"facets_and_vertices=True (perspectives and worlds only) or "
             f"max_dimension=2 to draw only the 2-skeleton.",
             stacklevel=2,
         )
@@ -604,10 +622,23 @@ def to_dot(
             attrs += ["shape=circle", "width=0.32", "fixedsize=true"]
         lines.append(f"    {ids[face]} [{', '.join(attrs)}];")
 
-    lines += ["", "    // Covering relations: sigma -- tau with dim tau = dim sigma + 1."]
-    for sigma, tau in lattice.covers():
-        if sigma in ids and tau in ids:
-            lines.append(f"    {ids[sigma]} -> {ids[tau]};")
+    if facets_and_vertices:
+        # With the middle rows gone there are no covering pairs to draw (a
+        # vertex covers nothing but the empty face). What connects the two
+        # rows is INCIDENCE: vertex v lies in facet F. One line per pair, so
+        # the lines leaving a vertex count the worlds it belongs to.
+        lines += ["", "    // Incidences: vertex -- facet containing it."]
+        for tau in faces:
+            if len(tau) > 1 and lattice.is_facet(tau):
+                for v in _sorted_vertices(tau):
+                    sigma = frozenset({v})
+                    if sigma in ids:
+                        lines.append(f"    {ids[sigma]} -> {ids[tau]};")
+    else:
+        lines += ["", "    // Covering relations: sigma -- tau with dim tau = dim sigma + 1."]
+        for sigma, tau in lattice.covers():
+            if sigma in ids and tau in ids:
+                lines.append(f"    {ids[sigma]} -> {ids[tau]};")
 
     # One rank per dimension. dot would already rank the faces correctly (all
     # covering edges go up exactly one step), but saying it explicitly guarantees
@@ -628,11 +659,19 @@ def to_dot(
         '        <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="13">'
         f"{_html_escape(caption)}</FONT></TD></TR>",
     ]
-    if legend and lattice.legend_cells:
+    legend_cells = list(lattice.legend_cells) if legend else []
+    if legend and facets_and_vertices:
+        # Tell the reader the middle rows were left out on purpose, so a
+        # missing edge row is not mistaken for a missing edge.
+        legend_cells.append(
+            '<TD><FONT COLOR="#555555" POINT-SIZE="11">vertices and facets only; '
+            "a line = vertex lies in facet</FONT></TD>"
+        )
+    if legend_cells:
         rows_html += [
             '        <TR><TD ALIGN="CENTER">',
             '          <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="0"><TR>',
-            *("            " + cell for cell in lattice.legend_cells),
+            *("            " + cell for cell in legend_cells),
             "          </TR></TABLE>",
             "        </TD></TR>",
         ]
@@ -663,6 +702,7 @@ def show(
     image_format: str = "png",
     include_empty: bool | None = None,
     max_dimension: int | None = None,
+    facets_and_vertices: bool = False,
     rankdir: str = "BT",
     dimension_axis: bool = True,
     legend: bool = True,
@@ -672,7 +712,9 @@ def show(
 
     Writes the DOT source next to the image (``<name>.dot``) and runs Graphviz on
     it, exactly like :func:`visualization.show`, so the two renderers leave the same
-    kind of artefacts in ``outputs/``.
+    kind of artefacts in ``outputs/``. The drawing options are those of
+    :func:`to_dot` (``facets_and_vertices=True`` for the perspectives/worlds
+    view of GitHub #7).
 
     Raises:
         RuntimeError: If the Graphviz ``dot`` binary is not on ``PATH``. Use
@@ -683,6 +725,7 @@ def show(
         title if title is not None else name,
         include_empty=include_empty,
         max_dimension=max_dimension,
+        facets_and_vertices=facets_and_vertices,
         rankdir=rankdir,
         dimension_axis=dimension_axis,
         legend=legend,
