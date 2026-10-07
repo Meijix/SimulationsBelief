@@ -89,6 +89,7 @@ class SimplicialBeliefModel:
         projection: Dict[Facet, World] | None = None,
         validate: bool = True,
         axiom_d: bool | None = None,
+        node_names: Dict[Node, str] | None = None,
     ) -> None:
         """Build the model; ``validate`` raises on any structural violation.
 
@@ -106,6 +107,12 @@ class SimplicialBeliefModel:
               only guarantees K45, so a hand-built model must not be refused
               just because some perspective ended up isolated.
         """
+        # Display names for nodes, used by the renderers when present. A model
+        # produced by the translation needs none (a node IS its knowledge
+        # class, and the figures number them a0, a1, ...); a complex DEFINED
+        # DIRECTLY has vertices the user named, and those are the names the
+        # figures must show. Purely cosmetic: nothing in the semantics reads it.
+        self.node_names: Dict[Node, str] = dict(node_names or {})
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
@@ -206,9 +213,11 @@ class SimplicialBeliefModel:
     def violations(self) -> List[str]:
         """Return every structural violation (empty list if well-formed).
 
-        Checks: UCF for the whole complex and each belief subcomplex, each ``S_a`` a
-        subset of ``S`` and non-empty, and the consistency/seriality condition (every
-        coloured node lies in some facet of its agent's belief subcomplex).
+        Checks: UCF for the whole complex and each belief subcomplex, and each
+        ``S_a`` a subset of ``S`` -- these are structural and hold in both logics.
+        Only when ``axiom_d`` is True: each ``S_a`` non-empty, and the
+        consistency/seriality condition (every coloured node lies in some facet
+        of its agent's belief subcomplex), i.e. Axiom D read geometrically.
         """
         problems: List[str] = []
 

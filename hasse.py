@@ -50,7 +50,8 @@ Anything that describes a complex:
       their agent's colour (the chromatic colouring) and facets get the colour of
       their belief signature, the same one :func:`visualization.show` uses. So the
       Hasse diagram and the 2-D/3-D figure of the same model can be read together.
-      This also fills a gap: ``visualization.to_dot`` refuses simplicial models.
+      (``visualization.to_dot`` gives a complex only a flat graph drawing; the
+      lattice is the complementary picture.)
 
 The API mirrors :mod:`visualization`::
 
@@ -416,7 +417,14 @@ def from_simplicial_model(model, *, include_empty: bool = True,
         for i, node in enumerate(classes):
             short[node] = f"{a}{i}"
 
+    # A directly-defined complex carries the user's own vertex names; they
+    # win over the generated a0/a1 numbering so the diagram speaks the names
+    # the user typed.
+    given = getattr(model, "node_names", None) or {}
+
     def node_name(node) -> str:
+        if node in given:
+            return str(given[node])
         return short[node] if compact else _vertex_label(node)
 
     for face in lattice.faces:
@@ -433,8 +441,9 @@ def from_simplicial_model(model, *, include_empty: bool = True,
                 # perspectives on a second, smaller line.
                 rows = [str(world), " ".join(node_name(n) for n in nodes)]
             colour = sig_color[_belief_signature(model, face, agents)]
-            # "55"/"33" are Graphviz's 8-digit RGBA: a translucent wash keeps the
-            # label readable while still reading as the Figure-3 colour.
+            # Graphviz accepts #RRGGBBAA, so the "55"/"33" suffixes are alpha: a
+            # translucent wash keeps the label readable while still reading as
+            # the Figure-3 colour (and the agent's colour, below).
             lattice.fills[face] = colour + "55"
             lattice.outlines[face] = colour
         elif len(face) == 1:
@@ -507,7 +516,7 @@ def to_dot(
     :func:`show` calls it for you.
 
     Args:
-        title: Caption above the diagram (defaults to a short description).
+        title: Caption under the diagram (defaults to a short description).
         assignment: Vertex valuation ``L : N -> 3^P`` to display -- each face gets
             a line with the literals its perspectives jointly observe (simplicial
             models only; see :func:`from_simplicial_model`).
