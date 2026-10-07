@@ -19,6 +19,17 @@ Because the input is **proper**, distinct worlds give distinct facets, so ``f`` 
 bijection worlds <-> facets and the translation is faithful. That is exactly why
 :func:`to_simplicial` demands a proper model.
 
+ISOLATED PERSPECTIVES. A node that lies in no facet of its agent's ``S_a`` is an
+*isolated perspective* (thesis p. 23): there the agent believes everything
+vacuously. Under KD45 (Axiom D) that is forbidden; under K45 it is legal, and
+it is the normal outcome of the DYNAMIC setting -- an action can delete every
+facet an agent believed possible, so the result of an update only satisfies
+K45 (GitHub #12). A node may even lie in no facet of ``S`` at all (a vertex no
+world passes through any more); such a node is still part of the complex, as a
+0-dimensional maximal simplex, and the drawings keep it. The constructor
+therefore never rejects isolated nodes unless Axiom D is DECLARED
+(``axiom_d=True``); see :class:`SimplicialBeliefModel`.
+
 Dependency direction: this module imports the models; nothing imports it.
 """
 
@@ -51,11 +62,16 @@ class SimplicialBeliefModel:
 
     Attributes:
         agents: the agent set (the colours).
-        nodes: all nodes (perspectives) appearing in some facet.
+        nodes: all nodes (perspectives). Normally each lies in some facet, but a
+            node in NO facet is accepted too (see :meth:`isolated_nodes`).
         facets: the facets of the whole complex ``S`` (each a frozenset of nodes,
             one per agent -- the UCF condition).
         belief_facets: ``agent -> set of facets`` giving each agent's belief
             subcomplex ``S_a`` (a subset of ``facets``).
+        axiom_d: whether the model is read under KD45 (``True``) or K45
+            (``False``). Declared by the caller, or INFERRED from the geometry
+            when the constructor is given ``None``: KD45 exactly when no
+            perspective is isolated and no ``S_a`` is empty.
         world_of_facet: ``facet -> world`` of the proper model it came from (the
             bijection ``f`` inverted).
         projection: ``facet -> original world`` it ultimately simulates (composing
@@ -72,16 +88,24 @@ class SimplicialBeliefModel:
         world_of_facet: Dict[Facet, World] | None = None,
         projection: Dict[Facet, World] | None = None,
         validate: bool = True,
-        axiom_d: bool = True,
+        axiom_d: bool | None = None,
     ) -> None:
-        # The geometric side of the Axiom D contract. On a simplicial model, D
-        # is exactly "no isolated perspectives" (thesis p. 23): every a-node
-        # lies in some facet of S_a, and no S_a is empty. With axiom_d=False
-        # (K45, the logic of ch. 3) both are legal: an isolated a-node makes
-        # believes_facets empty there, so B_a is vacuously universal -- defunct
-        # belief, which is a state ch. 3's revision genuinely produces. Only
-        # violations() consults the flag; the semantics never does.
-        self.axiom_d: bool = axiom_d
+        """Build the model; ``validate`` raises on any structural violation.
+
+        ``axiom_d`` is the belief logic the model is held to:
+
+            * ``True``  -- KD45 is DECLARED: isolated perspectives and empty
+              belief subcomplexes are violations (the GUI's switch, and what a
+              KD45 relational model carries through :func:`to_simplicial`);
+            * ``False`` -- K45 is declared: both are legal, nothing is checked;
+            * ``None`` (default) -- INFER it from the geometry, the way
+              ``RelationalFrame.logic_label`` detects S5 instead of demanding
+              it. Nothing is rejected; ``self.axiom_d`` then REPORTS whether D
+              happens to hold. This is the right default for complexes built
+              by hand or produced by actions (GitHub #12): the dynamic setting
+              only guarantees K45, so a hand-built model must not be refused
+              just because some perspective ended up isolated.
+        """
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
@@ -90,6 +114,16 @@ class SimplicialBeliefModel:
         }
         self.world_of_facet: Dict[Facet, World] = dict(world_of_facet or {})
         self.projection: Dict[Facet, World] = dict(projection or {})
+        # The geometric side of the Axiom D contract. On a simplicial model, D
+        # is exactly "no isolated perspectives" (thesis p. 23): every a-node
+        # lies in some facet of S_a, and no S_a is empty. With axiom_d=False
+        # (K45, the logic of ch. 3) both are legal: an isolated a-node makes
+        # believes_facets empty there, so B_a is vacuously universal -- defunct
+        # belief, which is a state ch. 3's revision genuinely produces. Only
+        # violations() consults the flag; the semantics never does. Left
+        # unspecified, the flag is READ OFF the geometry (see the docstring),
+        # so the stored value is always a plain bool.
+        self.axiom_d: bool = axiom_d if axiom_d is not None else self.satisfies_axiom_d()
         if validate:
             problems = self.violations()
             if problems:
@@ -120,6 +154,51 @@ class SimplicialBeliefModel:
         """
         p = self.pi(agent, facet)
         return {Y for Y in self.belief_facets[agent] if self.pi(agent, Y) == p}
+
+    # ------------------------------------------------------------------ #
+    # Isolated perspectives (the geometry of Axiom D)
+    # ------------------------------------------------------------------ #
+    def isolated_nodes(self) -> Set[Node]:
+        """Nodes lying in NO facet of ``S`` at all.
+
+        Geometrically each one is a 0-dimensional maximal simplex of the
+        complex (a vertex no world passes through); the translation never
+        produces them, but a hand-built complex or the result of an action can
+        (GitHub #12). They are kept, listed by :meth:`describe` and drawn --
+        the Hasse diagram shows them as lone boxes on the vertex row.
+        """
+        covered = {n for F in self.facets for n in F}
+        return {n for n in self.nodes if n not in covered}
+
+    def isolated_perspectives(self) -> Dict[Agent, Set[Node]]:
+        """Per agent, the ``a``-nodes lying in no facet of ``S_a``.
+
+        These are the isolated perspectives of thesis p. 23: at such a node
+        :meth:`believes_facets` is empty, so ``B_a φ`` holds for every ``φ``
+        (defunct belief). Nodes in no facet of ``S`` count too. Axiom D says
+        this dictionary is empty for every agent and no ``S_a`` is empty; that
+        is what :meth:`satisfies_axiom_d` checks and :meth:`violations`
+        reports when D is declared.
+
+        Membership is tested directly (``n in F``) rather than through
+        :meth:`pi`, so the answer is meaningful even on a malformed (UCF-
+        violating) facet that :meth:`pi` would refuse.
+        """
+        out: Dict[Agent, Set[Node]] = {}
+        for a in self.agents:
+            covered = {n for F in self.belief_facets.get(a, ()) for n in F if n.agent == a}
+            out[a] = {n for n in self.nodes if n.agent == a and n not in covered}
+        return out
+
+    def satisfies_axiom_d(self) -> bool:
+        """True iff the geometry satisfies Axiom D: no isolated perspective, no empty ``S_a``.
+
+        This is the KD45/K45 reading of the complex *as it is*, independent of
+        what was declared: it is what ``axiom_d=None`` stores in ``self.axiom_d``.
+        """
+        return all(self.belief_facets.get(a) for a in self.agents) and not any(
+            self.isolated_perspectives().values()
+        )
 
     # ------------------------------------------------------------------ #
     # Validation
@@ -167,16 +246,15 @@ class SimplicialBeliefModel:
         # S_a. This IS Axiom D read geometrically -- a node failing it is an
         # "isolated perspective" (thesis p. 23), at which B_a holds vacuously
         # for everything. Enforced only under the KD45 contract; a K45 model
-        # (axiom_d=False) admits isolated perspectives by design.
+        # (axiom_d=False, or inferred) admits isolated perspectives by design.
         if self.axiom_d:
+            isolated = self.isolated_perspectives()
             for a in sorted(self.agents, key=str):
-                covered = {self.pi(a, F) for F in self.belief_facets.get(a, ())}
-                for n in self.nodes:
-                    if n.agent == a and n not in covered:
-                        problems.append(
-                            f"Consistency violated for agent {a!r}: node {label_node(n)} "
-                            f"lies in no facet of its belief subcomplex S_{a!r}."
-                        )
+                for n in sorted(isolated[a], key=label_node):
+                    problems.append(
+                        f"Consistency violated for agent {a!r}: node {label_node(n)} "
+                        f"lies in no facet of its belief subcomplex S_{a!r}."
+                    )
         return problems
 
     def is_valid(self) -> bool:
@@ -194,6 +272,18 @@ class SimplicialBeliefModel:
             in_belief = [a for a in sorted(self.agents, key=str) if facet in self.belief_facets[a]]
             tag = f"S_{{{','.join(map(str, in_belief))}}}" if in_belief else "only S"
             lines.append(f"  world {world!r}: {label_facet(facet)}  [{tag}]")
+        # Isolated perspectives are invisible in the facet list above, yet they
+        # are where belief goes defunct -- say so, per agent, and single out the
+        # nodes that are not even in S (they appear in no world at all).
+        loose = self.isolated_nodes()
+        for a in sorted(self.agents, key=str):
+            stuck = sorted(self.isolated_perspectives()[a], key=label_node)
+            if stuck:
+                names = ", ".join(
+                    label_node(n) + (" (in no facet of S)" if n in loose else "")
+                    for n in stuck
+                )
+                lines.append(f"  isolated perspectives of {a!r} (B_{a} vacuous): {names}")
         return "\n".join(lines)
 
     def __repr__(self) -> str:
@@ -309,9 +399,11 @@ def to_simplicial(
         world_of_facet=world_of_facet,
         projection=projection,
         # The axiom_d contract travels from the relational model into the
-        # complex: a K45 model's worlds with empty Q produce facets outside
-        # every S_a (no self-access) and possibly isolated perspectives, which
-        # its own validation must therefore permit. (A wrapped knowledge-only
-        # frame has Q = R, reflexive, so D holds there regardless.)
+        # complex, DECLARED rather than inferred: a K45 model's worlds with
+        # empty Q produce facets outside every S_a (no self-access) and
+        # possibly isolated perspectives, which its own validation must
+        # therefore permit; a KD45 model must translate to a complex that
+        # still satisfies D, and declaring it makes the translation check so.
+        # (A wrapped knowledge-only frame has Q = R, reflexive, so D holds.)
         axiom_d=getattr(model, "axiom_d", True),
     )

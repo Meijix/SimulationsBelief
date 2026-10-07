@@ -69,6 +69,9 @@ picture stops being readable -- use ``max_dimension=`` to draw only the low-
 dimensional part (the skeleton), which is usually the part you were checking, and
 ``rankdir="LR"`` when a middle row gets too wide for the default upward layout.
 
+Isolated vertices (a model node in no facet, GitHub #12) are 0-dimensional
+maximal simplices: they are part of the lattice and sit alone on the vertex row.
+
 Run ``python hasse.py`` for a demo; add ``--open`` to open the figures.
 """
 
@@ -390,7 +393,16 @@ def from_simplicial_model(model, *, include_empty: bool = True,
     agent_color = {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(agents)}
     sig_color = _signature_colors(model, agents)  # belief signature -> colour
 
-    lattice = FaceLattice(model.facets, include_empty=include_empty)
+    # A node in no facet of S is still a vertex of the complex -- a maximal
+    # simplex of dimension 0 (GitHub #12). Built from model.facets alone, the
+    # lattice would silently lose it; adding its singleton keeps it on the
+    # vertex row. Duck-typed through ``nodes`` so a model that does not carry
+    # the attribute behaves as before. These singletons are NOT worlds, so the
+    # facet styling below is reserved for members of ``model.facets``.
+    in_some_facet = {n for F in model.facets for n in F}
+    loose = frozenset(n for n in getattr(model, "nodes", ()) if n not in in_some_facet)
+    maximal = set(model.facets) | {frozenset({n}) for n in loose}
+    lattice = FaceLattice(maximal, include_empty=include_empty)
 
     # Short name per node: "a0", "a1", ... numbering each agent's own knowledge
     # classes in a stable (sorted) order, so the same model always yields the same
@@ -411,7 +423,7 @@ def from_simplicial_model(model, *, include_empty: bool = True,
         rows = [node_name(n) for n in nodes]
         # The full perspectives always stay reachable as a hover tooltip (SVG).
         lattice.tooltips[face] = "; ".join(_vertex_label(n) for n in nodes)
-        if lattice.is_facet(face):
+        if face in model.facets:
             world = model.world_of_facet.get(face)
             if world is not None:
                 # A facet IS a world, so name it by the world and keep the
@@ -426,6 +438,11 @@ def from_simplicial_model(model, *, include_empty: bool = True,
             colour = agent_color[nodes[0].agent]
             lattice.fills[face] = colour + "33"
             lattice.outlines[face] = colour
+            if nodes[0] in loose:
+                # Say WHY the box has no line going up: nothing passes through
+                # this perspective, so it belongs to no world.
+                rows.append("(isolated)")
+                lattice.tooltips[face] += " | in no facet"
         if assignment is not None:
             # The information line: what this face's perspectives jointly
             # observe. Added LAST so it always sits under the face's name --
