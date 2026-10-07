@@ -519,22 +519,64 @@ def _dot_id(value) -> str:
     return f'"{_dot_escape(value)}"'
 
 
-def _world_label_attr(valuation, world) -> str:
-    """DOT ``label=...`` attribute for a world carrying its valuation literals.
+def _world_label_attr(valuation, world, dead_for=(), colors=None,
+                      error: bool = True) -> str:
+    """DOT ``label=...`` attribute for a world: its literals and its dead-end agents.
 
     Returns an empty string when there is nothing to show, so callers can splice
     the result into an attribute list unconditionally. The literals go on a
-    second line under the world name (the DOT escape ``\\n``), Figure-33 style.
-    Only the label attribute changes -- the node's DOT identifier stays the bare
-    world name, so edges keep pointing at the same node.
+    second line under the world name, Figure-33 style. Only the label attribute
+    changes -- the node's DOT identifier stays the bare world name, so edges
+    keep pointing at the same node.
+
+    ``dead_for`` names the agents for whom this world is a dead end (no
+    outgoing belief edge). A dead end is a property of a world AND an agent
+    (GitHub #11): the same world can leave ``a`` believing nothing while ``b``
+    is fine, so the drawing says WHICH agents on the world itself -- a third
+    line ``⊘ a, b`` with each name in that agent's colour. That line needs
+    Graphviz's HTML-like label syntax (``label=<...>``) for the colours; the
+    plain quoted form is kept whenever there is no dead end, so figures
+    without one are byte-identical to before. ``error`` colours the mark red
+    (a KD45 seriality violation) or grey (a legal K45 defunct belief).
     """
-    if not valuation:
-        return ""
-    literals = world_literals(valuation, world)
-    if not literals:
-        return ""
-    text = _dot_escape(str(world)) + "\\n(" + _dot_escape(", ".join(literals)) + ")"
-    return f'label="{text}"'
+    literals = world_literals(valuation, world) if valuation else []
+    dead_for = list(dead_for)
+    if not dead_for:
+        if not literals:
+            return ""
+        text = _dot_escape(str(world)) + "\\n(" + _dot_escape(", ".join(literals)) + ")"
+        return f'label="{text}"'
+    rows = [_html_escape(world)]
+    if literals:
+        rows.append(f'<FONT POINT-SIZE="10">({_html_escape(", ".join(literals))})</FONT>')
+    mark = MISSING_COLOR if error else "#777777"
+    names = ", ".join(
+        f'<FONT COLOR="{(colors or {}).get(a, "#333333")}"><B>{_html_escape(a)}</B></FONT>'
+        for a in dead_for
+    )
+    rows.append(f'<FONT COLOR="{mark}">&#9711;</FONT> {names}')
+    return "label=<" + "<BR/>".join(rows) + ">"
+
+
+def _dead_ends_by_world(frame) -> Dict:
+    """``world -> [agents]`` for whom the world is a dead end, agents sorted.
+
+    Inverts :meth:`RelationalFrame.dead_ends` (which is per agent) into the
+    per-world form the drawings need to label each world with its agents.
+    """
+    out: Dict = {}
+    for a, stuck in sorted(frame.dead_ends().items(), key=lambda kv: str(kv[0])):
+        for w in stuck:
+            out.setdefault(w, []).append(a)
+    return out
+
+
+def _dead_end_cell(flagged: bool) -> str:
+    """Legend cell explaining the ``⊘ a, b`` line: red under D, grey under K45."""
+    if flagged:
+        return _note_cell("&#9711; a, b = dead end for those agents (Axiom D)", MISSING_COLOR)
+    return _note_cell("&#9711; a, b = those agents believe nothing there (legal in K45)",
+                      "#777777")
 
 
 def _html_escape(value) -> str:
@@ -660,22 +702,23 @@ def _dot_frame(
     caption = f"{title} — {status}" if title else status
     lines = _dot_header()
 
-    # Worlds that are a dead end for at least one agent. Under KD45 that is a
-    # seriality violation and gets the red error styling; under K45 (axiom_d
-    # off) a dead end is a legal defunct-belief world, so nothing to flag.
-    dead_end_worlds: Set = set()
-    if highlight_missing and frame.axiom_d and not as_knowledge:
-        for stuck in frame.dead_ends().values():
-            dead_end_worlds |= stuck
+    # Which agents believe nothing at each world (no outgoing edge). A dead end
+    # is per AGENT, so the world is labelled with their names (GitHub #11).
+    # Under KD45 it is a seriality violation and the world also gets the red
+    # error styling; under K45 (axiom_d off) a dead end is a legal
+    # defunct-belief world: the names stay (in grey) and nothing reads as
+    # broken. Knowledge frames are reflexive, so there is nothing to look for.
+    dead_for: Dict = {} if as_knowledge else _dead_ends_by_world(frame)
+    flag_dead = highlight_missing and frame.axiom_d and not as_knowledge
     for w in sorted(frame.worlds, key=str):
         # The valuation label rides along with whatever styling the world gets:
         # attributes are collected and joined, so dead-end highlighting and the
         # literals never fight over the bracket.
         attrs = []
-        label = _world_label_attr(valuation, w)
+        label = _world_label_attr(valuation, w, dead_for.get(w, ()), colors, flag_dead)
         if label:
             attrs.append(label)
-        if w in dead_end_worlds:
+        if flag_dead and w in dead_for:
             attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
                       'style="filled,dashed"', "penwidth=2"]
         lines.append(
@@ -733,8 +776,8 @@ def _dot_frame(
     if cells:
         if highlight_missing and any(missing.values()):
             cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
-        if dead_end_worlds:
-            cells.append(_note_cell("&#9711; dead end", MISSING_COLOR))
+        if dead_for:
+            cells.append(_dead_end_cell(flag_dead))
     lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
@@ -780,7 +823,6 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
     # against its own 4/5 closure; dead ends only count when Axiom D applies.
     missing_k: Dict = {}
     missing_b: Dict = {}
-    dead_end_worlds: Set = set()
     if highlight_missing:
         from relational_frame import s5_closure  # local: avoids an import cycle
 
@@ -788,16 +830,17 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
             rel = kb.knowledge.relations[a]
             missing_k[a] = s5_closure(kb.worlds, rel) - set(rel)
         missing_b = kb.belief.missing_edges()
-        if kb.axiom_d:
-            for stuck in kb.belief.dead_ends().values():
-                dead_end_worlds |= stuck
+    # Dead ends are named per agent on the world itself (GitHub #11, see
+    # _dot_frame): red error styling only under Axiom D, grey names under K45.
+    dead_for = _dead_ends_by_world(kb.belief)
+    flag_dead = highlight_missing and kb.axiom_d
 
     for w in sorted(kb.worlds, key=str):
         attrs = []
-        label = _world_label_attr(valuation, w)
+        label = _world_label_attr(valuation, w, dead_for.get(w, ()), colors, flag_dead)
         if label:
             attrs.append(label)
-        if w in dead_end_worlds:
+        if flag_dead and w in dead_for:
             attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
                       'style="filled,dashed"', "penwidth=2"]
         lines.append(
@@ -881,8 +924,8 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
             cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
         if outside_knowledge:
             cells.append(_note_cell("&#10142; belief outside knowledge", MISSING_COLOR))
-        if dead_end_worlds:
-            cells.append(_note_cell("&#9711; dead end", MISSING_COLOR))
+        if dead_for:
+            cells.append(_dead_end_cell(flag_dead))
     lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
