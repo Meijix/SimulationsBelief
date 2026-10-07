@@ -38,9 +38,11 @@ Two consequences worth knowing (both from the chapter):
       KNOWS ``P`` -- :func:`nu_violations` lists where they come apart.
 
 Chapter 3's language is belief-only (``L_B``: atoms, ⊥, →, B_a; soundness is
-K45+NU, and D can fail via *isolated perspectives*). The models this repo's
-pipeline produces are validated so that no perspective is isolated, hence D holds
-for them; the evaluator also accepts ``K_a`` as a convenience EXTENSION beyond
+K45+NU, and D can fail via *isolated perspectives*). Models built under KD45
+(``axiom_d=True``) are validated so that no perspective is isolated, hence D
+holds for them; under K45 (``axiom_d=False``) an isolated perspective is legal
+and ``B_a`` is vacuously true there -- exactly the defunct belief the chapter
+describes. The evaluator also accepts ``K_a`` as a convenience EXTENSION beyond
 ``L_B`` (quantifying over all of ``S`` instead of ``S_a``), matching the
 knowledge structure the nodes came from.
 
@@ -238,10 +240,10 @@ def holds(
     verdict it does not support instead of failing. See :func:`require_consistent`.
 
     Args:
-        check_consistency: only for the internal recursion, which must not
-            re-validate the model at every node of the formula. Callers that
-            have just validated the pair may pass False; everyone else should
-            leave it True.
+        check_consistency: pass False only when :func:`require_consistent` was
+            just run on this exact (model, assignment) pair and nothing has
+            changed since; everyone else should leave it True. The recursion
+            itself lives in :func:`_holds`.
 
     Raises:
         ValueError: If some facet is inconsistent (``P`` and ``¬P`` together),
@@ -325,7 +327,7 @@ def assignment_from_model(
     Args:
         model: A simplicial belief model whose nodes carry knowledge classes.
         valuation: ``atom -> set of worlds where it is true`` (the model's own
-            worlds, i.e. the keys' universe of ``model.world_of_facet`` values).
+            worlds, i.e. the values of ``model.world_of_facet``).
 
     Returns:
         The induced assignment, storing only non-2 values (2 is the default).

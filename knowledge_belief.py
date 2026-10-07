@@ -109,6 +109,8 @@ def knowledge_classes(knowledge: RelationalFrame, agent: Agent) -> List[FrozenSe
     require_s5_relation(knowledge, agent, "knowledge_classes")
     seen: Set[World] = set()
     out: List[FrozenSet[World]] = []
+    # Under S5 the successor set of w IS its class [w]_a, so each class is read
+    # off its first (sorted) world and `seen` skips the rest of that class.
     for w in sorted(knowledge.worlds, key=str):
         if w in seen:
             continue
@@ -230,14 +232,14 @@ def belief_closure(
             # KNOW what they believe in every case; choosing Q = R for
             # unspecified belief adds the converse -- agents BELIEVE what they
             # know -- and invents no opinion beyond the knowledge given. In
-            # particular, case-4 input (knowledge only, belief unspecified)
-            # yields Q = R whether axiom_d is on or off, and whichever entry
-            # point it comes through (from_partial with belief={}, or the
-            # knowledge-only wrapper in to_simplicial). A DEFUNCT cluster
-            # (B(C) = ∅, legal only in K45) is never a silent default: request
-            # it explicitly with believe_all_when_silent=False under
-            # axiom_d=False, or hand fully specified empty relations to the
-            # constructor.
+            # particular, knowledge-only input (belief unspecified: pipeline case 3,
+            # which is input case 4 of docs/pipeline.txt) yields Q = R whether
+            # axiom_d is on or off, and whichever entry point it comes through
+            # (from_partial with belief={}, or the knowledge-only wrapper in
+            # to_simplicial). A DEFUNCT cluster (B(C) = ∅, legal only in K45)
+            # is never a silent default: request it explicitly with
+            # believe_all_when_silent=False under axiom_d=False, or hand fully
+            # specified empty relations to the constructor.
             believed = set(cls)
         relation |= {(w, u) for w in cls for u in believed}
     return relation
@@ -248,13 +250,16 @@ class KnowledgeBeliefFrame:
 
     Knowledge (``R_a``) and belief (``Q_a``) are each stored as an internal
     :class:`RelationalFrame` (reusing its adjacency/validation machinery). On
-    construction the combined model is validated: knowledge is S5, belief is KD45,
-    ``Q_a ⊆ R_a``, and ``Q_a`` is constant on ``R_a``-equivalence classes.
+    construction the combined model is validated: knowledge is S5, belief is KD45
+    (K45 when ``axiom_d=False``), ``Q_a ⊆ R_a``, and ``Q_a`` is constant on
+    ``R_a``-equivalence classes.
 
     Attributes:
         agents, worlds: identifier sets.
         knowledge: RelationalFrame holding the ``R_a`` relations.
         belief: RelationalFrame holding the ``Q_a`` relations.
+        axiom_d: the belief logic contract, True = KD45, False = K45 (see
+            ``__init__``); knowledge is S5 either way.
         projection: when produced by :meth:`to_proper`, maps each copied world back
             to the world it simulates (the bisimilarity witness); empty otherwise.
     """
@@ -354,10 +359,10 @@ class KnowledgeBeliefFrame:
             axiom_d: the belief logic, fixed HERE for the whole pipeline. True =
                 KD45; False = K45. It does NOT change what silence means: by the
                 project's convention, a class with no belief seed gets ``Q = R``
-                there in both logics -- so case-4 input (``belief={}``) yields
-                ``Q_a = R_a`` everywhere, on every route: *agents believe what
-                they know*. A defunct (empty) cluster under K45 is an explicit
-                request via ``believe_all_when_silent=False`` -- see
+                there in both logics -- so knowledge-only input (``belief={}``,
+                case 3) yields ``Q_a = R_a`` everywhere, on every route: *agents
+                believe what they know*. A defunct (empty) cluster under K45 is
+                an explicit request via ``believe_all_when_silent=False`` -- see
                 :func:`belief_closure`.
 
         Returns:
@@ -436,7 +441,9 @@ class KnowledgeBeliefFrame:
 
         1. Each ``Q_a`` seed is closed under KD45 by
            :func:`relational_frame.kd45_closure` (transitive + Euclidean closure,
-           then a self-loop for every world left without a successor).
+           then a self-loop for every world left without a successor) -- or,
+           with ``axiom_d=False``, under K45 by :func:`relational_frame.k45_closure`,
+           which leaves such worlds without successors (defunct belief).
         2. ``R_a`` is the **equivalence closure** of that ``Q_a`` -- the smallest
            equivalence relation containing it, computed by
            :func:`relational_frame.s5_closure` (with a reflexive seed, closing
@@ -456,11 +463,15 @@ class KnowledgeBeliefFrame:
 
         EVERY declared agent must have an entry in ``belief``: a missing agent is
         reported, never silently given a default (an explicit empty set means "no
-        seed edges" and yields the identity belief via the seriality repair).
+        seed edges" and yields the identity belief via the seriality repair under
+        KD45, or the empty belief relation under K45).
 
         Args:
             agents, worlds: identifier sets.
-            belief: partial ``Q_a`` edges per agent (closed under KD45).
+            belief: partial ``Q_a`` edges per agent (closed under KD45, or K45
+                when ``axiom_d=False``).
+            axiom_d: the belief logic contract, carried by the result (see
+                :meth:`from_partial`).
 
         Returns:
             A fully validated :class:`KnowledgeBeliefFrame` whose knowledge is the
@@ -591,7 +602,8 @@ class KnowledgeBeliefFrame:
 
         Args:
             distinguished_agent: The agent whose relations are skewed. Defaults to
-                the agent with the FEWEST knowledge edges (ties broken by name).
+                the agent with the FEWEST non-reflexive edges counted over BOTH
+                relations, knowledge plus belief (ties broken by name).
                 The result's size is the same for every choice -- ``|W|^2`` worlds,
                 each edge copied ``|W|`` times whether skewed or not -- the sparse
                 default just minimises the number of cross-copy (skewed) edges.
@@ -618,15 +630,15 @@ class KnowledgeBeliefFrame:
                 "No proper model bisimilar to this frame exists: a single-agent, "
                 "non-proper frame cannot be made proper. Requires >= 2 agents."
             )
-        # Default: skew the agent with the sparsest KNOWLEDGE relation (the
-        # family properness is about). Size is invariant under the choice; the
-        # sparse default only minimises the cross-copy edges. Same agent for
-        # both families either way.
-        # BOTH families are skewed with this same agent, so the cost is their
-        # SUM. Ranking on knowledge alone was wrong: when knowledge is complete
-        # every agent ties on |R_a|, the tie broke alphabetically, and the
-        # winner could be the agent with the MOST belief edges -- the messiest
-        # diagram available. Belief is exactly what separates the candidates.
+        # Default: skew the agent with the fewest non-reflexive edges across
+        # BOTH families. Size is invariant under the choice (|W|^2 worlds, each
+        # edge copied |W| times); the sparse default only minimises the
+        # cross-copy edges. Knowledge and belief are skewed with this same
+        # agent, so the cost to rank on is their SUM. Ranking on knowledge
+        # alone was wrong: when knowledge is complete every agent ties on
+        # |R_a|, the tie broke alphabetically, and the winner could be the
+        # agent with the MOST belief edges -- the messiest diagram available.
+        # Belief is exactly what separates the candidates.
         distinguished = (
             distinguished_agent
             if distinguished_agent is not None
@@ -670,12 +682,12 @@ class KnowledgeBeliefFrame:
 class ProperKnowledgeBeliefFrame(KnowledgeBeliefFrame):
     """A :class:`KnowledgeBeliefFrame` whose knowledge relations are *proper*.
 
-    Construction validates everything the parent does (knowledge S5, belief KD45,
-    ``Q_a ⊆ R_a``, belief constant on knowledge classes) AND properness of the
-    knowledge relations (no two distinct worlds jointly accessible to every
-    agent). This is the exact
-    precondition the simplicial translation needs: because the model is proper,
-    each world corresponds to a distinct facet of the complex.
+    Construction validates everything the parent does (knowledge S5, belief KD45
+    or K45 per ``axiom_d``, ``Q_a ⊆ R_a``, belief constant on knowledge classes)
+    AND properness of the knowledge relations (no two distinct worlds jointly
+    accessible to every agent). This is the exact precondition the simplicial
+    translation needs: because the model is proper, each world corresponds to a
+    distinct facet of the complex.
 
     Usually produced by :meth:`KnowledgeBeliefFrame.to_proper`, in which case
     :attr:`projection` maps each copied world back to the world it simulates -- the

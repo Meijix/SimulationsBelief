@@ -2,7 +2,7 @@
 
 Scope: this module is for **knowledge**, i.e. frames whose relations are equivalence
 relations (S5 = reflexive + transitive + Euclidean). Checking properness and converting
-to a proper model are BOTH defined only there, so every entry point that does either
+to a proper model are BOTH defined only for such frames, so every entry point that does either
 refuses anything else up front and raises -- it never falls back to a partial or
 best-effort answer. See :func:`require_knowledge` and the REVIEW note below for why.
 
@@ -107,7 +107,7 @@ from relational_frame import Agent, Edge, RelationalFrame, World
 # reflexivity, and it agrees with the old test on 5800 S5 frames. Soundness is no
 # longer an argument for the guard -- only reasons 1 and 2 above are.
 #
-# the guard stays. Remove it deliberately, not by accident.
+# So the guard stays. Remove it deliberately, not by accident.
 # =========================================================================== #
 def equivalence_violations(frame: RelationalFrame) -> List[str]:
     """Return every reason ``frame``'s relations are not equivalence relations.
@@ -189,6 +189,9 @@ def joint_possibilities(frame: RelationalFrame, world: World) -> Set[World]:
     Every function that does deliver a properness verdict (:func:`jointly_confused_with`
     and everything built on it) requires knowledge and refuses otherwise.
     """
+    # Start from None rather than set(): the first agent's successor set seeds
+    # the intersection (an empty start would make every result empty). With no
+    # agents at all the intersection is empty by convention.
     intersection: Set[World] | None = None
     for agent in frame.agents:
         reachable = frame.successors(agent, world)
@@ -433,10 +436,8 @@ def to_proper(
         frame: A knowledge (S5) frame -- the equivalence relations that properness
             is about; the construction preserves its axioms.
         distinguished_agent: The agent whose relation is skewed. Defaults to the
-            one with the fewest non-reflexive edges, which minimises the edges
-            that cross between copies and so keeps the drawing readable
-            (:func:`cheapest_distinguished_agent`); any agent is equally
-            agent with the FEWEST edges (ties broken by name). Any agent works, and
+            one with the fewest non-reflexive edges, ties broken by name
+            (:func:`cheapest_distinguished_agent`). Any agent works, and
             the size of the result never depends on the choice -- always ``|W|^2``
             worlds, and every original edge yields exactly ``|W|`` copies whether
             skewed or not. What the sparsest-relation default minimises is the
@@ -524,6 +525,7 @@ def copy_and_skew(worlds, agents, relations, distinguished):
         ``(new_worlds, new_relations, projection)`` where ``projection`` maps each
         new world ``(w, copy)`` back to ``w``.
     """
+    # Sorted by name so the bijection g -- and with it the skew -- is deterministic.
     worlds_sorted = sorted(worlds, key=str)
     n = len(worlds_sorted)
     g = {w: i for i, w in enumerate(worlds_sorted)}  # bijection world -> index
@@ -536,8 +538,9 @@ def copy_and_skew(worlds, agents, relations, distinguished):
                     # Non-distinguished agents act *within* a single copy u.
                     new_relations[a].add(((w, u), (w2, u)))
                 else:
-                    # Distinguished agent skewed cyclically ACROSS copies (finite
-                    # adaptation of the thesis's g: W -> R skew), so its relation
+                    # Distinguished agent skewed cyclically ACROSS copies -- the
+                    # finite, modulo-|W| skew of Bjorndahl & Sink Props. 2.1-2.3
+                    # (the thesis states it for g: W -> R) -- so its relation
                     # never fully coincides with another agent's -> proper.
                     # Skew condition: g(u) - g(w) = g(u') - g(w')  =>
                     #   g(u') = g(u) - g(w) + g(w')   (mod |W| for the finite case).

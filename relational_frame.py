@@ -21,8 +21,9 @@ from typing import Dict, FrozenSet, Hashable, Iterable, List, Mapping, Set, Tupl
 # Type aliases for readability.
 #
 # Hashable, and not str: agents and worlds are only ever *identifiers*. The frame
-# never reads them, it only stores them in sets and uses them as dictionary keys
-# That keeps the model free to name worlds freely
+# never reads them, it only stores them in sets and uses them as dictionary keys.
+# That leaves callers free to name agents and worlds however they like -- strings,
+# ints, or the (world, copy) pairs that properness.to_proper creates.
 #
 # Tuple, and not list, for an edge: each relation is stored as a `Set[Edge]`, so
 # an edge must be hashable -- and in Python that means immutable, which a list is
@@ -35,11 +36,13 @@ Edge = Tuple[World, World]
 
 
 class RelationalFrame:
-    """A pure relational (Kripke) frame validated against the KD45 axioms.
+    """A pure relational (Kripke) frame validated against the KD45 (or K45) axioms.
 
     The frame is *structural only*: it stores agents, worlds and, for each agent,
-    a set of directed edges ``(source, target)`` between worlds. Checks structural integrity and then enforces the KD45 frame conditions,
-    raising :class:`ValueError` if any of them is violated.
+    a set of directed edges ``(source, target)`` between worlds. Construction
+    checks structural integrity and then enforces the frame conditions of the
+    declared logic (KD45 by default, K45 when ``axiom_d=False``), raising
+    :class:`ValueError` if any of them is violated.
 
     A frame is **immutable** once built: ``agents``, ``worlds`` and each relation are
     stored as frozensets, so the precomputed ``_successors`` adjacency can never
@@ -84,9 +87,9 @@ class RelationalFrame:
         # If `relations` were a mutable set, code could do
         # `frame.relations[a].discard(edge)` after construction and the cache would
         # silently go stale -- successors()/is_valid()/dead_ends() would then report
-        # the OLD structure. Freezing agents,
-        # worlds and each relation makes the frame immutable, so `_successors` can
-        # never drift out of sync: to change the structure, you build a new frame.
+        # the OLD structure. Freezing agents, worlds and each relation makes the
+        # frame immutable, so `_successors` can never drift out of sync: to
+        # change the structure, you build a new frame.
         self.agents: FrozenSet[Agent] = frozenset(agents)
         self.worlds: FrozenSet[World] = frozenset(worlds)
         self.relations: Dict[Agent, FrozenSet[Edge]] = {
@@ -141,7 +144,7 @@ class RelationalFrame:
         "no seed edges" and documents that intent.
 
         Returns:
-            A fully validated :class `RelationalFrame` carrying ``axiom_d`` as its
+            A fully validated :class:`RelationalFrame` carrying ``axiom_d`` as its
             logic contract (shown by ``repr`` as KD45 or K45).
 
         Raises:
@@ -212,7 +215,7 @@ class RelationalFrame:
 
         Returns:
             A nested mapping ``agent -> {world -> set of successors}``. Every
-            world of every agent gets an entry(possibly empty).
+            world of every agent gets an entry (possibly empty).
             Example: {'alice': {'w1': {'w2'}, 'w2': {'w3'}}, 'bob': {'w2': {'w3'}, 'w3': {'w4'}}}.
         """
         successors: Dict[Agent, Dict[World, Set[World]]] = {
@@ -259,23 +262,27 @@ class RelationalFrame:
         problems: List[str] = []
         for agent in sorted(self.agents, key=str):
             for world in sorted(self.worlds, key=str):
-                if not self._successors[agent][world]: #find if the world has no outgoing edge (successors is empty)
+                if not self._successors[agent][world]:  # empty successor set = dead end
                     problems.append(
                         f"Seriality (D) violated: agent {agent!r} has no outgoing "
                         f"edge from world {world!r}; every world needs a successor."
-                    ) #no exception, just a message
+                    )  # collected, not raised: the caller reports every violation at once
         return problems
 
     def _transitivity_violations(self) -> List[str]:
         """Axiom 4: if w -> u and u -> v then w -> v must hold.
-        positive introspection: if an agent believes u, it must also believe that it believes u."""
+
+        Positive introspection (B φ → B B φ): whatever the agent believes, it
+        believes that it believes it. Any world reachable in two steps must
+        already be reachable in one.
+        """
         problems: List[str] = []
         for agent in sorted(self.agents, key=str):
-            adjacency = self._successors[agent] #successors of each world for the agent
-            for w, w_succ in adjacency.items(): #for each world w, its successors w_succ
-                for u in w_succ: #for each successor u of w
-                    for v in adjacency[u]: #for each successor v of u
-                        if v not in w_succ: #if v is not a successor of w
+            adjacency = self._successors[agent]  # world -> successors, for this agent
+            for w, w_succ in adjacency.items():  # each world w with its successors
+                for u in w_succ:  # one step: w -> u
+                    for v in adjacency[u]:  # two steps: w -> u -> v
+                        if v not in w_succ:  # the shortcut w -> v is missing
                             problems.append(
                                 f"Transitivity (4) violated for agent {agent!r}: "
                                 f"{w!r} -> {u!r} and {u!r} -> {v!r} exist, but the "
@@ -285,7 +292,12 @@ class RelationalFrame:
 
     def _euclidean_violations(self) -> List[str]:
         """Axiom 5: if w -> u and w -> v then u -> v must hold.
-        negative introspection: if an agent believes both u and v, it must also believe that it believes u and v."""
+
+        Negative introspection (¬B φ → B ¬B φ): whatever the agent does not
+        believe, it believes that it does not believe it. Geometrically, all the
+        worlds the agent considers possible from w must see each other, so they
+        form one cluster.
+        """
         problems: List[str] = []
         for agent in sorted(self.agents, key=str):
             adjacency = self._successors[agent]
@@ -300,13 +312,17 @@ class RelationalFrame:
                             )
         return problems
 
-    #Transitivity and euclideaness warrantes complete access to the agents own mental state. Agents can be wrong about the world, but they cannot be wrong about what they believe by themselves.
+    # Transitivity and Euclideanness together give the agent full access to its
+    # own doxastic state: it can be wrong about the world, but never about what
+    # it believes.
 
 
     # ------------------------------------------------------------------ #
     def kd45_violations(self) -> List[str]:
         """Return every KD45 axiom violation as a message (empty list if valid).
-        it collects all problems, so a frame built with ``validate=False`` can be inspected or annotated in a
+
+        It collects ALL problems instead of stopping at the first, so a frame
+        built with ``validate=False`` can be inspected or annotated in a
         visualisation. Always the FULL KD45 check (D + 4 + 5), regardless of the
         frame's own ``axiom_d`` -- diagnostics answer the question asked, not the
         frame's contract; use :meth:`violations` for the contract.
@@ -344,7 +360,8 @@ class RelationalFrame:
         """Return, per agent, the edges required by axioms 4/5 but currently absent.
 
         Note: seriality (Axiom D) is not represented here, because a dead-end world
-        has no canonical "missing" target
+        has no canonical "missing" target (any successor would do). Use
+        :meth:`dead_ends` for those.
         """
         missing: Dict[Agent, Set[Edge]] = {}
         for agent in self.agents:
@@ -354,7 +371,7 @@ class RelationalFrame:
         return missing
 
     def dead_ends(self) -> Dict[Agent, Set[World]]:
-        """Return, per agent, the worlds that have no outgoing edge (seriality/D). """
+        """Return, per agent, the worlds that have no outgoing edge (seriality/D)."""
         return {
             agent: {w for w in self.worlds if not self._successors[agent][w]}
             for agent in self.agents
@@ -391,7 +408,7 @@ class RelationalFrame:
         )
 
 #########
-#Helper functions
+# Helper functions
 #########
 
 def require_all_agents(
@@ -480,11 +497,19 @@ def kd45_closure(
     """Compute the KD45 closure of a single agent's relation.
 
     Returns the smallest set of edges that contains ``edges`` and is both
-    **transitive** (Axiom 4) and **Euclidean** (Axiom 5).
+    **transitive** (Axiom 4) and **Euclidean** (Axiom 5), then deals with
+    seriality (Axiom D). The 4+5 closure never creates a successor for a world
+    that had none, so the dead ends left after closure are exactly the seed's
+    isolated worlds. ``make_serial=True`` repairs each with a self-loop (a
+    one-world cluster is trivially KD45); ``make_serial=False`` refuses instead,
+    because there is no canonical successor to invent and guessing one would be
+    a modelling decision taken on the caller's behalf.
 
     Raises:
         ValueError: If an edge references a world not in ``worlds``, or if
             ``make_serial`` is False and an isolated world would violate seriality.
+        TypeError: If ``edges`` is a mapping or not an iterable of pairs
+            (see :func:`_as_edge_list`).
     """
     world_set: Set[World] = set(worlds)
     edges = _as_edge_list(edges, "kd45_closure")
@@ -532,8 +557,9 @@ def _transitive_euclidean_closure(
 ) -> Dict[World, Set[World]]:
     """Return the transitive + Euclidean closure as an adjacency map.
 
-    shared core of :func:`kd45_closure` (belief) and :func:`s5_closure`
-    (knowledge), reused to compute which edges an invalid frame is *missing*. 
+    Shared core of :func:`kd45_closure` and :func:`k45_closure` (belief) and
+    :func:`s5_closure` (knowledge); :meth:`RelationalFrame.missing_edges` reuses
+    it to compute which edges an invalid frame lacks.
 
     Returns:
         ``{world -> set of successors}`` closed under transitivity and Euclideanness.
@@ -551,6 +577,9 @@ def _transitive_euclidean_closure(
         succ[source].add(target)
 
     # Fixpoint: keep adding transitively/Euclidean-forced edges until stable.
+    # Both axioms are Horn rules (edges are only ever ADDED), so iterating to a
+    # fixpoint yields the least closure. The list(...) copies are needed because
+    # the loop mutates the very sets it is iterating over.
     changed = True
     while changed:
         changed = False
@@ -569,17 +598,20 @@ def _transitive_euclidean_closure(
     return succ
 
 def s5_closure(worlds: Iterable[World], edges: Iterable[Edge]) -> Set[Edge]:
-    """Compute the S5 closure of a relation --  *knowledge*.
+    """Compute the S5 closure of a relation -- *knowledge*.
 
     This is the counterpart of :func:`kd45_closure` for KNOWLEDGE instead of
-    BELIEF. 
+    BELIEF.
 
         * KNOWLEDGE = S5 = reflexive + transitive + Euclidean (equivalence relation).
-          extra axiom is T (Truth / factivity): w -> w for EVERY world.
+          The extra axiom is T (Truth / factivity): w -> w for EVERY world.
           "If you know P, then P is true", so the real world is always one of
           the worlds you consider possible. You cannot know something false.
 
     Concretely, S5 replaces KD45's *seriality* with the stronger *reflexivity*:
+    every self-loop is added to the seed first, and the 4+5 closure of a
+    reflexive relation is automatically symmetric, so the result is an
+    equivalence relation (the smallest one containing the seed).
 
     Returns:
         The closed, reflexive-transitive-Euclidean (S5) edge set.

@@ -58,7 +58,11 @@ FacetValuation = Dict[Atom, Set[Facet]]   # L : P -> 2^F(S) (simplicial side)
 
 
 def valuation_violations(worlds, valuation: Valuation) -> List[str]:
-    """Return a message per atom whose truth set mentions an unknown world."""
+    """Return a message per atom whose truth set mentions an unknown world.
+
+    Checked before a valuation is translated, so a mistyped world name fails
+    loudly instead of silently making the atom false everywhere it mattered.
+    """
     world_set = set(worlds)
     problems: List[str] = []
     for atom, trues in valuation.items():
@@ -115,6 +119,8 @@ def holds_kripke(model, valuation: Valuation, world: World, formula) -> bool:
         if isinstance(model, KnowledgeBeliefFrame):
             successors = model.believes(formula[1], world)
         elif model.logic_label() == "S5":
+            # A reflexive frame reads as knowledge (logic_label detects S5), so
+            # there is no belief relation for B_a to quantify over.
             raise ValueError(
                 "B_a needs a belief relation, but this RelationalFrame is a "
                 "knowledge (S5) frame. Express the formula with K_a, or use a "
