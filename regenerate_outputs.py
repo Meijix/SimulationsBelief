@@ -1,30 +1,30 @@
 # -*- coding: utf-8 -*-
-"""Regenera TODAS las figuras de los ejemplos en ``outputs/`` de una sola vez.
+"""Regenerates ALL the example figures in ``outputs/`` in one go.
 
     .venv/bin/python regenerate_outputs.py
 
-POR QUÉ EXISTE. Los scripts de ejemplo del repositorio nacieron uno a uno y
-cada cual guarda sus figuras a su manera: unos llaman a ``show(model, name)``
-(archivo con nombre en ``outputs/``), otros sólo a ``preview(model)`` (archivo
-temporal que se abre en el visor y se pierde). Cuando cambia el renderizador
-(paleta, acomodo de leyendas, nombres de facetas...) hay que rehacer todas las
-imágenes, y hacerlo a mano es lento y se olvida alguna. Este script corre
-todos los ejemplos con dos parches sobre ``visualization`` y ``hasse``:
+WHY IT EXISTS. The repository's example scripts were born one by one and each
+saves its figures its own way: some call ``show(model, name)`` (a named file
+in ``outputs/``), others only ``preview(model)`` (a temporary file that opens
+in the viewer and is lost). When the renderer changes (palette, legend
+placement, facet names...) every image has to be redone, and doing it by hand
+is slow and some get forgotten. This script runs all the examples with two
+patches on ``visualization`` and ``hasse``:
 
-    * ``preview`` deja de abrir un visor y de escribir en un temporal: guarda
-      la figura en ``outputs/<script>_<título>.png`` como si fuera ``show``;
-    * ``_open_file`` no hace nada, así que ``--open`` nunca abre ventanas.
+    * ``preview`` stops opening a viewer and writing to a temp file: it saves
+      the figure in ``outputs/<script>_<title>.png`` as if it were ``show``;
+    * ``_open_file`` does nothing, so ``--open`` never opens windows.
 
-Además garantiza el TRÍO de figuras por modelo (relacional, complejo
-simplicial geométrico y diagrama de Hasse): cada modelo que un script dibuja
-queda registrado y, al terminar el script, se generan las figuras que le
-faltan junto a la suya (``<name>_simplicial.png``, ``<name>_hasse.png``). Un
-modelo relacional se traduce con ``to_simplicial`` (haciéndolo propio antes
-si hace falta); si la traducción no es posible se avisa y se sigue.
+It also guarantees the TRIO of figures per model (relational, geometric
+simplicial complex and Hasse diagram): every model a script draws is recorded
+and, when the script finishes, the figures it lacks are generated next to its
+own (``<name>_simplicial.png``, ``<name>_hasse.png``). A relational model is
+translated with ``to_simplicial`` (making it proper first if needed); if the
+translation is not possible a warning is printed and the run goes on.
 
-Los scripts se ejecutan con ``runpy`` como ``__main__`` y sin argumentos, uno
-tras otro, desde la raíz del repositorio. Un script que falle no detiene a
-los demás: el fallo se imprime al final.
+The scripts are executed with ``runpy`` as ``__main__`` and without arguments,
+one after another, from the repository root. A failing script does not stop
+the others: the failure is printed at the end.
 """
 from __future__ import annotations
 
@@ -47,28 +47,35 @@ import hasse  # noqa: E402
 import visualization as vis  # noqa: E402
 from visualization import OUTPUT_DIR  # noqa: E402
 
-# Los scripts de ejemplo, en el orden en que se corren. "examples8.py" sólo
-# importa módulos y "hasse.py"/"visualization.py" tienen sus propias demos.
+# The example scripts, in the order they run, as paths relative to the repo
+# root: the demos live in examples/, the NASA octahedron with the poster code.
+# "examples8.py" only imports modules and "hasse.py"/"visualization.py" have
+# their own demos, so they are not listed.
 SCRIPTS = [
-    "examples.py",
-    "examples2.py",
-    "examples3.py",
-    "examples3_explained.py",
-    "examples4.py",
-    "example5.py",
-    "examples7.py",
-    "thesis_example.py",
-    "ejemplo_nasa.py",
-    "example_val.py",
-    "Natural Disaster Example.py",
-    "Example For Poster 1.py",
-    "Example for Poster 2.py",
-    "Example for Poster 3.py",
+    "examples/examples.py",
+    "examples/examples2.py",
+    "examples/examples3.py",
+    "examples/examples3_explained.py",
+    "examples/examples4.py",
+    "examples/example5.py",
+    "examples/examples7.py",
+    "examples/thesis_example.py",
+    "poster/poster-code/ejemplo_nasa.py",
+    "examples/example_val.py",
+    "examples/Natural Disaster Example.py",
+    "examples/Example For Poster 1.py",
+    "examples/Example for Poster 2.py",
+    "examples/Example for Poster 3.py",
 ]
 
 
 def slug(text: str) -> str:
-    """Nombre de archivo seguro a partir de un título o nombre de script."""
+    """Safe file name derived from a title or a script path.
+
+    Only the file name of a script path is used, so moving a script into a
+    folder does not rename the figures it produces (``thesis_example_...``).
+    """
+    text = Path(text).name
     text = re.sub(r"\.py$", "", text)
     text = re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_").lower()
     return text or "figura"
@@ -78,8 +85,8 @@ def is_simplicial(model) -> bool:
     return hasattr(model, "facets") and hasattr(model, "agents")
 
 
-# --- registro de lo dibujado por el script en curso -------------------------
-# (model, name, output_dir): con esto se completan las figuras que falten.
+# --- record of what the current script has drawn ----------------------------
+# (model, name, output_dir): used to fill in whichever figures are missing.
 drawn: list = []
 written: set = set()
 current_script = ""
@@ -88,10 +95,10 @@ _orig_show, _orig_hasse_show = vis.show, hasse.show
 
 
 def rec_show(model, name="model", title=None, **kw):
-    """``visualization.show`` que además registra qué se dibujó.
+    """``visualization.show`` that also records what was drawn.
 
-    La vista 3D (``dim=3``) no se registra: es el mismo complejo que la 2D y
-    registrarlo duplicaría el Hasse con otro nombre.
+    The 3D view (``dim=3``) is not recorded: it is the same complex as the 2D
+    one, and recording it would duplicate the Hasse under another name.
     """
     path = _orig_show(model, name, title, **kw)
     if kw.get("dim", 2) != 3:
@@ -101,14 +108,14 @@ def rec_show(model, name="model", title=None, **kw):
 
 
 def rec_hasse_show(complex_like, name="hasse", title=None, **kw):
-    """``hasse.show`` que además registra el nombre escrito."""
+    """``hasse.show`` that also records the name written."""
     path = _orig_hasse_show(complex_like, name, title, **kw)
     written.add(Path(path).stem)
     return path
 
 
 def fake_preview(model, title=None, *, dim=2):
-    """``preview`` que guarda en outputs/ en vez de abrir un temporal."""
+    """``preview`` that saves to outputs/ instead of opening a temp file."""
     name = f"{slug(current_script)}_{slug(title or vis._kind(model))}"
     return rec_show(model, name, title, dim=dim, output_dir=OUTPUT_DIR)
 
@@ -120,7 +127,7 @@ def fake_hasse_preview(complex_like, title=None, **kw):
     path = rec_hasse_show(complex_like, name + "_hasse", title,
                           output_dir=OUTPUT_DIR, **kw)
     if is_simplicial(complex_like):
-        # El Hasse de un modelo simplicial trae consigo su dibujo geométrico.
+        # The Hasse of a simplicial model brings its geometric drawing along.
         drawn.append((complex_like, name, OUTPUT_DIR))
     return path
 
@@ -131,12 +138,12 @@ vis._open_file = hasse._open_file = lambda path: None
 
 
 def to_complex(model):
-    """Complejo simplicial de un modelo relacional, haciéndolo propio antes.
+    """Simplicial complex of a relational model, making it proper first.
 
-    ``KnowledgeBeliefFrame`` trae ``is_proper``/``to_proper`` como métodos;
-    un ``RelationalFrame`` suelto usa las funciones de ``properness``. Una
-    relación de creencia sola (KD45, no S5) no tiene traducción: ``properness``
-    lo dice con un ``ValueError`` y el modelo se salta.
+    ``KnowledgeBeliefFrame`` has ``is_proper``/``to_proper`` as methods; a
+    bare ``RelationalFrame`` uses the functions from ``properness``. A belief
+    relation on its own (KD45, not S5) has no translation: ``properness`` says
+    so with a ``ValueError`` and the model is skipped.
     """
     from properness import is_proper, to_proper
     from simplicial import to_simplicial
@@ -149,23 +156,23 @@ def to_complex(model):
 
 
 def complete_trio(script: str) -> None:
-    """Genera, para cada modelo dibujado, las figuras del trío que falten."""
+    """Generates, for each model drawn, whichever figures of the trio are missing."""
     seen_models: set = set()
     for model, name, out in drawn:
         if id(model) in seen_models:
-            continue  # el mismo modelo dibujado dos veces (p. ej. 2D y 3D)
+            continue  # the same model drawn twice (e.g. 2D and 3D)
         seen_models.add(id(model))
         if is_simplicial(model):
-            # "x_simplicial" -> base "x", así el Hasse se llama "x_hasse" y
-            # no "x_simplicial_hasse" (y coincide con el que el script haya
-            # generado por su cuenta).
+            # "x_simplicial" -> base "x", so the Hasse is named "x_hasse" and
+            # not "x_simplicial_hasse" (and matches the one the script may
+            # have generated on its own).
             sm = model
             base = name[:-len("_simplicial")] if name.endswith("_simplicial") else name
         else:
             base = name
             try:
                 sm = to_complex(model)
-            except Exception as exc:  # noqa: BLE001 -- se informa y se sigue
+            except Exception as exc:  # noqa: BLE001 -- reported, then we go on
                 print(f"    [{script}] {name}: sin complejo ({type(exc).__name__}: "
                       f"{str(exc).splitlines()[0][:90]})")
                 continue
@@ -196,7 +203,7 @@ def main() -> int:
         except SystemExit as exc:
             if exc.code not in (None, 0):
                 failures.append((script, f"exit {exc.code}"))
-        except Exception:  # noqa: BLE001 -- un ejemplo roto no frena al resto
+        except Exception:  # noqa: BLE001 -- a broken example does not stop the rest
             failures.append((script, traceback.format_exc().splitlines()[-1]))
             print(traceback.format_exc())
     print(f"\n{len(written)} figuras en {OUTPUT_DIR}/")
