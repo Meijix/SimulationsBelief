@@ -1,28 +1,41 @@
 # -*- coding: utf-8 -*-
-"""Genera las figuras del cartel a partir del ejemplo de desastre natural.
+"""Build the poster figures from the two-agent natural-disaster example.
 
-Las dos primeras figuras son la salida real de la herramienta: se construyen
-llamando a ``visualization.show`` y ``hasse.show`` sobre el mismo modelo que
-arma "Natural Disaster Example.py". La tercera es un esquema dibujado a mano,
-porque la revision de creencias todavia no esta implementada.
+Figures for the poster "La geometría de una creencia falsa… y por qué
+importa" (Coloquio de Lenguajes, UNAM 2026), built on the natural-disaster
+example of Sink's simplicial belief models: facets are worlds, vertices are
+agent perspectives, and a false belief is a facet outside the agent's belief
+subcomplex S_a.
 
-    python poster/make_figs.py
+The first two figures are the tool's real output: they come from calling
+``visualization.show`` and ``hasse.show`` on the same model that
+"Natural Disaster Example.py" builds. The third is a hand-drawn schematic,
+because belief revision was not implemented in the tool when it was made.
 
-Requiere Graphviz (``dot``) en el PATH y las dependencias de requirements.txt.
+    python poster/poster-code/make_figs.py
+
+Requires Graphviz (``dot``) on the PATH and the dependencies in requirements.txt.
 """
 import os
 import sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, ROOT)
+HERE = os.path.dirname(os.path.abspath(__file__))      # poster/poster-code/
+POSTER = os.path.dirname(HERE)                          # poster/
+ROOT = os.path.dirname(POSTER)                          # the repository root
+sys.path.insert(0, ROOT)   # the core modules live at the root
 
 from knowledge_belief import KnowledgeBeliefFrame
 from simplicial import to_simplicial
 import visualization
 import hasse
 
-# --- el modelo del ejemplo (identico a "Natural Disaster Example.py") -------
+# --- the example model (identical to "Natural Disaster Example.py") ---------
+# Alice (a) knows whether she sent but not whether it arrived; Barb (b) knows
+# whether she received, and with nothing received cannot tell nS from SnR.
+# The same seed feeds both relations: from_partial closes R_a under S5 and Q_a
+# inside R_a's classes (KD45 by default), so Barb's one-way arrow SnR -> nS
+# becomes a belief that is false in SnR. The model is proper, so it translates
+# to a simplicial complex directly.
 agents = {"a", "b"}
 worlds = {"nS", "SnR", "SR"}
 frameseed = {"a": {("SnR", "SR"), ("SR", "SnR")},
@@ -34,62 +47,61 @@ Simp = to_simplicial(KBframe)
 print("is_valid :", KBframe.is_valid())
 print("is_proper:", KnowledgeBeliefFrame.is_proper(KBframe))
 
-OUT = HERE
+OUT = os.path.join(POSTER, "outputs")   # the committed poster figures
 
-# --- figura 1: modelo relacional de conocimiento y creencia ----------------
+# --- figure 1: relational model of knowledge and belief ----------------------
 print(visualization.show(
     KBframe, "desastre_relacional",
     title="Desastre natural — modelo relacional K+B",
     output_dir=OUT,
 ))
 
-# --- figura 2: el complejo simplicial, dibujado como reticula de caras -----
-# La reticula de caras es la forma en que el articulo dibuja los modelos
-# simpliciales, y ademas es legible con dos agentes: con |A| = 2 las facetas
-# son aristas y el dibujo geometrico de visualization.show degenera en una
-# linea recta.
+# --- figure 2: the simplicial complex, drawn as a face lattice ---------------
+# The face lattice is how the paper draws simplicial models, and it stays
+# readable with two agents: with |A| = 2 the facets are edges, so the geometric
+# drawing of visualization.show degenerates into a straight line.
 print(hasse.show(
     Simp, "desastre_hasse",
     title="Desastre natural — complejo simplicial (reticula de caras)",
     output_dir=OUT,
 ))
 
-# --- figura 2c: el complejo por GRAPHVIZ (deja .dot editable) --------------
-# visualization.show despacha los modelos simpliciales a matplotlib, que dibuja
-# simplices rellenos pero no deja fuente editable: no hay .dot junto al .png.
-# engine="dot" los manda por Graphviz. Con dos agentes cada faceta tiene dos
-# vertices, asi que ES una arista y el grafo representa el complejo sin perdida.
+# --- figure 2c: the complex via GRAPHVIZ (leaves an editable .dot) -----------
+# visualization.show sends simplicial models to matplotlib, which draws filled
+# simplices but leaves no editable source: no .dot next to the .png.
+# engine="dot" routes them through Graphviz. With two agents each facet has two
+# vertices, so it IS an edge and the graph represents the complex without loss.
 print(visualization.show(
     Simp, "desastre_complejo",
     title="Desastre natural — complejo simplicial",
     output_dir=OUT, engine="dot",
 ))
 
-# --- figura 2g: el complejo simplicial "normal" (dibujo geometrico) ---------
-# Con dos agentes cada faceta es una arista, asi que el complejo es el camino
-# b0 - a0 - b1 - a1 (SR, SnR, nS): visualization.show lo dibuja horizontal,
-# con cada faceta rellena del color de su firma de creencia y nombrada por su
-# mundo. Complementa a la reticula de caras de la figura 2.
+# --- figure 2g: the "ordinary" simplicial complex (geometric drawing) --------
+# With two agents each facet is an edge, so the complex is the path
+# b0 - a0 - b1 - a1 (SR, SnR, nS): visualization.show draws it horizontally,
+# each facet filled with the colour of its belief signature and labelled with
+# its world. It complements the face lattice of figure 2.
 print(visualization.show(
     Simp, "desastre_geometrico",
     title="Desastre natural — complejo simplicial",
     output_dir=OUT,
 ))
 
-# --- figuras 1v/2v: los mismos modelos CON la valuacion de C ----------------
-# El ejemplo habla de un atomo, C = "la carretera esta libre", y de como el
-# anuncio de ¬C "simplemente invierte los valores de C". Se generan los dos
-# estados: ANTES (v(C) = {SnR, SR}: en los mundos donde Alice manda C la
-# carretera se reporta libre; en nS no se mando nada, C es falsa) y DESPUES
-# del anuncio ¬C (v(C) = {nS}: los valores invertidos). En cada estado Barb
-# tiene una creencia falsa en SnR: antes cree ¬C siendo C verdadera (solo ve
-# nS, donde no llego nada); despues cree C siendo C falsa.
+# --- figures 1v/2v: the same models WITH the valuation of C ------------------
+# The example has one atom, C = "the road is clear", and the announcement of
+# ¬C "simply flips the values of C". Both states are generated: BEFORE
+# (v(C) = {SnR, SR}: in the worlds where Alice sends C the road is reported
+# clear; in nS nothing was sent and C is false) and AFTER the announcement ¬C
+# (v(C) = {nS}: the flipped values). In each state Barb holds a false belief in
+# SnR: before, she believes ¬C while C is true (she only sees nS, where nothing
+# arrived); after, she believes C while C is false.
 from assignment import assignment_from_model, nu_violations
 from semantics import holds_kripke
 
 VALUACIONES = {
-    "antes":   {"C": {"SnR", "SR"}},   # C tal como se mando por radio
-    "despues": {"C": {"nS"}},          # tras el anuncio ¬C: valores invertidos
+    "antes":   {"C": {"SnR", "SR"}},   # C as sent over the radio
+    "despues": {"C": {"nS"}},          # after announcing ¬C: values flipped
 }
 FORMULAS = {
     "C":       ("atom", "C"),
@@ -99,27 +111,27 @@ FORMULAS = {
 }
 for etapa, val in VALUACIONES.items():
     print(f"\n== {etapa} del anuncio ¬C: v(C) = {sorted(val['C'])} ==")
-    # Figura relacional: los mundos llevan sus literales (C / ¬C) como
-    # segunda linea de la etiqueta; misma funcion que la figura 1.
+    # Relational figure: each world carries its literal (C / ¬C) as the second
+    # line of its label; same function as figure 1.
     print(visualization.show(
         KBframe, f"desastre_{etapa}_relacional",
         title=f"Desastre natural — {etapa} de ¬C (modelo relacional K+B)",
         output_dir=OUT, valuation=val,
     ))
-    # Figura simplicial: la valuacion de mundos induce la asignacion de
-    # vertices (lo que cada perspectiva SABE de C: 1 = C, 0 = ¬C, 2 = nada),
-    # y cada cara del reticulo muestra los literales que sus vertices observan.
+    # Simplicial figure: the world valuation induces the vertex assignment
+    # (what each perspective KNOWS about C: 1 = C, 0 = ¬C, 2 = nothing), and
+    # each face of the lattice shows the literals its vertices observe.
     asg = assignment_from_model(Simp, val)
-    # Dibujo geometrico con la valuacion: cada vertice muestra el literal que
-    # observa (C / ¬C; nada si no sabe), cada faceta su mundo.
-    # Dibujo geometrico (matplotlib): simplices rellenos, sin fuente editable.
+    # Geometric drawing (matplotlib) with the valuation: each vertex shows the
+    # literal it observes (C / ¬C; nothing if it does not know), each facet its
+    # world. Filled simplices, but no editable source.
     print(visualization.show(
         Simp, f"desastre_{etapa}_geometrico",
         title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
         output_dir=OUT, valuation=val,
     ))
-    # El mismo complejo por Graphviz: deja .dot junto al .png, como el resto de
-    # las figuras del cartel, para poder retocarlo sin volver a correr el modelo.
+    # The same complex via Graphviz: it leaves a .dot next to the .png, like the
+    # other poster figures, so it can be retouched without rerunning the model.
     print(visualization.show(
         Simp, f"desastre_{etapa}_complejo",
         title=f"Desastre natural — {etapa} de ¬C (complejo simplicial)",
@@ -130,19 +142,22 @@ for etapa, val in VALUACIONES.items():
         title=f"Desastre natural — {etapa} de ¬C (reticula de caras)",
         output_dir=OUT, assignment=asg,
     ))
-    # NU: una verdad que ningun agente observa no es representable por
-    # vertices. Aqui no ocurre (Alice siempre sabe el valor de C en su clase).
+    # NU: a truth that no agent observes cannot be represented on vertices.
+    # It does not happen here (Alice always knows the value of C in her class).
     gaps = nu_violations(Simp, asg, val)
     print("  violaciones NU:", gaps if gaps else "ninguna")
-    # La creencia falsa de Barb, comprobada mundo por mundo.
+    # Barb's false belief, checked world by world.
     for w in ("nS", "SnR", "SR"):
         fila = "  ".join(f"{k}={'T' if holds_kripke(KBframe, val, w, f) else 'F'}"
                          for k, f in FORMULAS.items())
         print(f"  {w:>4}: {fila}")
 
-# --- figura 3: esquema de la revision de creencias -------------------------
-# Regla especificada en el articulo, aun no implementada: esta figura es un
-# esquema, no la salida del codigo.
+# --- figure 3: schematic of the belief revision ------------------------------
+# Rule specified in the paper, not implemented in the tool at the time: this
+# figure is a schematic, not the code's output. It shows the two states of the
+# path and the rule drawn at the bottom: after the announcement discards the
+# facet Barb believed, she moves to the surviving facet with the same b-vertex
+# that shares the most vertices with the one she lost.
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -150,7 +165,7 @@ from matplotlib.patches import FancyArrowPatch, Circle
 
 NAVY, TXT, MUT = "#0e2140", "#1a2233", "#5a6478"
 A, B, RED, GRN, PALE = "#1971c2", "#e8590c", "#c0432b", "#1b5e3f", "#cbd3de"
-XMAX = 994 / 540.0                      # proporcion del hueco en el cartel
+XMAX = 994 / 540.0                      # aspect ratio of the slot on the poster
 
 fig, ax = plt.subplots(figsize=(9.94, 5.40), dpi=170)
 ax.set_xlim(0, XMAX); ax.set_ylim(0, 1)

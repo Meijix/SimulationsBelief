@@ -10,7 +10,9 @@ ENV/
 
 
 # --- Salidas generadas ---
-outputs/
+# Only the root outputs/ (every demo's scratch figures); poster/outputs/ is
+# tracked because the poster is built from exactly those files.
+/outputs/
 *.dot
 
 # --- Notebooks ---
@@ -19,3 +21,6 @@ outputs/
 docs/
 tests/
 *.log
+
+# --- macOS ---
+.DS_Store
