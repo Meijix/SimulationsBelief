@@ -39,7 +39,12 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from assignment import assignment_from_model, nu_violations  # noqa: E402
+from assignment import (  # noqa: E402
+    assignment_from_model,
+    consistency_violations,
+    holds as holds_simplicial,
+    nu_violations,
+)
 from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes  # noqa: E402
 from properness import (  # noqa: E402
     cheapest_distinguished_agent,
@@ -49,9 +54,9 @@ from properness import (  # noqa: E402
 )
 from relational_frame import RelationalFrame  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
-from simplicial import to_simplicial  # noqa: E402
+from simplicial import Node, SimplicialBeliefModel, to_simplicial  # noqa: E402
 from visualization import PALETTE, show, visualize  # noqa: E402
-import hasse  # noqa: E402  -- retículo de caras (Fig. 4)
+import hasse  # noqa: E402  -- face lattice (Fig. 4)
 
 
 def agent_color_map(agents: List[str]) -> Dict[str, str]:
@@ -110,27 +115,31 @@ DEFAULT_EDITOR = {
 # ---------------------------------------------------------------------------
 _NASA_W = ["TTT", "TTX", "TXT", "TXX", "XTT", "XTX", "XXT", "XXX"]
 
-# Los tres TIPOS DE MODELO que el núcleo sabe construir, tal como los expone
-# la GUI. La clave viaja por todo el adaptador (``kind``) y decide qué marco
-# se construye, qué axiomas se comprueban y hasta dónde llega el pipeline:
+# The three MODEL KINDS the core can build, as the GUI exposes them. The key
+# travels through the whole adapter (``kind``) and decides which frame is
+# built, which axioms are checked and how far the pipeline goes:
 #
-#   kb         KnowledgeBeliefFrame: conocimiento S5 + creencia KD45/K45, y
-#              el pipeline completo (propio -> simplicial -> Hasse).
-#   knowledge  RelationalFrame S5 (sólo conocimiento). Las filas del editor
-#              son clases; no hay creencia. Propio y simplicial funcionan
-#              (todo el complejo es el subcomplejo de creencia de cada uno).
-#   belief     RelationalFrame KD45/K45 (sólo creencia). Cada fila es "desde
-#              estos mundos se creen aquellos"; no hay clases. La propiedad y
-#              la traducción simplicial NECESITAN S5, así que el pipeline
-#              termina en el paso 1 y lo dice.
+#   kb         KnowledgeBeliefFrame: S5 knowledge + KD45/K45 belief, and the
+#              full pipeline (proper -> simplicial -> Hasse).
+#   knowledge  S5 RelationalFrame (knowledge only). Editor rows are classes;
+#              there is no belief. Proper and simplicial both work (the whole
+#              complex is every agent's belief subcomplex).
+#   belief     KD45/K45 RelationalFrame (belief only). Each row reads "from
+#              these worlds, those are believed"; there are no classes.
+#              Properness and the simplicial translation NEED S5, so the
+#              pipeline stops after step 1 and says so.
 KINDS = {
     "kb": "Conocimiento y creencia",
     "knowledge": "Sólo conocimiento (S5)",
     "belief": "Sólo creencia (KD45 / K45)",
+    # The fourth kind skips Kripke altogether: the user declares vertices and
+    # facets and the GUI builds the SimplicialBeliefModel as declared (see the
+    # "direct simplicial complex" section below).
+    "simplicial": "Complejo simplicial (directo)",
 }
 
-# Niños embarrados con dos niños: un mundo por reparto de barro, y cada niño
-# no distingue los dos mundos que sólo difieren en SU propio estado.
+# Muddy children with two children: one world per distribution of mud, and
+# each child cannot tell apart the two worlds that differ only in HIS own state.
 _MUDDY_W = ["limpios", "a", "b", "ab"]
 EXAMPLES = {
     "tesis": {
@@ -138,15 +147,15 @@ EXAMPLES = {
         "agents": ["a", "b", "c"],
         "worlds": ["w0", "w1", "w2"],
         "per_agent": DEFAULT_EDITOR,
-        # p vale donde ALGUIEN se atreve a creer: B_a p vale pero K_a p no --
-        # el contraste conocimiento/creencia en una sola formula.
+        # p holds where SOMEONE dares to believe: B_a p holds but K_a p does
+        # not -- the knowledge/belief contrast in a single formula.
         "atoms": {"p": ["w1", "w2"]},
         "axiom_d": True,
     },
     "nasa": {
-        # ejemplo_nasa.py: tres unidades leen un tramo (T/X); cada una conoce
-        # SU lectura (clase = mundos que coinciden en su posicion) y cree que
-        # las otras leen lo mismo (el mundo unanime de su letra).
+        # ejemplo_nasa.py: three units each read a segment (T/X); each one
+        # knows ITS reading (class = worlds that agree at its position) and
+        # believes the others read the same (the unanimous world of its letter).
         "label": "Coloquio · red de auxilio (octaedro)",
         "agents": ["a", "b", "c"],
         "worlds": list(_NASA_W),
@@ -158,19 +167,19 @@ EXAMPLES = {
             ]
             for i, g in enumerate("abc")
         },
-        # Tg = "la unidad g lee Transitable" (atomo por unidad).
+        # Tg = "unit g reads Transitable" (one atom per unit).
         "atoms": {f"T{g}": [w for w in _NASA_W if w[i] == "T"]
                   for i, g in enumerate("abc")},
         "axiom_d": True,
     },
     "moneda": {
-        # El caso minimo de dos agentes: a ya vio la moneda (clases unitarias,
-        # dejadas implicitas), b no la distingue y cree que salio cara.
+        # The minimal two-agent case: a has already seen the coin (singleton
+        # classes, left implicit), b cannot tell and believes it came up heads.
         "label": "Moneda · a sabe, b cree",
         "agents": ["a", "b"],
         "worlds": ["cara", "cruz"],
         "per_agent": {
-            "a": [],  # sin clases dibujadas = clases unitarias (a distingue todo)
+            "a": [],  # no classes drawn = singleton classes (a distinguishes all)
             "b": [{"cls": ["cara", "cruz"], "bel": ["cara"]}],
         },
         "atoms": {"c": ["cara"]},
@@ -180,25 +189,24 @@ EXAMPLES = {
 
 
 # --------------------------------------------------------------------------- #
-# La biblioteca completa: TODOS los modelos de los scripts de ejemplo del
-# repositorio, convertidos a estados del editor. Cada entrada repite las
-# semillas del script (con su nombre como referencia), construye el modelo con
-# el núcleo -- las mismas clausuras que usa el script -- y lo convierte a filas
-# con ``editor_rows``. Así las filas son las del modelo real y no una
-# transcripción a mano que pueda desviarse. Un modelo que no se pueda
-# construir se omite con un aviso en stderr en lugar de tumbar la GUI.
+# The full library: EVERY model from the repo's example scripts, converted to
+# editor states. Each entry repeats the script's seeds (with the script's name
+# as the reference), builds the model with the core -- the same closures the
+# script uses -- and turns it into rows with ``editor_rows``. The rows are
+# therefore those of the real model, not a hand transcription that could
+# drift. A model that cannot be built is skipped with a warning on stderr
+# instead of taking the GUI down.
 # --------------------------------------------------------------------------- #
 def editor_rows(model, agent: str, worlds: List[str], kind: str) -> List[dict]:
-    """Filas del editor para un agente, a partir de un modelo YA cerrado.
+    """Editor rows for one agent, read off a model that is ALREADY closed.
 
-    * ``kb``: una fila por clase de conocimiento, con lo que el agente cree
-      en ella (la creencia es constante en la clase en un modelo válido).
-      Una clase unitaria que se cree a sí misma se omite: es lo que la
-      convención de silencio produce sola.
-    * ``knowledge``: una fila por clase no unitaria (las unitarias son
-      implícitas).
-    * ``belief``: una fila por conjunto creído distinto, con los mundos que
-      lo creen como origen; un mundo que no cree nada no lleva fila.
+    * ``kb``: one row per knowledge class, with what the agent believes in it
+      (belief is constant on the class in a valid model). A singleton class
+      that believes itself is omitted: the silence convention (Q = R) produces
+      it on its own.
+    * ``knowledge``: one row per non-singleton class (singletons are implicit).
+    * ``belief``: one row per distinct believed set, with the worlds that
+      believe it as the sources; a world that believes nothing gets no row.
     """
     if kind in ("kb", "knowledge"):
         kframe = model.knowledge if isinstance(model, KnowledgeBeliefFrame) else model
@@ -236,7 +244,7 @@ def _entry(label: str, kind: str, model, worlds: List[str],
 
 
 def _script_examples() -> Dict[str, dict]:
-    """Los modelos de los scripts, uno por uno (ver el comentario de cabecera)."""
+    """The scripts' models, one by one (see the header comment above)."""
     import itertools
 
     from relational_frame import s5_closure
@@ -246,7 +254,7 @@ def _script_examples() -> Dict[str, dict]:
     def add(key, label, kind, build, worlds, atoms=None):
         try:
             out[key] = _entry(label, kind, build(), worlds, atoms)
-        except Exception as exc:  # noqa: BLE001 -- un ejemplo roto no tumba la GUI
+        except Exception as exc:  # noqa: BLE001 -- a broken example never sinks the GUI
             print(f"[gui] ejemplo {key!r} omitido: {exc}", file=sys.stderr)
 
     W3 = ["w1", "w2", "w3"]
@@ -360,7 +368,7 @@ def _script_examples() -> Dict[str, dict]:
     FP1 = {"a": {(SNR, SR), (SR, SNR)}, "b": {(SNR, NS), (NS, SNR)}, "c": {(SNR, NS), (SR, NS)}}
     add("poster1", "Example For Poster 1.py · mensaje por radio, 3 agentes", "kb",
         lambda: KnowledgeBeliefFrame.from_partial(A3, set(_WP1), FP1, FP1), _WP1)
-    # -- Example for Poster 2.py (protocolo de mensajes alternados, S5) -----
+    # -- Example for Poster 2.py (alternating-message protocol, S5) ---------
     _WP2 = ["anSnRbnSnR", "aS1bnR", "aS1bR", "aS0bnR", "aS0bR",
             "anRbS1", "aRbS1", "anRbS0", "aRbS0"]
     FP2 = {"a": {("anSnRbnSnR", "anRbS1"), ("anSnRbnSnR", "anRbS0"),
@@ -374,6 +382,23 @@ def _script_examples() -> Dict[str, dict]:
 
 
 EXAMPLES.update(_script_examples())
+
+# A complex DEFINED DIRECTLY: the natural-disaster example as the poster draws
+# it -- the path b0 - a0 - b1 - a1 with its three facets, SnR outside b's
+# belief subcomplex, and C observed at the vertices.
+EXAMPLES["simp_desastre"] = {
+    "label": "Complejo directo · desastre natural (antes de ¬C)",
+    "kind": "simplicial",
+    "agents": ["a", "b"], "worlds": [], "per_agent": {}, "atoms": {},
+    "axiom_d": True,
+    "vertices": {"a": ["a0", "a1"], "b": ["b0", "b1"]},
+    "facets": [
+        {"name": "SR", "nodes": {"a": "a0", "b": "b0"}, "belief": ["a", "b"]},
+        {"name": "SnR", "nodes": {"a": "a0", "b": "b1"}, "belief": ["a"]},
+        {"name": "nS", "nodes": {"a": "a1", "b": "b1"}, "belief": ["a", "b"]},
+    ],
+    "vatoms": {"C": {"true": ["a0", "b0"], "false": ["a1"]}},
+}
 
 
 def seeds_from_editor(
@@ -476,6 +501,413 @@ def build_general(
     )
 
 
+# --------------------------------------------------------------------------- #
+# Direct simplicial complex. The editor stores three things, all under the
+# names the user types:
+#
+#   vertices  {agent: [name, ...]}          the vertices of each colour
+#   facets    [{"name": str,                 a facet = one vertex PER agent
+#               "nodes": {agent: vertex},    (the UCF condition) ...
+#               "belief": [agent, ...]}]     ... and the S_a that contain it
+#   vatoms    {atom: {"true": [vertex..],    the assignment L : N -> {0,1,2}
+#                     "false": [vertex..]}}  on VERTICES (2 = not listed)
+#
+# No translation in between: what is drawn is what is declared, and validation
+# is the model's own (UCF, S_a ⊆ S non-empty, "no isolated perspectives" under
+# Axiom D) plus the per-facet consistency of the assignment. A declared vertex
+# that is in no facet is NOT dropped: it is an isolated vertex of the complex
+# (issue #12) and is drawn and reported as such.
+# --------------------------------------------------------------------------- #
+def build_simplicial(
+    agents: List[str],
+    vertices: Dict[str, List[str]],
+    facets: List[dict],
+    axiom_d: bool = True,
+    validate: bool = True,
+) -> Tuple[SimplicialBeliefModel, Dict[str, Node], Dict[str, frozenset]]:
+    """The simplicial model exactly as the editor declares it.
+
+    A vertex is a ``Node(agent, {name})``: its "class" is its own name, which
+    is all the identity a hand-declared vertex has. A facet missing some
+    agent's vertex is NOT rejected here: it is built incomplete and
+    ``violations()`` reports it as a UCF failure, like any other condition.
+    ALL declared vertices enter the model, whether or not they lie in a facet:
+    one with no facet is an isolated perspective (legal under K45, a violation
+    under Axiom D), not an input error.
+
+    Returns:
+        ``(model, vertices by name, facets by name)``.
+
+    Raises:
+        ValueError: whatever makes the drawing inexpressible -- a repeated
+            vertex, a facet with no vertices, two facets with the same
+            vertices -- and, with ``validate=True``, the model's own violations.
+    """
+    by_name: Dict[str, Node] = {}
+    for a in agents:
+        for v in vertices.get(a, []):
+            if v in by_name:
+                raise ValueError(f"el vértice '{v}' está declarado dos veces")
+            by_name[v] = Node(a, frozenset({v}))
+    if not facets:
+        raise ValueError("declara al menos una faceta")
+    facet_of: Dict[str, frozenset] = {}
+    name_of: Dict[frozenset, str] = {}
+    for f in facets:
+        name = f["name"]
+        if name in facet_of:
+            raise ValueError(f"hay dos facetas llamadas '{name}'")
+        members = frozenset(
+            by_name[v] for a in agents
+            if (v := f.get("nodes", {}).get(a)) in by_name and by_name[v].agent == a
+        )
+        if not members:
+            raise ValueError(f"la faceta '{name}' no tiene ningún vértice")
+        if members in name_of:
+            raise ValueError(
+                f"las facetas '{name_of[members]}' y '{name}' tienen los mismos "
+                "vértices: son la misma faceta"
+            )
+        facet_of[name] = members
+        name_of[members] = name
+    belief = {
+        a: {facet_of[f["name"]] for f in facets if a in f.get("belief", [])}
+        for a in agents
+    }
+    model = SimplicialBeliefModel(
+        agents, by_name.values(), facet_of.values(), belief, world_of_facet=name_of,
+        validate=validate, axiom_d=axiom_d,
+        node_names={n: v for v, n in by_name.items()},
+    )
+    return model, by_name, facet_of
+
+
+def simplicial_assignment(by_name: Dict[str, Node], vatoms: Dict[str, dict]):
+    """The editor's vertex assignment, in the format ``assignment.py`` expects."""
+    out: Dict[Node, Dict[str, int]] = {}
+    for atom, spec in (vatoms or {}).items():
+        trues, falses = set(spec.get("true", [])), set(spec.get("false", []))
+        both = sorted(trues & falses)
+        if both:
+            raise ValueError(
+                f"el átomo '{atom}' está marcado verdadero y falso en {both}"
+            )
+        for v in trues:
+            if v in by_name:
+                out.setdefault(by_name[v], {})[atom] = 1
+        for v in falses:
+            if v in by_name:
+                out.setdefault(by_name[v], {})[atom] = 0
+    return out
+
+
+def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str], List[str]]:
+    """``(violations, notes)`` for a hand-declared complex."""
+    problems = model.violations() + consistency_violations(model, assignment)
+    name = {n: v for v, n in by_name.items()}
+    notes = []
+    loose = sorted(name[n] for n in model.isolated_nodes())
+    if loose:
+        notes.append(
+            "vértices en ninguna faceta (aislados: ningún mundo pasa por ellos; "
+            f"se dibujan sueltos): {', '.join(loose)}"
+        )
+    if not model.axiom_d:
+        # Under K45 an isolated perspective is not a violation, but it does
+        # change the semantics (B_a holds vacuously there): say so where the
+        # user will see it, rather than let them find out by evaluating a formula.
+        for a in sorted(model.agents, key=str):
+            stuck = sorted(name[n] for n in model.isolated_perspectives()[a])
+            if stuck:
+                notes.append(
+                    f"perspectivas aisladas de {a} (en ninguna faceta de S_{a}: "
+                    f"ahí {a} cree todo vacuamente): {', '.join(stuck)}"
+                )
+    orphan = [model.world_of_facet[F] for F in model.facets
+              if not any(F in fs for fs in model.belief_facets.values())]
+    if orphan:
+        notes.append(
+            "facetas fuera de todo subcomplejo de creencia (nadie las cree "
+            f"posibles): {', '.join(sorted(map(str, orphan)))}"
+        )
+    return problems, notes
+
+
+def preview_simplicial(
+    agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
+    vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
+) -> Tuple[Path, List[str]]:
+    """Preview of the complex AS DECLARED, without requiring validity."""
+    model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d, validate=False)
+    assignment = simplicial_assignment(by_name, vatoms)
+    path = Path(show(model, _fname("gui_preview", tag), "Complejo tal como se ingresa",
+                     output_dir=str(OUTPUTS), assignment=assignment or None))
+    problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
+    return path, problems
+
+
+def evaluate_simplicial_formula(
+    agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
+    vatoms: Dict[str, dict], axiom_d: bool, text: str,
+) -> List[Tuple[str, bool]]:
+    """Evaluate the formula at EVERY facet with the vertex-based semantics (ch. 3)."""
+    formula = parse_formula(text, agents, list(vatoms or {}))
+    model, by_name, facet_of = build_simplicial(agents, vertices, facets, axiom_d)
+    assignment = simplicial_assignment(by_name, vatoms)
+    return [(f["name"], holds_simplicial(model, assignment, facet_of[f["name"]], formula))
+            for f in facets]
+
+
+def _hasse_caption(number: str, full: bool) -> str:
+    """Caption for the lattice figure, depending on which rows are drawn.
+
+    By default (issue #7) only the two rows a belief model reads: perspectives
+    below, worlds above, and a line when the perspective is part of the world.
+    The full lattice (every intermediate face) is optional because with three
+    agents it is already hundreds of boxes.
+    """
+    if full:
+        return (f"{number} · retículo de caras del complejo (diagrama de Hasse): "
+                "una caja por simplejo, una fila por dimensión, y una línea "
+                "cuando uno es cara inmediata del otro")
+    return (f"{number} · vértices y facetas del complejo: perspectivas abajo, "
+            "mundos arriba, y una línea cuando la perspectiva es parte del mundo "
+            "(las caras intermedias se omiten; actívalas con «retículo completo»)")
+
+
+def run_simplicial(
+    agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
+    vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
+    hasse_full: bool = False,
+) -> "PipelineResult":
+    """The "pipeline" of a direct complex: validate and draw, nothing to translate.
+
+    ``hasse_full`` picks the lattice figure: by default only vertices and
+    facets (issue #7); ``True`` draws every face.
+    """
+    result = PipelineResult()
+    step = StepReport("1 · Complejo simplicial (definido directamente)")
+    result.steps.append(step)
+    try:
+        model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d,
+                                             validate=False)
+        assignment = simplicial_assignment(by_name, vatoms)
+    except ValueError as exc:
+        step.failed.append(str(exc))
+        result.badges.append(("inexpresable", "negative"))
+        return result
+    problems, notes = _simplicial_problems(model, assignment, by_name, vertices)
+    step.missing += notes
+    if problems:
+        step.failed.append("\n".join(problems))
+        result.badges.append(("inválido", "negative"))
+    else:
+        result.badges.append(("válido", "positive"))
+        sizes = ", ".join(f"S_{a} = {len(model.belief_facets[a])}"
+                          for a in sorted(model.agents, key=str))
+        step.completed.append(
+            f"complejo bien formado: {len(model.facets)} facetas, "
+            f"{len(model.nodes)} vértices; subcomplejos de creencia: {sizes}"
+        )
+    result.badges.append(("KD45" if axiom_d else "K45", "primary"))
+    result.stats.append((str(len(model.facets)), "facetas"))
+    result.stats.append((str(len(model.nodes)), "vértices"))
+    for a in sorted(model.agents, key=str):
+        result.stats.append((str(len(model.belief_facets[a])), f"S_{a}"))
+    asg = assignment or None
+    # The figures are drawn even for an invalid complex: seeing it is how the
+    # user finds the facet that breaks UCF or the isolated perspective.
+    result.figures.append((
+        "Fig. 1 · el complejo simplicial declarado",
+        Path(show(model, _fname("gui_fig3_simplicial", tag), "Complejo simplicial",
+                  output_dir=str(OUTPUTS), assignment=asg)),
+    ))
+    result.html_3d = Path(show(model, _fname("gui_fig3_3d", tag), "Complejo simplicial · 3D",
+                               dim=3, output_dir=str(OUTPUTS), assignment=asg))
+    lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
+    result.figures.append((
+        _hasse_caption("Fig. 2", hasse_full),
+        Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Retículo de caras",
+                        output_dir=str(OUTPUTS), rankdir="BT",
+                        facets_and_vertices=not hasse_full)),
+    ))
+    result.text_diagrams.append(("Complejo simplicial", str(model)))
+    result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
+    back = StepReport("2 · Modelo relacional equivalente")
+    back.skipped.append(
+        "el complejo se definió directamente; la traducción inversa "
+        "(complejo → modelo de Kripke) no está implementada en el núcleo"
+    )
+    result.steps.append(back)
+    return result
+
+
+def simplicial_state_from_editor(
+    kind: str, agents: List[str], worlds: List[str],
+    per_agent: Dict[str, List[dict]], atoms: Dict[str, List[str]],
+    axiom_d: bool, believe_all_when_silent: bool = True,
+) -> Tuple[Dict[str, List[str]], List[dict], Dict[str, dict]]:
+    """Translate the relational model being edited into a direct-complex state.
+
+    This BOOTSTRAPS the simplicial editor from what is already drawn: it runs
+    general -> proper -> simplicial and dumps the result into named vertices
+    (a0, a1, ... per agent), facets named after their world, and the
+    assignment the valuation induces. From there the complex is free: it is
+    edited without going through Kripke.
+
+    Raises:
+        ValueError: if the current model cannot be translated (pure belief,
+            invalid model...).
+    """
+    from visualization import facet_name
+
+    if kind == "belief":
+        raise ValueError("un modelo de sólo creencia no tiene traducción simplicial")
+    knowledge, belief = seeds_from_editor(agents, worlds, per_agent, kind)
+    general = build_general(kind, agents, worlds, knowledge, belief, axiom_d,
+                            believe_all_when_silent)
+    proper = general.to_proper() if kind == "kb" else frame_to_proper(general)
+    sm = to_simplicial(proper)
+    names: Dict[Node, str] = {}
+    vertices: Dict[str, List[str]] = {a: [] for a in agents}
+    for a in agents:
+        mine = sorted((n for n in sm.nodes if n.agent == a),
+                      key=lambda n: sorted(map(str, n.cls)))
+        for i, n in enumerate(mine):
+            names[n] = f"{a}{i}"
+            vertices[a].append(names[n])
+    facets = [
+        {"name": facet_name(sm, F),
+         "nodes": {n.agent: names[n] for n in F},
+         "belief": [a for a in agents if F in sm.belief_facets[a]]}
+        for F in sorted(sm.facets, key=lambda F: facet_name(sm, F))
+    ]
+    vatoms: Dict[str, dict] = {}
+    valuation = _valuation_of(atoms)
+    if valuation:
+        lifted = (lift_valuation(valuation, proper.projection)
+                  if proper.projection else valuation)
+        for node, values in assignment_from_model(sm, lifted).items():
+            for atom, value in values.items():
+                spec = vatoms.setdefault(atom, {"true": [], "false": []})
+                spec["true" if value == 1 else "false"].append(names[node])
+    for atom in atoms or {}:
+        vatoms.setdefault(atom, {"true": [], "false": []})
+    return vertices, facets, vatoms
+
+
+# --------------------------------------------------------------------------- #
+# The STATE of a model and the API that works on it.
+#
+# The GUI handles several models at once (one "document" per model), so
+# everything that describes ONE model lives in a flat, serialisable dict --
+# the "state" -- and these three functions are the only entry point:
+#
+#     preview_state(state, tag)   -> (figure, what is missing)
+#     evaluate_state(state, text) -> [(world or facet, holds?)]
+#     run_state(state, tag)       -> PipelineResult
+#
+# They resolve the model kind (``state["kind"]``); callers need not know
+# whether it is Kripke or a complex. ``tag`` keeps each document's files apart
+# in outputs/ so two open models do not overwrite each other.
+#
+# THIS IS THE CONTRACT FOR THE ACTION LAYER (not implemented yet): applying an
+# action to a model must produce ANOTHER state; with that the GUI already
+# knows how to draw, validate, evaluate and compare it, with no new UI code.
+# --------------------------------------------------------------------------- #
+def blank_state(kind: str = "kb") -> dict:
+    """An empty state with every key the GUI and this API expect."""
+    return {
+        "kind": kind,
+        "agents": [], "worlds": [], "per_agent": {},
+        "atoms": {},                       # atom -> worlds where it is true
+        "vertices": {}, "facets": [], "vatoms": {},   # direct complex
+        "axiom_d": True,                   # KD45 (True) or K45 (False)
+        "silent_defunct": False,           # K45: class with no belief = Q = ∅
+        "explicit": False,                 # draw loops and both directions
+        "hasse_full": False,               # full lattice, not only vertices+facets
+    }
+
+
+def state_from_example(example: dict) -> dict:
+    """A complete state from an ``EXAMPLES`` entry (its own deep copy)."""
+    import copy
+
+    state = blank_state(example.get("kind", "kb"))
+    for key in ("agents", "worlds", "per_agent", "atoms", "vertices", "facets",
+                "vatoms", "axiom_d"):
+        if key in example:
+            state[key] = copy.deepcopy(example[key])
+    return state
+
+
+def _fname(base: str, tag: str) -> str:
+    """File name of a figure, specific to the document ``tag``."""
+    return f"{base}_{tag}" if tag else base
+
+
+def state_problem(state: dict) -> Optional[str]:
+    """What the state lacks before anything can be drawn; ``None`` if nothing."""
+    if state["kind"] == "simplicial":
+        if not (state["agents"] and state["facets"]):
+            return "Agrega agentes, sus vértices y al menos una faceta."
+    elif not (state["agents"] and state["worlds"]):
+        return "Agrega al menos un agente y un mundo."
+    return None
+
+
+def preview_state(state: dict, tag: str = "") -> Tuple[Path, List[str]]:
+    """Preview of the model AS IT IS, for any kind."""
+    if state["kind"] == "simplicial":
+        return preview_simplicial(
+            state["agents"], state["vertices"], state["facets"], state["vatoms"],
+            state["axiom_d"], tag,
+        )
+    return preview_figure(
+        state["agents"], state["worlds"], state["per_agent"], state["atoms"],
+        state["explicit"], state["axiom_d"], state["kind"], tag,
+    )
+
+
+def evaluate_state(state: dict, text: str) -> List[Tuple[str, bool]]:
+    """Evaluate a formula at every world (or facet) of the model."""
+    if state["kind"] == "simplicial":
+        return evaluate_simplicial_formula(
+            state["agents"], state["vertices"], state["facets"], state["vatoms"],
+            state["axiom_d"], text,
+        )
+    return evaluate_formula(
+        state["agents"], state["worlds"], state["per_agent"], state["atoms"],
+        state["axiom_d"], text, not state["silent_defunct"], state["kind"],
+    )
+
+
+def run_state(state: dict, tag: str = "") -> "PipelineResult":
+    """Run the pipeline that matches the model's kind.
+
+    Raises:
+        ValueError: whatever makes the model inexpressible (overlapping
+            classes...). A step's violations are NOT raised: they stay in the
+            result.
+    """
+    # ``.get``: states saved before the key existed remain valid and fall
+    # back to the default view.
+    hasse_full = bool(state.get("hasse_full", False))
+    if state["kind"] == "simplicial":
+        return run_simplicial(
+            state["agents"], state["vertices"], state["facets"], state["vatoms"],
+            state["axiom_d"], tag, hasse_full=hasse_full,
+        )
+    knowledge, belief = seeds_from_editor(
+        state["agents"], state["worlds"], state["per_agent"], state["kind"]
+    )
+    return run_pipeline_from_seeds(
+        state["agents"], state["worlds"], knowledge, belief, state["axiom_d"],
+        state["atoms"], not state["silent_defunct"], state["explicit"],
+        state["kind"], tag, hasse_full=hasse_full,
+    )
+
+
 def parse_names(text: str) -> List[str]:
     """Parse a comma-separated list of identifiers ('a, b, c' -> ['a','b','c'])."""
     return [token.strip() for token in text.split(",") if token.strip()]
@@ -551,8 +983,8 @@ def parse_relation(
 #     or      := and ( ('|'|'∨') and )*
 #     and     := unary ( ('&'|'∧') unary )*
 #     unary   := ('~'|'!'|'¬') unary
-#              | K_<agente> unary | B_<agente> unary
-#              | '(' formula ')' | 'bot' | '⊥' | <atomo>
+#              | K_<agent> unary | B_<agent> unary
+#              | '(' formula ')' | 'bot' | '⊥' | <atom>
 #
 # Modal operators bind like negation (K_a p & q  ==  (K_a p) & q), which is
 # the convention the thesis uses when dropping parentheses.
@@ -596,8 +1028,8 @@ def parse_formula(text: str, agents: List[str], atoms: List[str]):
         pos = m.end()
     if not tokens:
         raise ValueError("escribe una fórmula, p. ej.  B_a p & ~K_a p")
-    tokens.append("<fin>")  # centinela: evita chequear el final en cada paso
-    i = 0  # cursor compartido por los parsers anidados (descenso recursivo)
+    tokens.append("<fin>")  # sentinel: saves an end-of-input check at every step
+    i = 0  # cursor shared by the nested parsers (recursive descent)
 
     def peek() -> str:
         return tokens[i]
@@ -761,6 +1193,7 @@ def preview_figure(
     explicit_edges: bool = False,
     axiom_d: bool = True,
     kind: str = "kb",
+    tag: str = "",
 ) -> Tuple[Path, List[str]]:
     """Render the model EXACTLY as drawn -- no closures, no validation gate.
 
@@ -799,7 +1232,7 @@ def preview_figure(
     valuation = _valuation_of(atoms)
     if kind == "knowledge":
         frame = RelationalFrame(agents, worlds, knowledge, validate=False)
-        path = Path(show(frame, "gui_preview", "Modelo tal como se ingresa",
+        path = Path(show(frame, _fname("gui_preview", tag), "Modelo tal como se ingresa",
                          output_dir=str(OUTPUTS), valuation=valuation,
                          logic="S5", **edge_style(explicit_edges)))
         return path, equivalence_violations(frame)
@@ -808,14 +1241,14 @@ def preview_figure(
                                 axiom_d=axiom_d)
         # Belief has nothing implicit: every loop and every direction is
         # information, so the drawing shows them all whatever the switch.
-        path = Path(show(frame, "gui_preview", "Modelo tal como se ingresa",
+        path = Path(show(frame, _fname("gui_preview", tag), "Modelo tal como se ingresa",
                          output_dir=str(OUTPUTS), valuation=valuation,
                          omit_self_loops=False, undirected_symmetric=False))
         return path, frame.violations()
     kb = KnowledgeBeliefFrame(
         agents, worlds, knowledge, belief, validate=False, axiom_d=axiom_d,
     )
-    path = Path(show(kb, "gui_preview", "Modelo tal como se ingresa",
+    path = Path(show(kb, _fname("gui_preview", tag), "Modelo tal como se ingresa",
                      output_dir=str(OUTPUTS), valuation=valuation,
                      **edge_style(explicit_edges)))
     return path, kb.violations()
@@ -1080,6 +1513,8 @@ def run_pipeline_from_seeds(
     believe_all_when_silent: bool = True,
     explicit_edges: bool = False,
     kind: str = "kb",
+    tag: str = "",
+    hasse_full: bool = False,
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
 
@@ -1117,6 +1552,8 @@ def run_pipeline_from_seeds(
             know", Q = R there. False = the defunct cluster Q = ∅, which only
             K45 legalises -- so it needs ``axiom_d=False`` as well. Turning off
             Axiom D alone only PERMITS defunct belief; this is what produces it.
+        hasse_full: draw every face in Fig. 4 instead of the default
+            vertices-and-facets view (GitHub #7).
     """
     if not agents or not worlds:
         raise ValueError("se necesita al menos un agente y un mundo")
@@ -1169,7 +1606,7 @@ def run_pipeline_from_seeds(
     result.stats.append((str(len(kb.worlds)), "mundos · general"))
     result.figures.append((
         fig1_caption,
-        Path(show(kb, "gui_fig1_general", "Modelo general",
+        Path(show(kb, _fname("gui_fig1_general", tag), "Modelo general",
                   output_dir=str(OUTPUTS), valuation=valuation, **fig1_style)),
     ))
     result.text_diagrams.append(("Modelo general", visualize(kb)))
@@ -1216,20 +1653,20 @@ def run_pipeline_from_seeds(
         # thesis_example.py): knowledge undirected S5, belief with KD45 arrows.
         result.figures.append((
             "Fig. 2a · modelo propio, conocimiento R_a (S5)",
-            Path(show(proper.knowledge, "gui_fig2_knowledge",
+            Path(show(proper.knowledge, _fname("gui_fig2_knowledge", tag),
                       "Propio · conocimiento R_a", output_dir=str(OUTPUTS),
                       valuation=lifted, **edge_style(explicit_edges))),
         ))
         result.figures.append((
             "Fig. 2b · modelo propio, creencia Q_a (KD45)",
-            Path(show(proper.belief, "gui_fig2_belief", "Propio · creencia Q_a",
+            Path(show(proper.belief, _fname("gui_fig2_belief", tag), "Propio · creencia Q_a",
                       omit_self_loops=not explicit_edges, output_dir=str(OUTPUTS),
                       valuation=lifted)),
         ))
     else:
         result.figures.append((
             "Fig. 2 · modelo propio de conocimiento R_a (S5)",
-            Path(show(proper, "gui_fig2_knowledge", "Propio · conocimiento R_a",
+            Path(show(proper, _fname("gui_fig2_knowledge", tag), "Propio · conocimiento R_a",
                       output_dir=str(OUTPUTS), valuation=lifted,
                       **edge_style(explicit_edges))),
         ))
@@ -1257,10 +1694,10 @@ def run_pipeline_from_seeds(
         result.stats.append((str(len(sm.belief_facets[a])), f"S_{a}"))
     result.figures.append((
         "Fig. 3 · modelo simplicial de creencia",
-        Path(show(sm, "gui_fig3_simplicial", "Modelo simplicial",
+        Path(show(sm, _fname("gui_fig3_simplicial", tag), "Modelo simplicial",
                   output_dir=str(OUTPUTS), valuation=lifted)),
     ))
-    result.html_3d = Path(show(sm, "gui_fig3_3d", "Modelo simplicial · 3D",
+    result.html_3d = Path(show(sm, _fname("gui_fig3_3d", tag), "Modelo simplicial · 3D",
                                dim=3, output_dir=str(OUTPUTS),
                                valuation=lifted))
     result.text_diagrams.append(("Modelo simplicial", str(sm)))
@@ -1269,18 +1706,20 @@ def run_pipeline_from_seeds(
     # The combinatorial reading of Fig. 3: which simplices exist and which is a
     # face of which; facet boxes carry the SAME world names Fig. 3 prints at
     # the centroids, so the two figures can be read together. The empty face
-    # is left out (noise for this purpose). Always the textbook bottom-up
+    # is left out (noise for this purpose). By default only the vertex and
+    # facet rows are drawn (GitHub #7): with three agents the full lattice is
+    # already hundreds of boxes, and the belief reading only needs "which
+    # perspectives make up which world". Always the textbook bottom-up
     # drawing (rankdir=BT): hasse.py suggests columns (LR) for wide middle
     # rows when the file is viewed on its own, but in the GUI the figure sits
     # in a wide column with a height cap, so a wide-and-low picture is the one
     # that stays readable; the LR variant became a tall, unreadable strip.
     lattice = hasse.face_lattice(sm, include_empty=False, assignment=lifted)
     result.figures.append((
-        "Fig. 4 · retículo de caras del complejo (diagrama de Hasse): "
-        "una caja por simplejo, una fila por dimensión, y una línea cuando "
-        "uno es cara inmediata del otro",
-        Path(hasse.show(lattice, "gui_fig4_hasse", "Retículo de caras",
-                        output_dir=str(OUTPUTS), rankdir="BT")),
+        _hasse_caption("Fig. 4", hasse_full),
+        Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Retículo de caras",
+                        output_dir=str(OUTPUTS), rankdir="BT",
+                        facets_and_vertices=not hasse_full)),
     ))
     result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
 

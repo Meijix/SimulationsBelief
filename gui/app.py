@@ -1,82 +1,98 @@
-"""GUI web del proyecto (NiceGUI): construir un modelo y correr el pipeline completo.
+"""Web GUI of the project (NiceGUI): build a model and run the full pipeline.
 
-Run:  .venv/bin/python gui/app.py     (abre http://localhost:8080 en el navegador)
+Run:  .venv/bin/python gui/app.py     (opens http://localhost:8080 in the browser)
 
-POR QUÉ NICEGUI Y ESTA FORMA. La GUI es una herramienta de investigación de un
-solo usuario, así que se eligió el stack que reutiliza TODO lo existente con el
-mínimo de piezas nuevas: NiceGUI es 100 % Python (los módulos del núcleo se
-importan directo, sin API ni serialización), corre en el navegador (las figuras
-plotly 3D ya son HTML y se embeben tal cual), y una página basta.
+WHY NICEGUI AND THIS SHAPE. The GUI is a single-user research tool, so the
+stack chosen is the one that reuses EVERYTHING that already exists with the
+fewest new pieces: NiceGUI is 100 % Python (the core modules are imported
+directly, with no API and no serialization), it runs in the browser (the 3D
+plotly figures are already HTML and are embedded as they are), and a single
+page is enough.
 
-SISTEMA VISUAL. Sigue al cartel del proyecto ("La geometría de una creencia
-falsa… y por qué importa", Coloquio de Lenguajes, UNAM 2026), para que la
-herramienta y su presentación se vean como una sola cosa:
+VISUAL SYSTEM. It follows the project poster ("La geometría de una creencia
+falsa… y por qué importa", Coloquio de Lenguajes, UNAM 2026), so that the
+tool and its presentation look like one single thing:
 
-    * Fondo: azul marino casi negro (``POSTER["page"]``) con un campo de
-      estrellas sutil hecho sólo con gradientes CSS (sin imágenes). Las
-      superficies (tarjetas, cabecera) son un marino un poco más claro con
-      borde blanco translúcido; NO hay sombras grises, la única "elevación"
-      es el halo verde lima de la vista previa (el elemento vivo).
-    * Tipografía: Inter para la interfaz, JetBrains Mono para fórmulas y
-      diagramas (Google Fonts). Tres niveles fijos: EYEBROW de tarjeta en
-      versalitas naranja con tracking amplio (``_card_title``; es la línea
-      "COLOQUIO DE …" del cartel), contenido en blanco/gris claro, y notas
-      text-xs gris.
-    * Color: el primario es el VERDE LIMA del cartel (la línea divisoria y el
-      octaedro), reservado al botón "Correr pipeline", a la regla bajo la
-      cabecera y al halo de la vista previa. Los seis anillos del arcoíris
-      del cartel dan los colores DE ROL (``POSTER``): verde = válido / ok,
-      amarillo = por completar, rosa = rechazado / error, cian = completado
-      por una clausura, azul = información. Cada agente sigue llevando en
-      sus chips el MISMO color Okabe-Ito que sus aristas en las figuras
-      (``agent_color_map``): ese hilo entre editor y resultados no cambia.
-    * Cabecera: marino con regla inferior verde lima; a la derecha, los
-      anillos concéntricos con el octaedro (SVG inline, recortado por el
-      borde como en el cartel) y a la izquierda el pequeño sello de anillos
-      rosa/amarillo como logotipo.
-    * Figuras: cada una sobre una "lámina" clara (los PNG de Graphviz tienen
-      fondo blanco) con leyenda en itálica debajo, estilo figura de artículo,
-      limitada en alto y ampliable a pantalla completa con un clic (lightbox).
-    * Métricas de la corrida como stat-tiles (número grande + etiqueta), no
-      como bitácora de texto.
+    * Background: near-black navy (``POSTER["page"]``) with a subtle star
+      field made only of CSS gradients (no images). Surfaces (cards, header)
+      are a slightly lighter navy with a translucent white border; there are
+      NO grey shadows, the only "elevation" is the lime-green halo of the
+      preview (the live element).
+    * Typography: Inter for the interface, JetBrains Mono for formulas and
+      diagrams (Google Fonts). Three fixed levels: the card EYEBROW in orange
+      small caps with wide tracking (``_card_title``; it is the "COLOQUIO
+      DE …" line of the poster), content in white/light grey, and text-xs
+      grey notes.
+    * Color: the primary is the poster's LIME GREEN (the dividing rule and
+      the octahedron), reserved for the "Correr pipeline" button, the rule
+      under the header and the preview halo. The six rainbow rings of the
+      poster give the ROLE colors (``POSTER``): green = valid / ok, yellow =
+      to be completed, pink = rejected / error, cyan = completed by a
+      closure, blue = information. Each agent still carries in its chips the
+      SAME Okabe-Ito color as its edges in the figures (``agent_color_map``):
+      that thread between editor and results does not change.
+    * Header: navy with a lime rule at the bottom; on the right, the
+      concentric rings with the octahedron (inline SVG, clipped by the edge
+      as in the poster) and on the left the small pink/yellow ring seal as
+      a logo.
+    * Figures: each one on a light "sheet" (the Graphviz PNGs have a white
+      background) with an italic caption below, paper-figure style, limited
+      in height and expandable to full screen with one click (lightbox).
+    * Run metrics as stat tiles (big number + label), not as a text log.
 
-CÓMO SE INGRESAN LOS MODELOS. Todo es interactivo y se propaga en cadena:
+SEVERAL MODELS AT ONCE. The page is a workspace: the MODELS BAR (under the
+header) lists the open documents; one is active and is the one shown by the
+editor, the preview and the results. Documents can be opened blank,
+duplicated, renamed and closed, and COMPARED 2 to 4 side by side (their
+results are stored per document and only the ones that changed are
+recomputed). A document can be READ-ONLY with an annotated origin: this is
+how the results of applying action models will come in (``new_doc`` is the
+hook; the state API lives in ``adapters.py``).
 
-    * El TIPO DE MODELO (selector arriba del editor) elige qué construye el
-      núcleo: conocimiento y creencia (KnowledgeBeliefFrame, pipeline
-      completo), sólo conocimiento (RelationalFrame S5, pipeline completo
-      con S_a = S) o sólo creencia (RelationalFrame KD45/K45: sin propiedad
-      ni traducción simplicial, el pipeline termina en el paso 1 y lo dice).
-      Las filas del editor cambian de significado con él, y los
-      interruptores que no aplican se deshabilitan (``sync_switches``).
+HOW MODELS ARE ENTERED. Everything is interactive and propagates in a chain:
 
-    * AGENTES y MUNDOS se agregan tecleando CUALQUIER nombre en su campo y
-      pulsando Enter (o el botón +); cada uno aparece como chip removible.
-      Se eligió campo + botón en lugar del modo "valores nuevos" del selector
-      de Quasar porque este último exige un Enter en el momento justo y falla
-      en silencio -- exactamente lo contrario de un control para agregar.
-    * Por agente se dibujan sus CLASES DE CONOCIMIENTO (chips con los mundos
-      indistinguibles) y, dentro de cada clase, los MUNDOS QUE CREE (selector
-      restringido a esa clase): las entradas inválidas son *inexpresables*.
-      Mundos fuera de toda clase quedan como clases unitarias; creencia vacía
-      significa "cree lo que sabe" (KD45) o creencia difunta (K45).
-    * Los ÁTOMOS declaran la valuación v (en qué mundos es verdadero cada
-      uno); con átomos, las figuras etiquetan mundos/vértices con sus
-      literales y se habilita el EVALUADOR DE FÓRMULAS (K_a, B_a, ¬ & | ->).
-    * Una VISTA PREVIA EN VIVO dibuja el modelo TAL COMO ESTÁ INGRESADO en
-      cada cambio, sin clausuras; su chip de validez resume lo que falta.
-      El pipeline corre solo al pedirlo, con spinner y botón bloqueado
-      (el trabajo pesado va por run.io_bound para no congelar la interfaz).
-    * La BIBLIOTECA DE EJEMPLOS (cabecera) carga estados completos del editor.
+    * The MODEL KIND (selector above the editor) chooses what the core
+      builds: knowledge and belief (KnowledgeBeliefFrame, full pipeline),
+      knowledge only (RelationalFrame S5, full pipeline with S_a = S) or
+      belief only (RelationalFrame KD45/K45: no properness and no simplicial
+      translation, the pipeline stops at step 1 and says so). The editor
+      rows change meaning with it, and the switches that do not apply are
+      disabled (``sync_switches``).
+      A fourth kind, DIRECT SIMPLICIAL COMPLEX, does not go through Kripke:
+      named vertices are declared per agent, plus facets (one vertex of each
+      agent, plus the S_a that contain it), atoms go on vertices and the
+      "pipeline" only validates and draws (complex, 3D and Hasse). On first
+      entry it starts from the translation of the model drawn so far.
 
-QUÉ HAY EN ESTE ARCHIVO -- solo presentación. Toda la lógica vive en
-``gui/adapters.py``; este archivo la consume y muestra resultados ya aplanados
-(rutas de archivo y strings). Esa frontera mantiene el núcleo intacto.
+    * AGENTS and WORLDS are added by typing ANY name in their field and
+      pressing Enter (or the + button); each one appears as a removable
+      chip. Field + button was chosen over the "new values" mode of the
+      Quasar select because the latter requires an Enter at exactly the
+      right moment and fails silently -- the opposite of what an "add"
+      control should do.
+    * Per agent, its KNOWLEDGE CLASSES are drawn (chips with the
+      indistinguishable worlds) and, inside each class, the WORLDS IT
+      BELIEVES (select restricted to that class): invalid entries are
+      *inexpressible*. Worlds outside every class remain singleton classes;
+      an empty belief means "believes what it knows" (KD45) or defunct
+      belief (K45).
+    * ATOMS declare the valuation v (in which worlds each one is true); with
+      atoms, the figures label worlds/vertices with their literals and the
+      FORMULA EVALUATOR (K_a, B_a, ¬ & | ->) is enabled.
+    * A LIVE PREVIEW draws the model EXACTLY AS ENTERED on every change,
+      without closures; its validity chip summarizes what is missing. The
+      pipeline runs only on request, with a spinner and a locked button (the
+      heavy work goes through run.io_bound so the interface does not freeze).
+    * The EXAMPLE LIBRARY (header) loads complete editor states.
 
-CÓMO SE MUESTRAN LAS FIGURAS. ``visualization.show`` escribe PNG/HTML en
-``outputs/``; esa carpeta se sirve como estáticos y cada URL lleva
-``?v=<mtime>`` como rompe-caché, porque cada corrida sobreescribe los mismos
-nombres de archivo.
+WHAT IS IN THIS FILE -- presentation only. All the logic lives in
+``gui/adapters.py``; this file consumes it and shows already-flattened
+results (file paths and strings). That boundary keeps the core untouched.
+
+HOW FIGURES ARE SHOWN. ``visualization.show`` writes PNG/HTML into
+``outputs/``; that folder is served as static files and every URL carries
+``?v=<mtime>`` as a cache buster, because every run overwrites the same file
+names.
 """
 
 from __future__ import annotations
@@ -88,61 +104,71 @@ import traceback
 
 from nicegui import app, run as io, ui
 
-# Import plano a propósito: al ejecutar ``python gui/app.py`` esta carpeta es
-# sys.path[0], y adapters se encarga de poner la raíz del repo en el path.
+# Flat import on purpose: when running ``python gui/app.py`` this folder is
+# sys.path[0], and adapters takes care of putting the repo root on the path.
 from adapters import (
     EXAMPLES,
     KINDS,
+    blank_state,
+    evaluate_state,
+    preview_state,
+    run_state,
+    state_from_example,
+    state_problem,
     OUTPUTS,
     agent_color_map,
     evaluate_formula,
+    evaluate_simplicial_formula,
     preview_figure,
+    preview_simplicial,
+    run_simplicial,
+    simplicial_state_from_editor,
     run_pipeline_from_seeds,
     seeds_from_editor,
 )
 
-# Las figuras generadas se sirven directamente desde outputs/ -- la GUI no copia
-# ni administra archivos propios, comparte los artefactos con los scripts CLI.
+# Generated figures are served straight from outputs/ -- the GUI neither copies
+# nor manages files of its own; it shares the artifacts with the CLI scripts.
 OUTPUTS.mkdir(exist_ok=True)
 app.add_static_files("/outputs", str(OUTPUTS))
 
-# Paleta del cartel. Tomada a ojo de la imagen: los seis anillos del
-# arcoíris (de afuera hacia adentro), el verde lima de la regla/octaedro, el
-# naranja de la línea superior y los dos marinos (página y superficie).
-# Se usa tanto en el CSS de abajo como en los chips/iconos de rol.
+# Poster palette. Picked by eye from the image: the six rainbow rings (from
+# the outside in), the lime green of the rule/octahedron, the orange of the top
+# line and the two navies (page and surface). Used both in the CSS below and in
+# the role chips/icons.
 POSTER = {
-    "page": "#0a0e1f",      # fondo de página (marino casi negro)
-    "surface": "#121833",   # tarjetas y cabecera
-    "line": "rgba(255,255,255,.10)",  # bordes de tarjeta
-    "lime": "#c9ee6b",      # regla, octaedro, botón primario
-    "orange": "#f4a531",    # eyebrows (línea "COLOQUIO DE …")
-    "green": "#79c94b",     # anillo 1 · rol: válido / ok
-    "yellow": "#f7d94c",    # anillo 2 · rol: por completar
-    "pink": "#ec4b8a",      # anillo 3 · rol: rechazado / error
-    "purple": "#8a5cf5",    # anillo 4 · decorativo
-    "blue": "#3d7bf6",      # anillo 5 · rol: información
-    "cyan": "#38d6f0",      # anillo 6 · rol: completado por clausura
+    "page": "#0a0e1f",      # page background (near-black navy)
+    "surface": "#121833",   # cards and header
+    "line": "rgba(255,255,255,.10)",  # card borders
+    "lime": "#c9ee6b",      # rule, octahedron, primary button
+    "orange": "#f4a531",    # eyebrows (the "COLOQUIO DE …" line)
+    "green": "#79c94b",     # ring 1 · role: valid / ok
+    "yellow": "#f7d94c",    # ring 2 · role: to be completed
+    "pink": "#ec4b8a",      # ring 3 · role: rejected / error
+    "purple": "#8a5cf5",    # ring 4 · decorative
+    "blue": "#3d7bf6",      # ring 5 · role: information
+    "cyan": "#38d6f0",      # ring 6 · role: completed by a closure
 }
 
-# Clase base de TODAS las tarjetas: planas, con borde translúcido sobre marino
-# y esquinas amplias (el halo queda reservado a la vista previa, ver
-# "SISTEMA VISUAL" arriba). ``poster-card`` está definida en HEAD_HTML.
+# Base class of ALL cards: flat, translucent border over navy and wide corners
+# (the halo is reserved for the preview, see "VISUAL SYSTEM" above).
+# ``poster-card`` is defined in HEAD_HTML.
 CARD = "w-full rounded-xl poster-card"
 FLAT = "flat"
 
 
 def _rings_svg(size: int, colors: list, center: str, octa: bool) -> str:
-    """Anillos concéntricos del cartel como SVG inline.
+    """The poster's concentric rings as inline SVG.
 
-    ``colors`` va de afuera hacia adentro, cada anillo con el mismo grosor;
-    ``center`` es el color del disco central y ``octa`` dibuja encima el
-    octaedro en alambre verde lima (la figura del cartel: un complejo
-    simplicial visto como poliedro). Se genera aquí, y no como archivo,
-    para que la GUI no dependa de ningún recurso estático propio.
+    ``colors`` goes from the outside in, every ring with the same thickness;
+    ``center`` is the color of the central disc and ``octa`` draws the
+    lime-green wireframe octahedron on top (the poster figure: a simplicial
+    complex seen as a polyhedron). It is generated here, not shipped as a
+    file, so the GUI does not depend on any static resource of its own.
     """
     r = size / 2
-    # Como en el cartel, el disco central ocupa algo más de la mitad del radio
-    # y los anillos se reparten el resto en partes iguales.
+    # As in the poster, the central disc takes a bit more than half the radius
+    # and the rings share the rest in equal parts.
     core = r * 0.55
     step = (r - core) / len(colors)
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" '
@@ -151,9 +177,9 @@ def _rings_svg(size: int, colors: list, center: str, octa: bool) -> str:
         parts.append(f'<circle cx="{r}" cy="{r}" r="{r - i * step:.1f}" fill="{c}"/>')
     parts.append(f'<circle cx="{r}" cy="{r}" r="{core:.1f}" fill="{center}"/>')
     if octa:
-        # Octaedro en proyección: cuadrado "ecuatorial" ligeramente inclinado
-        # con los dos vértices polares arriba y abajo, todo en alambre. Cabe
-        # en la banda de la cabecera (ver .poster-header min-height).
+        # Projected octahedron: a slightly tilted "equatorial" square with the
+        # two polar vertices above and below, all wireframe. It fits in the
+        # header band (see .poster-header min-height).
         k = core * 0.45
         top, bot = (r, r - k), (r, r + k)
         eq = [(r - k * 0.9, r + k * 0.15), (r - k * 0.25, r + k * 0.45),
@@ -168,9 +194,9 @@ def _rings_svg(size: int, colors: list, center: str, octa: bool) -> str:
     return "".join(parts)
 
 
-# Los dos motivos gráficos del cartel: el gran arcoíris con el octaedro (se
-# recorta por el borde derecho de la cabecera, como en el cartel) y el sello
-# pequeño rosa/amarillo que sirve de logotipo junto al título.
+# The two graphic motifs of the poster: the big rainbow with the octahedron
+# (clipped by the right edge of the header, as in the poster) and the small
+# pink/yellow seal that serves as a logo next to the title.
 RINGS_BIG = _rings_svg(
     320,
     [POSTER["green"], POSTER["yellow"], POSTER["pink"], POSTER["purple"],
@@ -181,9 +207,9 @@ RINGS_SMALL = _rings_svg(
     36, [POSTER["pink"], POSTER["yellow"]], center="#d63d8a", octa=False,
 )
 
-# Tipografías + el CSS que Tailwind/Quasar no cubren: el campo de estrellas
-# (sólo gradientes radiales repetidos, sin imágenes), las superficies marino,
-# el halo lima de la vista previa, la scrollbar fina y el punto pulsante.
+# Fonts + the CSS that Tailwind/Quasar do not cover: the star field (repeated
+# radial gradients only, no images), the navy surfaces, the lime halo of the
+# preview, the thin scrollbar and the pulsing dot.
 HEAD_HTML = f"""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -196,8 +222,8 @@ HEAD_HTML = f"""
   body {{ font-family: 'Inter', 'Roboto', sans-serif; }}
   .font-mono, pre, code {{ font-family: 'JetBrains Mono', 'Fira Mono', monospace; }}
 
-  /* Campo de estrellas: cuatro capas de puntos con periodos distintos para
-     que no se note la repetición; fijo para que no se mueva con el scroll. */
+  /* Star field: four layers of dots with different periods so the tiling
+     is not noticeable; fixed so it does not move with the scroll. */
   body.body--dark {{
     background-color: var(--p-page);
     background-image:
@@ -209,26 +235,26 @@ HEAD_HTML = f"""
     background-attachment: fixed;
   }}
 
-  /* Superficies: marino con borde translúcido; sin sombra (planas). */
+  /* Surfaces: navy with a translucent border; no shadow (flat). */
   .poster-card {{ background: var(--p-surface) !important; border: 1px solid var(--p-line); box-shadow: none !important; }}
-  /* La vista previa es la única con elevación: un halo verde lima. */
+  /* The live preview is the only elevated surface: a lime-green halo. */
   .poster-live {{ border-color: rgba(201,238,107,.45);
                   box-shadow: 0 0 0 1px rgba(201,238,107,.25), 0 10px 40px rgba(201,238,107,.10) !important; }}
-  /* Error del núcleo / bug: tinte rosa (el anillo "rechazado"). */
+  /* Core error / bug: pink tint (the "rejected" ring of the poster). */
   .poster-bad {{ background: rgba(236,75,138,.10) !important; border-color: rgba(236,75,138,.45); }}
-  /* Lámina clara para las figuras (PNG con fondo blanco). */
+  /* Light sheet behind the figures (the Graphviz PNGs have a white background). */
   .fig-frame {{ background: #f4f5f9; border-radius: .5rem; padding: .75rem; }}
-  /* Eyebrow de tarjeta: la línea naranja del cartel. */
+  /* Card eyebrow: the orange small-caps line of the poster. */
   .eyebrow {{ color: var(--p-orange); font-size: .68rem; font-weight: 600;
               letter-spacing: .18em; text-transform: uppercase; }}
-  /* Cabecera: marino, regla lima abajo, y el arcoíris recortado a la derecha.
-     OJO: sin ``position``: Quasar la deja ``fixed`` (que ya sirve de
-     contenedor a los anillos absolutos); ponerle ``relative`` la metía en el
-     flujo y duplicaba su alto como hueco bajo ella. */
+  /* Header: navy, lime rule below, and the rainbow clipped at the right.
+     NOTE: no ``position`` here on purpose. Quasar leaves it ``fixed`` (which
+     already contains the absolutely positioned rings); setting ``relative``
+     put it back in the flow and duplicated its height as a gap below it. */
   .poster-header {{ background: var(--p-surface) !important; border-bottom: 2px solid var(--p-lime);
                     overflow: hidden; min-height: 88px; }}
-  /* Centro del arcoíris a 60px del borde derecho y a media altura (44px):
-     se ve media rueda con el octaedro entero, recortada como en el cartel. */
+  /* Rainbow centre 60px from the right edge and at mid height (44px): half
+     the wheel is visible with the whole octahedron, clipped as on the poster. */
   .poster-rings {{ position: absolute; right: -100px; top: -116px; width: 320px; height: 320px;
                    pointer-events: none; opacity: .95; }}
   .poster-seal {{ width: 36px; height: 36px; flex: none; }}
@@ -247,19 +273,49 @@ HEAD_HTML = f"""
 """
 
 
+# Help texts that depend on the model kind: in a direct complex the atoms live
+# on the VERTICES (what each perspective observes) and formulas are evaluated
+# facet by facet, with no closures in between.
+_ATOMS_WORLDS = (
+    "Declara cada átomo y en qué mundos es **verdadero**. Con átomos, las "
+    "figuras etiquetan los mundos con sus literales y puedes evaluar fórmulas."
+)
+ATOMS_HELP = {
+    "kb": _ATOMS_WORLDS, "knowledge": _ATOMS_WORLDS, "belief": _ATOMS_WORLDS,
+    "simplicial": (
+        "Los átomos se asignan a **vértices**: qué perspectivas lo observan "
+        "verdadero y cuáles falso; las demás no lo saben. Una faceta satisface "
+        "el átomo si algún vértice suyo lo observa verdadero."
+    ),
+}
+_FORMULA_WORLDS = (
+    "Sintaxis: átomos declarados, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
+    "`bot`, paréntesis. Se evalúa **mundo por mundo** sobre el modelo ya "
+    "completado por las clausuras."
+)
+FORMULA_HELP = {
+    "kb": _FORMULA_WORLDS, "knowledge": _FORMULA_WORLDS, "belief": _FORMULA_WORLDS,
+    "simplicial": (
+        "Sintaxis: átomos declarados, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
+        "`bot`, paréntesis. Se evalúa **faceta por faceta** con la semántica "
+        "por vértices; el complejo debe ser válido."
+    ),
+}
+
+
 def _url(path) -> str:
-    """URL estática de una figura, con el mtime como rompe-caché (ver docstring)."""
+    """Static URL of a figure, with the mtime as cache buster (see module docstring)."""
     return f"/outputs/{path.name}?v={int(path.stat().st_mtime)}"
 
 
 def _figure_img(path) -> None:
-    """Un ``<img>`` que se ajusta a su contenido dentro de la lámina.
+    """An ``<img>`` that shrinks to its content inside the sheet.
 
-    Se usa un img plano y no ``ui.image``: q-img es una caja de proporción
-    fija que, con ``fit=contain`` y ancho completo, centraba la figura en un
-    rectángulo de 420px y dejaba franjas vacías arriba/abajo o a los lados.
-    Con ``width/height:auto`` y sólo máximos, la lámina mide lo que mide la
-    figura y la leyenda queda pegada debajo.
+    A plain img is used instead of ``ui.image``: q-img is a fixed-ratio box
+    that, with ``fit=contain`` and full width, centered the figure in a 420px
+    rectangle and left empty bands above/below or on the sides. With
+    ``width/height:auto`` and only maximums, the sheet is exactly as big as
+    the figure and the caption sits right below it.
     """
     ui.html(
         f'<img src="{_url(path)}" style="display:block;margin:0 auto;'
@@ -268,13 +324,13 @@ def _figure_img(path) -> None:
 
 
 def _card_title(text: str) -> None:
-    """Título de tarjeta del sistema visual: eyebrow naranja en versalitas."""
+    """Card title of the visual system: orange small-caps eyebrow."""
     ui.label(text).classes("eyebrow")
 
 
-# Chips de ROL. Los cuatro tonos son anillos del arcoíris del cartel: fondo
-# translúcido del color y texto del mismo color, legible sobre marino (los
-# pastel de Quasar -- green-1, red-1... -- se veían lavados en oscuro).
+# ROLE chips. The tones are rings of the poster's rainbow: translucent
+# background of the color and text in the same color, readable over navy (the
+# Quasar pastels -- green-1, red-1... -- looked washed out in dark mode).
 _TONES = {
     "ok": POSTER["green"], "warn": POSTER["yellow"],
     "bad": POSTER["pink"], "done": POSTER["cyan"], "info": POSTER["blue"],
@@ -282,17 +338,18 @@ _TONES = {
 
 
 def _tint(hex_color: str, alpha: float) -> str:
-    """``#rrggbb`` -> ``rgba(r,g,b,alpha)``: fondo translúcido del mismo tono."""
+    """``#rrggbb`` -> ``rgba(r,g,b,alpha)``: translucent background of the same tone."""
     r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
     return f"rgba({r},{g},{b},{alpha})"
 
 
 def _chip(text: str, tone: str, icon=None):
-    """Chip de estado con un tono de rol (ver ``_TONES``).
+    """Status chip with a role tone (see ``_TONES``).
 
-    El color va por el parámetro ``color`` (NiceGUI acepta CSS y lo aplica
-    como estilo) y no por ``.style()``: el ``bg-primary`` que Quasar añade
-    por defecto lleva ``!important`` y pisaría cualquier estilo inline.
+    The color goes through the ``color`` parameter (NiceGUI accepts CSS and
+    applies it as a style) and not through ``.style()``: the ``bg-primary``
+    that Quasar adds by default carries ``!important`` and would override
+    any inline style.
     """
     c = _TONES[tone]
     return ui.chip(text, icon=icon, color=_tint(c, .18), text_color=c) \
@@ -300,17 +357,17 @@ def _chip(text: str, tone: str, icon=None):
 
 
 # --------------------------------------------------------------------------- #
-# Página única. @ui.page es el patrón de NiceGUI 3: la función corre UNA VEZ
-# POR CLIENTE al visitar la ruta, y todo el estado vive como cierre local --
-# cada pestaña del navegador tiene su propio modelo en edición.
+# Single page. @ui.page is the NiceGUI 3 pattern: the function runs ONCE PER
+# CLIENT when the route is visited, and all the state lives as a local closure
+# -- every browser tab has its own model being edited.
 # --------------------------------------------------------------------------- #
 @ui.page("/")
 def index() -> None:
-    # Identidad visual (dentro de la página: NiceGUI 3 prohíbe UI en scope
-    # global cuando se usa @ui.page).
-    # Modo oscuro de Quasar (inputs, selectores, diálogos y notificaciones
-    # toman el tema solos); la paleta mapea los roles al cartel. ``dark`` y
-    # ``dark_page`` son los marinos de superficie y de página.
+    # Visual identity (inside the page: NiceGUI 3 forbids UI in global scope
+    # when @ui.page is used).
+    # Quasar dark mode (inputs, selects, dialogs and notifications pick up the
+    # theme on their own); the palette maps the roles to the poster. ``dark``
+    # and ``dark_page`` are the surface and page navies.
     ui.dark_mode().enable()
     ui.colors(
         primary=POSTER["lime"], secondary=POSTER["cyan"], accent=POSTER["pink"],
@@ -320,35 +377,168 @@ def index() -> None:
     )
     ui.add_head_html(HEAD_HTML)
 
-    # TODO el modelo dibujado vive en este dict plano (no en los widgets):
-    # los widgets solo lo PINTAN y la conversión a semillas es una función
-    # pura de adapters. Un solo dueño del estado evita sincronización
-    # widget-a-widget. Se arranca con el ejemplo de la tesis.
-    state = {
-        "agents": [], "worlds": [], "per_agent": {},
-        "atoms": {},  # atomo -> mundos donde es VERDADERO (la valuacion v)
-        # Tipo de modelo (clave de adapters.KINDS): decide qué construye el
-        # núcleo, qué columnas tiene el editor y hasta dónde llega el pipeline.
-        "kind": "kb",
-    }
+    # The WHOLE drawn model lives in this flat dict (not in the widgets): the
+    # widgets only PAINT it and the conversion to seeds is a pure function of
+    # adapters. A single owner of the state avoids widget-to-widget
+    # synchronization. It starts with the thesis example.
+    state = blank_state()
+
+    # WORKSPACE: several models open at once. Each "document" is a named
+    # model; ``state`` is ALWAYS the one of the active document (the editors
+    # mutate it as is) and the others keep their copy in ``doc["state"]``.
+    # When switching documents the active one is saved and the other one is
+    # poured into ``state`` -- so all the editor code keeps talking to a
+    # single dict and does not know there are more models.
+    #
+    #   doc = {"id": "d3",            identifier; also tags output files
+    #          "name": "...",         name shown in the models bar
+    #          "state": {...},        the model (adapters.blank_state format)
+    #          "outcome": {...}|None, result of the last run
+    #          "dirty": bool,         the model changed since that run
+    #          "readonly": bool,      derived result: not editable
+    #          "origin": {...}|None}  where it came from (e.g. which action)
+    docs: list = []
+    ws = {"active": None, "next": 1, "loading": False,
+          "comparing": False, "compare": []}
+
+    def current() -> dict:
+        """The active document."""
+        return next(d for d in docs if d["id"] == ws["active"])
+
+    def live_state() -> dict:
+        """``state`` with the switches brought up to date (they live in the widgets)."""
+        state["axiom_d"] = axiom_d_in.value
+        state["silent_defunct"] = silent_defunct_in.value
+        state["explicit"] = explicit_in.value
+        state["hasse_full"] = hasse_full_in.value
+        return state
+
+    def new_doc(name: str, st: dict, readonly: bool = False,
+                origin: dict | None = None) -> dict:
+        """Open a new document (without activating it).
+
+        HOOK FOR ACTION MODELS: the result of applying an action to a model
+        is another state; adding it with ``readonly=True`` and an
+        ``origin={"label": "action X on model Y"}`` is enough for it to show
+        up in the bar, be runnable, evaluable and comparable, and offer
+        "duplicate as new model" instead of direct editing.
+        """
+        doc = {"id": f"d{ws['next']}", "name": name, "state": copy.deepcopy(st),
+               "outcome": None, "dirty": False, "readonly": readonly,
+               "origin": origin}
+        ws["next"] += 1
+        docs.append(doc)
+        # A freshly opened model joins the compare selection while it fits
+        # (at most 4): one usually wants to see the opened ones together.
+        if len(ws["compare"]) < 4:
+            ws["compare"].append(doc["id"])
+        return doc
+
+    def load_into_editor(doc: dict) -> None:
+        """Pour a document into ``state`` and the widgets, and paint everything."""
+        # ``loading`` silences the widgets' on_change while values are
+        # assigned: without it every assignment would repaint the preview
+        # with a half-loaded state.
+        ws["loading"] = True
+        state.clear()
+        state.update(copy.deepcopy(doc["state"]))
+        kind_in.value = state["kind"]
+        axiom_d_in.value = state["axiom_d"]
+        silent_defunct_in.value = state["silent_defunct"]
+        explicit_in.value = state["explicit"]
+        hasse_full_in.value = state.get("hasse_full", False)
+        name_in.value = doc["name"]
+        ws["loading"] = False
+        dirty = doc["dirty"]            # repainting is not editing
+        sync_switches()
+        apply_readonly(doc)
+        repaint_all()
+        doc["dirty"] = dirty
+        formula_out.clear()
+        render_outcome(doc["outcome"], results)
+
+    def activate(doc_id: str) -> None:
+        """Switch documents, saving the one being left first."""
+        if ws["comparing"]:
+            exit_compare()
+        if doc_id == ws["active"]:
+            return
+        current()["state"] = copy.deepcopy(live_state())
+        ws["active"] = doc_id
+        load_into_editor(current())
+        paint_docs_bar()
+
+    def add_blank() -> None:
+        doc = new_doc(f"Modelo {ws['next']}", blank_state())
+        activate(doc["id"])
+
+    def duplicate_active() -> None:
+        """Editable copy of the active document (the way out of read-only ones)."""
+        doc = new_doc(f"{current()['name']} (copia)", live_state())
+        activate(doc["id"])
+
+    def close_doc(doc_id: str) -> None:
+        if len(docs) <= 1:
+            paint_docs_bar()
+            return
+        index = next(i for i, d in enumerate(docs) if d["id"] == doc_id)
+        was_active = doc_id == ws["active"]
+        docs.pop(index)
+        ws["compare"] = [i for i in ws["compare"] if i != doc_id]
+        if ws["comparing"]:
+            exit_compare()
+        if was_active:
+            ws["active"] = docs[max(0, index - 1)]["id"]
+            load_into_editor(current())
+        paint_docs_bar()
+
+    def rename_current() -> None:
+        name = (name_in.value or "").strip()
+        if name and name != current()["name"]:
+            current()["name"] = name
+            paint_docs_bar()
+
+    def apply_readonly(doc: dict) -> None:
+        """Lock editing of a derived document and explain why.
+
+        The cards that change the model are locked (identifiers, editor,
+        atoms); evaluating formulas, running and comparing stay active.
+        """
+        for element in (ident_card, editor_box, atoms_card):
+            if doc["readonly"]:
+                element.classes(add="pointer-events-none opacity-60")
+            else:
+                element.classes(remove="pointer-events-none opacity-60")
+        readonly_box.clear()
+        if not doc["readonly"]:
+            return
+        with readonly_box, ui.card().classes(CARD).props(FLAT):
+            with ui.row().classes("w-full items-center gap-3 no-wrap"):
+                ui.icon("lock").style(f"color:{POSTER['yellow']}")
+                source = (doc["origin"] or {}).get("label")
+                ui.label(
+                    ("Resultado de " + source + ". " if source else "")
+                    + "Este modelo es de sólo lectura: para cambiarlo, "
+                      "duplícalo como modelo nuevo."
+                ).classes("text-sm text-grey-4 grow")
+                ui.button("Duplicar como modelo nuevo", icon="content_copy",
+                          on_click=lambda: duplicate_active()) \
+                    .props("outline dense")
 
     def load_example(key: str) -> None:
-        """Carga un estado completo de la biblioteca (deepcopy: editable)."""
-        ex = copy.deepcopy(EXAMPLES[key])
-        state["agents"] = ex["agents"]
-        state["worlds"] = ex["worlds"]
-        state["per_agent"] = ex["per_agent"]
-        state["atoms"] = ex["atoms"]
-        # El tipo se fija en el estado ANTES de mover el selector: así el
-        # on_change del selector (set_kind) ve que no hay cambio y no repinta
-        # a medias; la sincronización y el repintado se hacen aquí, una vez.
-        state["kind"] = ex.get("kind", "kb")
-        kind_in.value = state["kind"]
-        axiom_d_in.value = ex["axiom_d"]
-        sync_switches()
-        repaint_all()
+        """Load a library example INTO the active document."""
+        doc = current()
+        if doc["readonly"]:
+            ui.notify("Este modelo es de sólo lectura: duplícalo o abre uno "
+                      "nuevo para cargar un ejemplo.", type="warning")
+            return
+        doc["state"] = state_from_example(EXAMPLES[key])
+        doc["name"] = EXAMPLES[key]["label"]
+        doc["outcome"], doc["dirty"] = None, False
+        load_into_editor(doc)
+        paint_docs_bar()
 
-    # ---- Lightbox: cualquier figura, a pantalla completa con un clic ------- #
+    # ---- Lightbox: any figure, full screen with one click ------------------ #
     with ui.dialog().props("maximized") as lightbox:
         with ui.column().classes(
             "w-full h-full items-center justify-center bg-black cursor-zoom-out"
@@ -364,7 +554,7 @@ def index() -> None:
         lightbox.open()
 
     def figure_card(caption: str, path) -> None:
-        """Figura estilo artículo: marco gris, leyenda en itálica, clic amplía."""
+        """Paper-style figure: grey frame, italic caption, click to enlarge."""
         with ui.card().classes(CARD).props(FLAT):
             holder = ui.element("div").classes(
                 "w-full fig-frame cursor-zoom-in"
@@ -374,15 +564,15 @@ def index() -> None:
             holder.on("click", lambda p=path, c=caption: open_lightbox(p, c))
             ui.label(caption).classes("text-xs italic text-grey-5 mt-2")
 
-    # ---- Cabecera: marino con regla lima, sello + arcoíris del cartel ----- #
-    # wrap=False: con el ``wrap`` por defecto Quasar medía la cabecera
-    # envuelta en dos filas y dejaba un hueco de ~60px bajo ella.
+    # ---- Header: navy with lime rule, poster seal + rainbow --------------- #
+    # wrap=False: with the default ``wrap`` Quasar measured the header as
+    # wrapped onto two rows and left a ~60px gap below it.
     with ui.header(wrap=False).classes(
         "poster-header text-white items-center justify-between px-6 py-3 "
         "shadow-none"
     ):
-        # Arcoíris con octaedro, recortado por el borde derecho como en el
-        # cartel; va primero para quedar debajo de los controles.
+        # Rainbow with octahedron, clipped by the right edge as in the
+        # poster; it goes first so it stays underneath the controls.
         ui.html(RINGS_BIG).classes("poster-rings")
         with ui.row().classes("items-center gap-3 no-wrap"):
             ui.html(RINGS_SMALL).classes("poster-seal")
@@ -399,25 +589,34 @@ def index() -> None:
                 value=None, label="cargar ejemplo",
                 on_change=lambda e: load_example(e.value),
             ).props("dense outlined options-dense").classes("min-w-[360px]")
-            # Lima con texto marino: el único botón lleno de la página.
+            # Lime with navy text: the only filled button on the page.
             run_btn = ui.button("Correr pipeline", icon="play_arrow",
                                 on_click=lambda: run_clicked()) \
                 .props("color=primary text-color=dark unelevated") \
                 .classes("font-bold")
 
-    with ui.row().classes("w-full no-wrap items-start gap-4 p-4"):
+    # ---- Models bar: the open documents and the comparison ---------------- #
+    docs_bar = ui.row().classes("w-full items-center gap-2 px-4 pt-3")
 
-        # ---- Panel de edición: sticky con scroll propio (scrollbar fina) --- #
+    with ui.row().classes("w-full no-wrap items-start gap-4 p-4") as editor_row:
+
+        # ---- Editing panel: sticky with its own scroll (thin scrollbar) ---- #
         with ui.column().classes(
             "w-[440px] shrink-0 gap-4 sticky top-2 self-start "
-            "max-h-[calc(100vh-110px)] overflow-y-auto pr-1 thin-scroll"
+            "max-h-[calc(100vh-150px)] overflow-y-auto pr-1 thin-scroll"
         ):
-            # ---- Identificadores ------------------------------------------- #
-            with ui.card().classes(CARD).props(FLAT):
+            # ---- Identifiers ----------------------------------------------- #
+            with ui.card().classes(CARD).props(FLAT) as ident_card:
                 _card_title("Agentes y mundos")
-                # Los tres tipos de modelo del núcleo. Cambiarlo repinta el
-                # editor (las filas cambian de significado), ajusta qué
-                # interruptores aplican y rehace la vista previa.
+                # Document name: the one shown in the models bar and in the
+                # comparison panels.
+                name_in = ui.input("nombre del modelo") \
+                    .props("dense outlined").classes("w-full")
+                name_in.on("blur", lambda: rename_current())
+                name_in.on("keydown.enter", lambda: rename_current())
+                # The core's model kinds. Changing it repaints the editor (the
+                # rows change meaning), adjusts which switches apply and
+                # redraws the preview.
                 kind_in = ui.select(
                     KINDS, value="kb", label="tipo de modelo",
                     on_change=lambda e: set_kind(e.value),
@@ -430,27 +629,31 @@ def index() -> None:
                 agent_chips = ui.row().classes("w-full gap-2")
                 agent_input.on("keydown.enter", lambda: add_agent())
 
-                with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
-                    world_input = ui.input("nuevo mundo") \
-                        .props("dense outlined").classes("grow")
-                    ui.button(icon="add", on_click=lambda: add_world()) \
-                        .props("round dense")
-                world_chips = ui.row().classes("w-full gap-2")
-                world_input.on("keydown.enter", lambda: add_world())
+                # Worlds go in their own container: a direct complex has no
+                # worlds (it has facets, declared in their own card), so for
+                # that kind the whole block is hidden.
+                with ui.column().classes("w-full gap-2") as worlds_box:
+                    with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
+                        world_input = ui.input("nuevo mundo") \
+                            .props("dense outlined").classes("grow")
+                        ui.button(icon="add", on_click=lambda: add_world()) \
+                            .props("round dense")
+                    world_chips = ui.row().classes("w-full gap-2")
+                    world_input.on("keydown.enter", lambda: add_world())
 
-                # El interruptor KD45/K45 del núcleo (axiom_d), expuesto tal
-                # cual: apagarlo legaliza las creencias difuntas (Q_a(w) = ∅).
+                # The core's KD45/K45 switch (axiom_d), exposed as is: turning
+                # it off legalizes defunct beliefs (Q_a(w) = ∅).
                 axiom_d_in = ui.switch("Axioma D (KD45; apagado = K45)",
                                        value=True)
 
-                # Apagar el Axioma D sólo LEGALIZA la creencia difunta; no la
-                # produce. La convención del proyecto es que el silencio sobre
-                # la creencia significa "cree exactamente lo que sabes"
-                # (Q = R), en ambas lógicas, y que lo difunto es opt-in
-                # explícito. Sin esta casilla el opt-in no existía en la GUI:
-                # K45 quedaba indistinguible de KD45 y B_a ⊥ era inalcanzable.
-                # Es global (así es el flag del núcleo): afecta a TODA clase
-                # sin creencia marcada.
+                # Turning Axiom D off only LEGALIZES defunct belief; it does
+                # not produce it. The project convention is that silence
+                # about belief means "believe exactly what you know" (Q = R),
+                # in both logics, and that defunct belief is an explicit
+                # opt-in. Without this box the opt-in did not exist in the
+                # GUI: K45 was indistinguishable from KD45 and B_a ⊥ was
+                # unreachable. It is global (so is the core flag): it affects
+                # EVERY class with no belief marked.
                 silent_defunct_in = ui.switch(
                     "Creencia vacía si no se marca nada (Q = ∅)", value=False,
                 )
@@ -460,30 +663,30 @@ def index() -> None:
                 ).classes("text-xs text-grey-5 -mt-2")
 
                 def _reset_silent_defunct() -> None:
-                    """KD45 prohíbe Q = ∅: al volver a KD45 la casilla se apaga.
+                    """KD45 forbids Q = ∅: going back to KD45 clears the box.
 
-                    Dejarla marcada pero deshabilitada mandaría al núcleo una
-                    combinación que éste rechaza, y el usuario vería un error de
-                    validación por una casilla que ya no puede ver activa.
+                    Leaving it checked but disabled would send the core a
+                    combination it rejects, and the user would see a validation
+                    error caused by a box they can no longer see active.
                     """
                     if axiom_d_in.value:
                         silent_defunct_in.value = False
 
-                # Cambiar la lógica repinta la vista previa: la lista "por
-                # completar" y los mundos en rojo salen del contrato del
-                # marco (KD45 exige seriedad, K45 no), así que sin repintar
-                # la vista previa seguía juzgando con el axioma anterior.
+                # Changing the logic repaints the preview: the "to be
+                # completed" list and the red worlds come from the frame's
+                # contract (KD45 demands seriality, K45 does not), so without
+                # a repaint the preview kept judging with the previous axiom.
                 axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
                 axiom_d_in.on_value_change(lambda _: sync_switches())
                 axiom_d_in.on_value_change(lambda _: update_preview())
 
-                # Las figuras relacionales omiten lo que la lógica ya implica:
-                # los lazos reflexivos y la segunda flecha de cada par
-                # simétrico (S5 se dibuja sin dirección). Este interruptor
-                # los dibuja todos, tal cual están en la relación: es la
-                # forma de VER lo que las clausuras añadieron. Repinta la
-                # vista previa al instante y, si ya hay resultados, vuelve a
-                # correr el pipeline para que las Figuras 1 y 2 coincidan.
+                # The relational figures omit what the logic already implies:
+                # reflexive loops and the second arrow of each symmetric pair
+                # (S5 is drawn undirected). This switch draws them all, as
+                # they are in the relation: it is the way to SEE what the
+                # closures added. It repaints the preview at once and, if
+                # there are results already, reruns the pipeline so that
+                # Figures 1 and 2 agree.
                 explicit_in = ui.switch(
                     "Mostrar aristas implícitas (lazos y simetría)", value=False,
                     on_change=lambda _: explicit_changed(),
@@ -493,17 +696,29 @@ def index() -> None:
                     "par simétrico en vez de darlos por sobreentendidos."
                 ).classes("text-xs text-grey-5 -mt-2")
 
-            # ---- Editor de relaciones por agente --------------------------- #
+                # The lattice figure shows only vertices and facets by default
+                # (issue #7): perspectives below, worlds above. The full
+                # lattice, with every intermediate face, is optional: with
+                # three agents it is already hundreds of boxes. Since it only
+                # changes one figure of the result, touching it reruns the
+                # pipeline if there were results already.
+                hasse_full_in = ui.switch(
+                    "Retículo de caras completo (todas las dimensiones)",
+                    value=False, on_change=lambda _: hasse_full_changed(),
+                )
+                ui.label(
+                    "Apagado, el diagrama de Hasse sólo dibuja las perspectivas "
+                    "y los mundos, unidos cuando una es parte del otro."
+                ).classes("text-xs text-grey-5 -mt-2")
+
+            # ---- Per-agent relation editor --------------------------------- #
             editor_box = ui.column().classes("w-full gap-4")
 
-            # ---- Átomos: la valuación v (dónde es verdadero cada átomo) ---- #
-            with ui.card().classes(CARD).props(FLAT):
+            # ---- Atoms: the valuation v (where each atom is true) ---------- #
+            with ui.card().classes(CARD).props(FLAT) as atoms_card:
                 _card_title("Átomos (proposiciones)")
-                ui.markdown(
-                    "Declara cada átomo y en qué mundos es **verdadero**. Con "
-                    "átomos, las figuras etiquetan los mundos con sus "
-                    "literales y puedes evaluar fórmulas."
-                ).classes("text-xs text-grey-5")
+                atoms_help = ui.markdown(ATOMS_HELP["kb"]) \
+                    .classes("text-xs text-grey-5")
                 with ui.row().classes("w-full no-wrap items-center gap-2"):
                     atom_input = ui.input("nuevo átomo") \
                         .props("dense outlined").classes("grow")
@@ -512,17 +727,14 @@ def index() -> None:
                 atom_input.on("keydown.enter", lambda: add_atom())
                 atoms_box = ui.column().classes("w-full gap-2")
 
-            # ---- Evaluador de fórmulas ------------------------------------- #
+            # ---- Formula evaluator ----------------------------------------- #
             with ui.card().classes(CARD).props(FLAT):
                 _card_title("Evaluar fórmula")
                 formula_input = ui.input(
                     "fórmula", placeholder="B_a p & ~K_a p",
                 ).props("dense outlined input-class=font-mono").classes("w-full")
-                ui.markdown(
-                    "Sintaxis: átomos declarados, `K_a`, `B_a`, `~`/`¬`, `&`, "
-                    "`|`, `->`, `bot`, paréntesis. Se evalúa **mundo por "
-                    "mundo** sobre el modelo ya completado por las clausuras."
-                ).classes("text-xs text-grey-5")
+                formula_help = ui.markdown(FORMULA_HELP["kb"]) \
+                    .classes("text-xs text-grey-5")
                 ui.button("Evaluar", icon="calculate",
                           on_click=lambda: eval_formula()) \
                     .props("outline dense")
@@ -530,38 +742,74 @@ def index() -> None:
                 formula_out = ui.column().classes("w-full gap-2")
 
         with ui.column().classes("grow min-w-0 gap-4"):
-            # ---- Vista previa en vivo (siempre visible, arriba) ------------ #
+            # ---- Read-only notice (derived documents) ---------------------- #
+            readonly_box = ui.column().classes("w-full")
+            # ---- Live preview (always visible, on top) --------------------- #
             preview_box = ui.column().classes("w-full")
-            # ---- Salida del pipeline: se reconstruye en cada corrida ------- #
+            # ---- Pipeline output: rebuilt on every run --------------------- #
             results = ui.column().classes("w-full gap-4")
 
+    # ---- Comparison: 2 to 4 models side by side, full width ---------------- #
+    # It replaces the editor while open (the row above is hidden): four panels
+    # do not fit next to a 440px editor.
+    compare_box = ui.column().classes("w-full gap-4 p-4")
+    compare_box.set_visibility(False)
+
     # ----------------------------------------------------------------------- #
-    # Altas y bajas de identificadores y átomos. Cada operación muta ``state``
-    # y repinta chips + editor + átomos + vista previa; no hay más sincronía.
+    # Adding and removing identifiers and atoms. Every operation mutates
+    # ``state`` and repaints chips + editor + atoms + preview; there is no
+    # other synchronization.
     # ----------------------------------------------------------------------- #
     def sync_switches() -> None:
-        """Qué interruptores aplican al tipo de modelo elegido.
+        """Which switches apply to the chosen model kind.
 
-        Sólo conocimiento: S5 es reflexivo, luego serial: el Axioma D no
-        decide nada, ni la creencia vacía. Sólo creencia: no hay clase a la
-        que volver, así que "cree lo que sabe" no existe (el silencio es
-        inválido bajo KD45 y difunto bajo K45), y tampoco hay aristas
-        implícitas que mostrar: cada lazo y cada dirección es información.
+        Knowledge only: S5 is reflexive, hence serial: Axiom D decides
+        nothing, nor does empty belief. Belief only: there is no class to
+        fall back to, so "believes what it knows" does not exist (silence is
+        invalid under KD45 and defunct under K45), and there are no implicit
+        edges to show either: every loop and every direction is information.
         """
         kind = state["kind"]
         axiom_d_in.set_enabled(kind != "knowledge")
         silent_defunct_in.set_enabled(kind == "kb" and not axiom_d_in.value)
-        explicit_in.set_enabled(kind != "belief")
+        # A complex has no edges to abbreviate; Axiom D does apply (it reads
+        # "no isolated perspectives").
+        explicit_in.set_enabled(kind not in ("belief", "simplicial"))
+        # Belief only never reaches the complex, so there is no lattice to choose.
+        hasse_full_in.set_enabled(kind != "belief")
+        worlds_box.set_visibility(kind != "simplicial")
+        atoms_help.set_content(ATOMS_HELP[kind])
+        formula_help.set_content(FORMULA_HELP[kind])
 
     def set_kind(kind: str) -> None:
-        """Cambia el tipo de modelo y repinta todo lo que depende de él."""
+        """Change the model kind and repaint everything that depends on it."""
         if kind == state["kind"]:
             return
+        previous = state["kind"]
         state["kind"] = kind
+        if kind == "simplicial" and not state["facets"]:
+            # Start-up: instead of an empty editor, the complex that results
+            # from translating the model already drawn. From there it is
+            # edited freely. If there is no translation (pure belief, invalid
+            # model), it starts blank and says why.
+            try:
+                (state["vertices"], state["facets"],
+                 state["vatoms"]) = simplicial_state_from_editor(
+                    previous, state["agents"], state["worlds"],
+                    state["per_agent"], state["atoms"], axiom_d_in.value,
+                    not silent_defunct_in.value,
+                )
+                ui.notify("Complejo inicial: la traducción del modelo que "
+                          "estaba dibujado. Edítalo libremente.", type="info")
+            except ValueError as exc:
+                state["vertices"] = {a: [] for a in state["agents"]}
+                ui.notify(f"Complejo en blanco ({str(exc).splitlines()[0]})",
+                          type="warning")
+        reset_results()
         if kind == "knowledge":
-            # Las creencias marcadas no tienen sentido sin creencia: se
-            # descartan para que la vista previa y el pipeline coincidan
-            # con lo que el editor muestra.
+            # Marked beliefs make no sense without belief: they are dropped
+            # so that the preview and the pipeline agree with what the
+            # editor shows.
             for rows in state["per_agent"].values():
                 for row in rows:
                     row["bel"] = []
@@ -569,8 +817,8 @@ def index() -> None:
         repaint_all()
 
     def paint_chips() -> None:
-        # Cada chip de agente lleva el MISMO color que sus aristas en las
-        # figuras (agent_color_map replica la regla de visualization).
+        # Every agent chip carries the SAME color as its edges in the figures
+        # (agent_color_map replicates the rule of visualization).
         colors = agent_color_map(state["agents"])
         agent_chips.clear()
         with agent_chips:
@@ -586,7 +834,7 @@ def index() -> None:
                         on_value_change=lambda e, n=name: remove_world(n))
 
     def _take(input_widget) -> str:
-        """Lee y limpia el campo de alta, devolviendo el nombre tecleado."""
+        """Read and clear the add field, returning the typed name."""
         name = (input_widget.value or "").strip()
         input_widget.value = ""
         return name
@@ -603,8 +851,9 @@ def index() -> None:
         repaint_all()
 
     def remove_agent(name: str) -> None:
-        # Sus filas se conservan en per_agent por si el borrado fue un error;
-        # al no estar el agente listado, no se pintan ni se vuelven semillas.
+        # Its rows are kept in per_agent in case the removal was a mistake;
+        # since the agent is no longer listed, they are neither painted nor
+        # turned into seeds.
         state["agents"].remove(name)
         repaint_all()
 
@@ -619,8 +868,8 @@ def index() -> None:
         repaint_all()
 
     def remove_world(name: str) -> None:
-        # Un mundo eliminado SÍ se poda de clases, creencias y átomos: dejarlo
-        # produciría aristas o literales hacia un mundo inexistente.
+        # A removed world IS pruned from classes, beliefs and atoms: leaving it
+        # would produce edges or literals pointing at a nonexistent world.
         state["worlds"].remove(name)
         for rows in state["per_agent"].values():
             for row in rows:
@@ -634,16 +883,25 @@ def index() -> None:
         name = _take(atom_input)
         if not name:
             return
-        if name in state["atoms"]:
+        simplicial = state["kind"] == "simplicial"
+        if name in (state["vatoms"] if simplicial else state["atoms"]):
             ui.notify(f"el átomo '{name}' ya existe", type="warning")
             return
-        state["atoms"][name] = []
+        if simplicial:
+            state["vatoms"][name] = {"true": [], "false": []}
+        else:
+            state["atoms"][name] = []
         paint_atoms()
         update_preview()
 
     def remove_atom(name: str) -> None:
-        state["atoms"].pop(name)
+        (state["vatoms"] if state["kind"] == "simplicial" else state["atoms"]).pop(name)
         paint_atoms()
+        update_preview()
+
+    def set_vatom(name: str, side: str, values: list) -> None:
+        """Vertices that observe the atom true ("true") or false ("false")."""
+        state["vatoms"][name][side] = values
         update_preview()
 
     def set_atom(name: str, trues: list) -> None:
@@ -652,6 +910,30 @@ def index() -> None:
 
     def paint_atoms() -> None:
         atoms_box.clear()
+        if state["kind"] == "simplicial":
+            # Atoms on vertices: two selects per atom. A vertex in neither of
+            # them "does not know" (value 2), which is the default case of
+            # the vertex-based semantics.
+            every = [v for a in state["agents"] for v in state["vertices"].get(a, [])]
+            with atoms_box:
+                for name, spec in state["vatoms"].items():
+                    with ui.row().classes("w-full no-wrap items-center gap-2"):
+                        ui.label(name).classes("font-mono w-10")
+                        ui.select(
+                            every, multiple=True, value=spec["true"],
+                            label="lo observan verdadero",
+                            on_change=lambda e, n=name: set_vatom(n, "true", e.value),
+                        ).props("use-chips dense").classes("grow")
+                        ui.select(
+                            every, multiple=True, value=spec["false"],
+                            label="lo observan falso",
+                            on_change=lambda e, n=name: set_vatom(n, "false", e.value),
+                        ).props("use-chips dense").classes("grow")
+                        ui.button(
+                            icon="delete",
+                            on_click=lambda _, n=name: remove_atom(n),
+                        ).props("flat dense color=grey")
+            return
         with atoms_box:
             for name, trues in state["atoms"].items():
                 with ui.row().classes("w-full no-wrap items-center gap-2"):
@@ -673,20 +955,144 @@ def index() -> None:
         update_preview()
 
     # ----------------------------------------------------------------------- #
-    # Editor por agente. Estrategia deliberadamente simple: cualquier cambio
-    # estructural REPINTA el editor completo desde ``state`` y re-renderiza la
-    # vista previa. A esta escala (unos pocos agentes/mundos) ambos son casi
-    # instantáneos y eliminan toda la contabilidad de widgets parciales.
+    # Per-agent editor. Deliberately simple strategy: any structural change
+    # REPAINTS the whole editor from ``state`` and re-renders the preview. At
+    # this scale (a few agents/worlds) both are almost instantaneous and they
+    # remove all the bookkeeping of partial widgets.
     # ----------------------------------------------------------------------- #
+    # ----------------------------------------------------------------------- #
+    # Editor of the direct simplicial complex. Two cards: the vertices of each
+    # agent (chips, like agents and worlds) and the facets, where each row
+    # picks ONE vertex per agent -- so the UCF condition is the very shape of
+    # the form -- and which agents have it in their belief subcomplex. Same
+    # strategy as the other editor: every structural change repaints from
+    # ``state``.
+    # ----------------------------------------------------------------------- #
+    def add_vertex(agent: str, widget) -> None:
+        name = _take(widget)
+        if not name:
+            return
+        if any(name in vs for vs in state["vertices"].values()):
+            ui.notify(f"el vértice '{name}' ya existe", type="warning")
+            return
+        state["vertices"].setdefault(agent, []).append(name)
+        repaint_all()
+
+    def remove_vertex(agent: str, name: str) -> None:
+        # Pruned from facets and atoms: a facet that used it is left without
+        # a vertex of that agent and validation reports it as a UCF failure.
+        state["vertices"][agent].remove(name)
+        for facet in state["facets"]:
+            if facet["nodes"].get(agent) == name:
+                facet["nodes"][agent] = None
+        for spec in state["vatoms"].values():
+            spec["true"] = [v for v in spec["true"] if v != name]
+            spec["false"] = [v for v in spec["false"] if v != name]
+        repaint_all()
+
+    def add_facet() -> None:
+        taken = {f["name"] for f in state["facets"]}
+        n = len(state["facets"]) + 1
+        while f"F{n}" in taken:
+            n += 1
+        state["facets"].append({
+            "name": f"F{n}",
+            # Starts with the first vertex of each agent (or none) and in the
+            # belief subcomplex of everyone: the most common case.
+            "nodes": {a: (state["vertices"].get(a) or [None])[0]
+                      for a in state["agents"]},
+            "belief": list(state["agents"]),
+        })
+        repaint_all()
+
+    def remove_facet(index: int) -> None:
+        state["facets"].pop(index)
+        repaint_all()
+
+    def set_facet(facet: dict, key: str, value, agent: str | None = None) -> None:
+        if agent is None:
+            facet[key] = value
+        else:
+            facet[key][agent] = value
+        update_preview()
+
+    def paint_simplicial_editor() -> None:
+        colors = agent_color_map(state["agents"])
+        editor_box.clear()
+        with editor_box:
+            with ui.card().classes(CARD).props(FLAT):
+                _card_title("Vértices (perspectivas de cada agente)")
+                for agent in state["agents"]:
+                    names = state["vertices"].setdefault(agent, [])
+                    with ui.row().classes("w-full no-wrap items-center gap-2"):
+                        ui.element("span").style(
+                            f"width:10px;height:10px;border-radius:9999px;"
+                            f"flex:none;background:{colors[agent]}"
+                        )
+                        v_in = ui.input(f"nuevo vértice de {agent}") \
+                            .props("dense outlined").classes("grow")
+                        ui.button(icon="add",
+                                  on_click=lambda _, a=agent, w=v_in: add_vertex(a, w)) \
+                            .props("round dense")
+                        v_in.on("keydown.enter",
+                                lambda _, a=agent, w=v_in: add_vertex(a, w))
+                    with ui.row().classes("w-full gap-2"):
+                        for v in names:
+                            ui.chip(v, removable=True, color=colors[agent],
+                                    text_color="white",
+                                    on_value_change=lambda e, a=agent, n=v:
+                                        remove_vertex(a, n))
+                if not state["agents"]:
+                    ui.label("Agrega primero los agentes.").classes("text-grey-5")
+            with ui.card().classes(CARD).props(FLAT):
+                _card_title("Facetas (un vértice de cada agente)")
+                for i, facet in enumerate(state["facets"]):
+                    with ui.column().classes("w-full gap-0 pb-2") \
+                            .style("border-bottom:1px solid var(--p-line)"):
+                        with ui.row().classes("w-full items-center gap-2"):
+                            # The name is stored on typing and the preview is
+                            # redrawn on leaving the field, not on every key.
+                            ui.input("nombre", value=facet["name"],
+                                     on_change=lambda e, f=facet:
+                                         f.__setitem__("name", e.value)) \
+                                .props("dense outlined").classes("w-24") \
+                                .on("blur", lambda: update_preview())
+                            for agent in state["agents"]:
+                                ui.select(
+                                    state["vertices"].get(agent, []),
+                                    value=facet["nodes"].get(agent), label=agent,
+                                    on_change=lambda e, f=facet, a=agent:
+                                        set_facet(f, "nodes", e.value, a),
+                                ).props("dense options-dense") \
+                                    .classes("grow min-w-[64px]")
+                            ui.button(icon="delete",
+                                      on_click=lambda _, k=i: remove_facet(k)) \
+                                .props("flat dense color=grey")
+                        ui.select(
+                            state["agents"], multiple=True, value=facet["belief"],
+                            label="la creen posible (está en S_a de)",
+                            on_change=lambda e, f=facet: set_facet(f, "belief", e.value),
+                        ).props("use-chips dense").classes("w-full")
+                ui.button("añadir faceta", icon="add", on_click=lambda: add_facet()) \
+                    .props("flat dense")
+                ui.markdown(
+                    "Cada faceta lleva exactamente un vértice de cada agente "
+                    "(UCF). Bajo el Axioma D, todo vértice debe estar en alguna "
+                    "faceta del subcomplejo de creencia de su agente."
+                ).classes("text-xs text-grey-5")
+
     def paint_editor() -> None:
+        if state["kind"] == "simplicial":
+            paint_simplicial_editor()
+            return
         colors = agent_color_map(state["agents"])
         editor_box.clear()
         with editor_box:
             for agent in state["agents"]:
                 rows = state["per_agent"].setdefault(agent, [])
                 with ui.card().classes(CARD).props(FLAT):
-                    # El punto de color repite el color del agente en las
-                    # figuras -- misma convención que sus chips.
+                    # The color dot repeats the agent's color in the figures
+                    # -- same convention as its chips.
                     with ui.row().classes("items-center gap-2"):
                         ui.element("span").style(
                             f"width:10px;height:10px;border-radius:9999px;"
@@ -696,20 +1102,20 @@ def index() -> None:
                     kind = state["kind"]
                     for i, row in enumerate(rows):
                         with ui.row().classes("w-full no-wrap items-center gap-2"):
-                            # Primera columna: la clase de conocimiento, o en
-                            # sólo creencia los mundos DESDE los que se cree.
-                            # Cambiarla repinta, porque las opciones de
-                            # creencia dependen de la clase elegida.
+                            # First column: the knowledge class, or in belief
+                            # only the worlds FROM which one believes.
+                            # Changing it repaints, because the belief
+                            # options depend on the chosen class.
                             ui.select(
                                 state["worlds"], multiple=True, value=row["cls"],
                                 label=("desde (mundos)" if kind == "belief"
                                        else "clase (indistinguibles)"),
                                 on_change=lambda e, r=row: set_cls(r, e.value),
                             ).props("use-chips dense").classes("grow")
-                            # Mundos creídos: restringidos a la clase (así una
-                            # creencia fuera de la clase es inexpresable), o a
-                            # todos los mundos cuando no hay clase. Sin
-                            # creencia, la columna no existe.
+                            # Believed worlds: restricted to the class (so a
+                            # belief outside the class is inexpressible), or
+                            # to all worlds when there is no class. Without
+                            # belief, the column does not exist.
                             if kind != "knowledge":
                                 ui.select(
                                     state["worlds"] if kind == "belief" else row["cls"],
@@ -735,33 +1141,36 @@ def index() -> None:
                     }[kind]).classes("text-xs text-grey-5")
 
     def update_preview() -> None:
-        """Re-renderiza el modelo tal como está ingresado (sin clausuras).
+        """Re-render the model exactly as entered (no closures).
 
-        Corre en cada cambio del editor. La cabecera de la tarjeta lleva el
-        punto pulsante "en vivo" y un chip de validez (verde = ya válido,
-        ámbar = N condiciones por completar); la figura muestra exactamente
-        los chips dibujados con lo faltante punteado en rojo. Un estado
-        inexpresable como semillas (clases solapadas) se muestra como texto.
+        Runs on every editor change. The card header carries the pulsing
+        "live" dot and a validity chip (green = already valid, amber = N
+        conditions to be completed); the figure shows exactly the drawn
+        chips with what is missing dotted in red. A state inexpressible as
+        seeds (overlapping classes) is shown as text.
         """
+        if ws["loading"]:
+            return
+        # Every edit goes through here: the stored result, if any, no longer
+        # matches the model and the comparison will have to recompute it.
+        current()["dirty"] = True
         preview_box.clear()
-        # Única tarjeta CON elevación (halo lima): señala al elemento que se
-        # actualiza solo (ver "SISTEMA VISUAL").
+        # The only card WITH elevation (lime halo): it marks the element that
+        # updates by itself (see "VISUAL SYSTEM").
         with preview_box, ui.card().classes(CARD + " poster-live").props(FLAT):
             with ui.row().classes("w-full items-center gap-2"):
                 ui.element("span").classes("pulse-dot")
                 _card_title("Vista previa · modelo tal como se ingresa")
                 ui.space()
                 badge_slot = ui.row().classes("items-center")
-            if not state["agents"] or not state["worlds"]:
-                ui.label("Agrega al menos un agente y un mundo.") \
-                    .classes("text-grey-5")
+            missing = state_problem(live_state())
+            if missing:
+                ui.label(missing).classes("text-grey-5")
                 return
             try:
-                path, violations = preview_figure(
-                    state["agents"], state["worlds"], state["per_agent"],
-                    state["atoms"], explicit_in.value, axiom_d_in.value,
-                    state["kind"],
-                )
+                # The document id tags the file: two open models do not
+                # overwrite each other's preview.
+                path, violations = preview_state(state, ws["active"])
             except ValueError as exc:
                 with badge_slot:
                     _chip("inexpresable", "bad")
@@ -783,15 +1192,15 @@ def index() -> None:
                         ui.label(v).classes("font-mono text-xs")
 
     def set_cls(row: dict, cls: list) -> None:
-        """Actualiza una clase y poda las creencias que quedaron fuera de ella.
+        """Update a class and prune the beliefs that fell outside it.
 
-        En sólo creencia no hay clase que respetar: la primera columna son
-        los mundos de origen y la creencia puede apuntar a cualquier mundo.
+        In belief only there is no class to respect: the first column is the
+        source worlds and belief may point at any world.
         """
         row["cls"] = cls
         if state["kind"] != "belief":
             row["bel"] = [w for w in row["bel"] if w in cls]
-        paint_editor()  # las opciones del selector de creencia cambiaron
+        paint_editor()  # the options of the belief select changed
         update_preview()
 
     def set_bel(row: dict, bel: list) -> None:
@@ -809,16 +1218,13 @@ def index() -> None:
         update_preview()
 
     # ----------------------------------------------------------------------- #
-    # Evaluador de fórmulas: responde en su propia tarjeta, mundo por mundo.
+    # Formula evaluator: answers in its own card, world by world.
     # ----------------------------------------------------------------------- #
     def eval_formula() -> None:
         formula_out.clear()
+        simplicial = state["kind"] == "simplicial"
         try:
-            rows = evaluate_formula(
-                state["agents"], state["worlds"], state["per_agent"],
-                state["atoms"], axiom_d_in.value, formula_input.value or "",
-                not silent_defunct_in.value, state["kind"],
-            )
+            rows = evaluate_state(live_state(), formula_input.value or "")
         except ValueError as exc:
             with formula_out:
                 ui.html(f"<pre style='white-space:pre-wrap' "
@@ -830,107 +1236,128 @@ def index() -> None:
                 for world, ok in rows:
                     _chip(world, "ok" if ok else "bad",
                           icon="check" if ok else "close")
+            unit = "facetas" if simplicial else "mundos"
             ui.label(
-                "Válida en el modelo (vale en todos los mundos)."
-                if holds == len(rows) else
-                f"Vale en {holds} de {len(rows)} mundos."
+                f"Válida en el modelo (vale en todas las {unit})." if simplicial and holds == len(rows)
+                else "Válida en el modelo (vale en todos los mundos)." if holds == len(rows)
+                else f"Vale en {holds} de {len(rows)} {unit}."
             ).classes("text-xs text-grey-5")
 
     # ----------------------------------------------------------------------- #
-    # Corrida del pipeline. Asíncrona y con estado de carga: el botón muestra
-    # spinner (prop 'loading' de Quasar) y el trabajo pesado va a un hilo con
-    # run.io_bound, para que la interfaz no se congele ese par de segundos.
+    # Pipeline run. Asynchronous and with a loading state: the button shows a
+    # spinner (Quasar's 'loading' prop) and the heavy work goes to a thread via
+    # run.io_bound, so the interface does not freeze for those couple of seconds.
     # ----------------------------------------------------------------------- #
-    def paint_results_placeholder() -> None:
-        """Estado vacío ilustrado: nunca una columna en blanco sin mensaje."""
-        with results, ui.column().classes("w-full items-center py-16 gap-2"):
+    def paint_results_placeholder(target=None) -> None:
+        """Illustrated empty state: never a blank column without a message."""
+        target = results if target is None else target
+        with target, ui.column().classes("w-full items-center py-16 gap-2"):
             ui.icon("account_tree", size="64px").classes("text-grey-9")
             ui.label("Corre el pipeline para ver las Figuras 1 → 4") \
                 .classes("text-grey-5")
 
+    def reset_results() -> None:
+        """Forget the active document's result: it belongs to ANOTHER model.
+
+        On loading an example or changing the kind, the figures and metrics
+        of the previous run no longer describe what is in the editor;
+        leaving them visible under the new preview passed them off as
+        results of the current model.
+        """
+        if ws["loading"] or ws["active"] is None:
+            return
+        current()["outcome"] = None
+        render_outcome(None, results)
+
     async def explicit_changed() -> None:
-        """Interruptor de aristas implícitas: vista previa ya, pipeline si hubo."""
+        """Implicit-edges switch: preview now, pipeline if there was a run."""
+        if explicit_in.value == state.get("explicit"):
+            return   # assignment while loading a document, not a click
         update_preview()
-        if state.get("ran"):
+        if current()["outcome"] is not None:
             await run_clicked()
 
-    async def run_clicked() -> None:
-        results.clear()
-        run_btn.props("loading")
-        with results, ui.card().classes(CARD).props(FLAT):
-            with ui.column().classes("w-full items-center py-10 gap-2"):
-                ui.spinner(size="lg")
-                ui.label("Generando figuras…").classes("text-grey-5")
+    async def hasse_full_changed() -> None:
+        """Full-lattice switch: it only affects one figure of the result, so
+        there is no preview to repaint; if there were results already they are
+        recomputed so that Fig. 4 matches."""
+        if hasse_full_in.value == state.get("hasse_full", False):
+            return   # assignment while loading a document, not a click
+        if current()["outcome"] is not None:
+            await run_clicked()
+        else:
+            state["hasse_full"] = hasse_full_in.value
+
+    # ----------------------------------------------------------------------- #
+    # Running a model and painting its result are two separate things: this
+    # way the same result is stored in its document, repainted when coming
+    # back to it and reused in the comparison without recomputing.
+    # ----------------------------------------------------------------------- #
+    async def compute(st: dict, tag: str) -> dict:
+        """Run the pipeline of ONE state; never raises.
+
+        Returns an "outcome": ``{"status": "ok", "out": PipelineResult}``,
+        ``{"status": "invalid", "message": ...}`` when the core rejects the
+        model (pedagogical content, shown as is), or
+        ``{"status": "error", "trace": ..., "no_dot": bool}`` for the rest:
+        environment (Graphviz missing) or a bug. Catching everything is
+        deliberate: this is the edge of a UI handler and the app must stay
+        alive.
+        """
         try:
-            knowledge, belief = seeds_from_editor(
-                state["agents"], state["worlds"], state["per_agent"],
-                state["kind"],
-            )
-            out = await io.io_bound(
-                run_pipeline_from_seeds,
-                state["agents"], state["worlds"], knowledge, belief,
-                axiom_d_in.value, state["atoms"],
-                not silent_defunct_in.value, explicit_in.value, state["kind"],
-            )
+            return {"status": "ok", "out": await io.io_bound(run_state, st, tag)}
         except ValueError as exc:
-            # Un ValueError es el núcleo rechazando el modelo (S5/KD45/propiedad).
-            # Eso es CONTENIDO pedagógico: se muestra tal cual, sin traza.
-            results.clear()
-            ui.notify("El modelo no es válido — detalle en el panel",
-                      type="negative")
-            with results, ui.card().classes(CARD + " poster-bad").props(FLAT):
+            return {"status": "invalid", "message": str(exc)}
+        except Exception:  # noqa: BLE001 -- see docstring
+            return {"status": "error", "trace": traceback.format_exc(),
+                    "no_dot": shutil.which("dot") is None}
+
+    def render_failure(outcome: dict) -> None:
+        """Failure card for an 'invalid' or 'error' outcome."""
+        with ui.card().classes(CARD + " poster-bad").props(FLAT):
+            if outcome["status"] == "invalid":
                 ui.label("Modelo rechazado por la validación del núcleo:") \
                     .classes("font-semibold text-pink-3")
-                ui.html(f"<pre style='white-space:pre-wrap'>{exc}</pre>")
-            return
-        except Exception as exc:  # noqa: BLE001 -- ver abajo: es deliberado
-            # CUALQUIER otra excepción es un problema de entorno o un bug, no
-            # del modelo. Antes sólo se capturaba ValueError, así que cosas como
-            # el RuntimeError de `visualization.show` cuando falta el binario
-            # `dot` de Graphviz se propagaban y TUMBABAN la app -- y como eso
-            # ocurre en cada corrida, el botón parecía roto siempre.
-            # Se captura todo a propósito: esto es el borde de un manejador de
-            # UI; que la app siga viva y muestre el fallo vale más que dejar
-            # subir la excepción a NiceGUI.
-            results.clear()
-            falta_dot = shutil.which("dot") is None
-            ui.notify("Error al correr el pipeline — detalle en el panel",
-                      type="negative")
-            with results, ui.card().classes(CARD + " poster-bad").props(FLAT):
-                if falta_dot:
-                    ui.label("Falta Graphviz").classes(
-                        "font-semibold text-pink-3")
-                    ui.html(
-                        "<p>El pipeline necesita el binario <code>dot</code> "
-                        "para dibujar las figuras, y no está en el PATH.</p>"
-                        "<p>Instálalo con <code>brew install graphviz</code> "
-                        "(macOS) o <code>apt install graphviz</code> (Linux) "
-                        "y vuelve a correr.</p>"
-                    )
-                else:
-                    ui.label("Error inesperado (esto es un bug, repórtalo):") \
-                        .classes("font-semibold text-pink-3")
+                ui.html(f"<pre style='white-space:pre-wrap'>"
+                        f"{html.escape(outcome['message'])}</pre>")
+                return
+            if outcome["no_dot"]:
+                ui.label("Falta Graphviz").classes("font-semibold text-pink-3")
                 ui.html(
-                    f"<pre style='white-space:pre-wrap' class='text-xs'>"
-                    f"{html.escape(traceback.format_exc())}</pre>"
+                    "<p>El pipeline necesita el binario <code>dot</code> "
+                    "para dibujar las figuras, y no está en el PATH.</p>"
+                    "<p>Instálalo con <code>brew install graphviz</code> "
+                    "(macOS) o <code>apt install graphviz</code> (Linux) "
+                    "y vuelve a correr.</p>"
                 )
-            return
-        finally:
-            run_btn.props(remove="loading")
+            else:
+                ui.label("Error inesperado (esto es un bug, repórtalo):") \
+                    .classes("font-semibold text-pink-3")
+            ui.html(f"<pre style='white-space:pre-wrap' class='text-xs'>"
+                    f"{html.escape(outcome['trace'])}</pre>")
 
-        state["ran"] = True
-        results.clear()
-        with results:
-            # Métricas de la corrida como stat-tiles + chips de estado (los
-            # mismos números de la vieja bitácora, legibles en un segundo).
+    def render_outcome(outcome: dict | None, target) -> None:
+        """Paint the complete result of a run into ``target``."""
+        target.clear()
+        if outcome is None:
+            paint_results_placeholder(target)
+            return
+        if outcome["status"] != "ok":
+            with target:
+                render_failure(outcome)
+            return
+        out = outcome["out"]
+        with target:
+            # Run metrics as stat tiles + status chips (the same numbers as
+            # the old text log, readable in a second).
             with ui.card().classes(CARD).props(FLAT):
                 with ui.row().classes("w-full items-center gap-2"):
                     _card_title("Resultado del pipeline")
                     ui.space()
-                    # Los badges vienen con nombres de la paleta Quasar
-                    # (positive/negative/primary); se traducen a los tonos
-                    # de rol del cartel para que no salgan lima con texto
-                    # blanco (ilegible).
+                    # Badges come with Quasar palette names
+                    # (positive/negative/primary); they are mapped to the
+                    # poster's role tones so they do not come out lime with
+                    # white text (unreadable).
                     for text, color in out.badges:
                         tone = {"positive": "ok", "negative": "bad"} \
                             .get(color, "info")
@@ -942,16 +1369,16 @@ def index() -> None:
                                 "text-2xl font-bold text-white")
                             ui.label(label).classes("text-xs text-grey-5")
 
-            # Bitácora del pipeline paso a paso: qué se completó, qué falta y
-            # qué falló. Es lo primero que se muestra porque responde la
-            # pregunta que la gente trae ("¿por qué no salió lo que dibujé?")
-            # antes de que se pongan a mirar las figuras.
+            # Step-by-step pipeline log: what was completed, what is missing
+            # and what failed. It is shown first because it answers the
+            # question people bring ("why didn't I get what I drew?") before
+            # they start looking at the figures.
             if out.steps:
                 with ui.card().classes(CARD).props(FLAT):
                     _card_title("Pipeline paso a paso")
                     for step in out.steps:
-                        # Iconos con los colores de rol del cartel: verde =
-                        # tal cual, cian = completado por clausura, rosa = falló.
+                        # Icons in the poster's role colors: green = as drawn,
+                        # cyan = completed by a closure, pink = failed.
                         icon, color = {
                             "ok": ("check_circle", POSTER["green"]),
                             "completed": ("auto_fix_high", POSTER["cyan"]),
@@ -996,23 +1423,23 @@ def index() -> None:
                         "? lo que sigue sin especificar y qué significa ese silencio"
                     ).classes("text-xs italic text-grey-5 mt-3")
 
-            # Las figuras del pipeline, en orden, como en thesis_example.py,
-            # más la Fig. 4 (retículo de caras) que añade adapters.
+            # The pipeline figures, in order, as in thesis_example.py, plus
+            # Fig. 4 (face lattice) added by adapters.
             for caption, path in out.figures:
                 figure_card(caption, path)
 
-            # La vista 3D interactiva es una página plotly completa: se embebe
-            # en un iframe en lugar de reconstruirla con componentes.
+            # The interactive 3D view is a complete plotly page: it is embedded
+            # in an iframe instead of being rebuilt with components.
             if out.html_3d is not None:
                 with ui.card().classes(CARD).props(FLAT):
-                    _card_title("Fig. 3 · vista 3D interactiva")
-                    # La página plotly es clara: va sobre la misma lámina
-                    # que las figuras PNG para que no sea un bloque blanco
-                    # suelto sobre marino.
-                    # sanitize=False: ui.html sanea el HTML por defecto y
-                    # ELIMINA los <iframe>, con lo que la vista 3D quedaba
-                    # como una tarjeta vacía. El src es un archivo propio
-                    # servido desde outputs/, no contenido externo.
+                    _card_title("Vista 3D interactiva del complejo")
+                    # The plotly page is light: it goes on the same sheet as
+                    # the PNG figures so it is not a loose white block over
+                    # navy.
+                    # sanitize=False: ui.html sanitizes HTML by default and
+                    # REMOVES <iframe>s, which left the 3D view as an empty
+                    # card. The src is our own file served from outputs/,
+                    # not external content.
                     ui.html(
                         f'<iframe src="{_url(out.html_3d)}" '
                         'style="width:100%;height:560px;border:none;'
@@ -1022,24 +1449,177 @@ def index() -> None:
                     ui.label("Arrastra para rotar; rueda para acercar.") \
                         .classes("text-xs italic text-grey-5")
 
-            # Diagramas de texto (visualize): la vista sin dependencias,
-            # plegada por defecto para no competir con las figuras.
+            # Text diagrams (visualize): the dependency-free view, collapsed
+            # by default so it does not compete with the figures.
             with ui.expansion("Diagramas de texto").classes("w-full"):
                 for caption, diagram in out.text_diagrams:
                     ui.label(caption).classes("font-semibold mt-2")
                     ui.html(f"<pre style='white-space:pre-wrap' "
                             f"class='text-xs'>{diagram}</pre>")
 
-    # Primer pintado: el ejemplo de la tesis con su vista previa, y el estado
-    # vacío ilustrado en la zona de resultados.
-    load_example("tesis")
-    sync_switches()
-    paint_results_placeholder()
+    async def run_clicked() -> None:
+        doc = current()
+        results.clear()
+        run_btn.props("loading")
+        with results, ui.card().classes(CARD).props(FLAT):
+            with ui.column().classes("w-full items-center py-10 gap-2"):
+                ui.spinner(size="lg")
+                ui.label("Generando figuras…").classes("text-grey-5")
+        try:
+            outcome = await compute(copy.deepcopy(live_state()), doc["id"])
+        finally:
+            run_btn.props(remove="loading")
+        doc["outcome"], doc["dirty"] = outcome, False
+        if outcome["status"] == "invalid":
+            ui.notify("El modelo no es válido — detalle en el panel",
+                      type="negative")
+        elif outcome["status"] == "error":
+            ui.notify("Error al correr el pipeline — detalle en el panel",
+                      type="negative")
+        if doc["id"] == ws["active"]:   # the model may have been switched mid-run
+            render_outcome(outcome, results)
+
+    # ----------------------------------------------------------------------- #
+    # Models bar: one chip per open document (click = activate, x = close),
+    # buttons to open a blank one or duplicate the active one, and the
+    # comparison controls when there are at least two.
+    # ----------------------------------------------------------------------- #
+    KIND_ICON = {"kb": "hub", "knowledge": "visibility",
+                 "belief": "psychology", "simplicial": "change_history"}
+
+    def paint_docs_bar() -> None:
+        ids = [d["id"] for d in docs]
+        ws["compare"] = [i for i in ws["compare"] if i in ids]
+        if len(ws["compare"]) < 2 and len(docs) >= 2:
+            ws["compare"] = ids[:4]     # the usual case: compare what is open
+        docs_bar.clear()
+        with docs_bar:
+            ui.label("Modelos").classes("eyebrow")
+            for d in docs:
+                active = d["id"] == ws["active"]
+                kind = state["kind"] if active else d["state"]["kind"]
+                ui.chip(
+                    d["name"], icon="lock" if d["readonly"] else KIND_ICON[kind],
+                    removable=len(docs) > 1,
+                    # The active one in lime (the accent of "what is live");
+                    # the others translucent like the world chips.
+                    color=POSTER["lime"] if active else "rgba(255,255,255,.14)",
+                    text_color=POSTER["surface"] if active else "white",
+                    on_click=lambda _, i=d["id"]: activate(i),
+                    on_value_change=lambda e, i=d["id"]: close_doc(i),
+                ).tooltip(KINDS[kind])
+            ui.button(icon="add", on_click=lambda: add_blank()) \
+                .props("round dense flat").tooltip("Modelo nuevo en blanco")
+            ui.button(icon="content_copy", on_click=lambda: duplicate_active()) \
+                .props("round dense flat").tooltip("Duplicar el modelo activo")
+            if len(docs) >= 2:
+                # The comparison controls go on their own line: with long
+                # names they got mixed up with the model chips.
+                ui.element("div").classes("w-full")
+                ui.select(
+                    {d["id"]: d["name"] for d in docs}, multiple=True,
+                    value=ws["compare"], label="comparar (de 2 a 4)",
+                    on_change=lambda e: ws.__setitem__("compare", list(e.value)),
+                ).props("dense outlined use-chips options-dense") \
+                    .classes("min-w-[280px] max-w-[560px]")
+                if ws["comparing"]:
+                    ui.button("Volver al editor", icon="edit",
+                              on_click=lambda: exit_compare()).props("outline dense")
+                ui.button("Comparar", icon="compare",
+                          on_click=lambda: compare_clicked()) \
+                    .props("color=primary text-color=dark unelevated dense")
+
+    # ----------------------------------------------------------------------- #
+    # Side-by-side comparison. Each panel shows the document's ALREADY stored
+    # result; only those never run or changed since their last run
+    # (``dirty``) are recomputed. It serves both "the same action on several
+    # inputs" and "two actions on the same input": in both cases they are
+    # documents, and here they are seen together.
+    # ----------------------------------------------------------------------- #
+    def render_panel(doc: dict) -> None:
+        """One comparison panel: header, metrics and figures of the model."""
+        outcome = doc["outcome"]
+        with ui.column().classes("gap-3 min-w-0").style("flex:1 1 0"):
+            with ui.card().classes(CARD).props(FLAT):
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    if doc["readonly"]:
+                        ui.icon("lock").style(f"color:{POSTER['yellow']}")
+                    ui.label(doc["name"]).classes("font-bold text-white grow")
+                ui.label(KINDS[doc["state"]["kind"]]).classes("eyebrow")
+                if doc["origin"] and doc["origin"].get("label"):
+                    ui.label("Resultado de " + doc["origin"]["label"]) \
+                        .classes("text-xs italic text-grey-5")
+                if outcome["status"] == "ok":
+                    out = outcome["out"]
+                    with ui.row().classes("w-full gap-1"):
+                        for text, color in out.badges:
+                            tone = {"positive": "ok", "negative": "bad"} \
+                                .get(color, "info")
+                            _chip(text, tone).props("dense")
+                    with ui.row().classes("w-full gap-5 mt-1"):
+                        for value, label in out.stats:
+                            with ui.column().classes("gap-0 items-center"):
+                                ui.label(value).classes("text-lg font-bold text-white")
+                                ui.label(label).classes("text-xs text-grey-5")
+                    # From the log, only what stopped the pipeline: the full
+                    # detail is in that model's editor.
+                    for step in out.steps:
+                        for text in step.failed:
+                            ui.label(f"{step.name}: falló").classes(
+                                "text-xs font-semibold text-pink-3 mt-2")
+                            ui.html(f"<pre style='white-space:pre-wrap' "
+                                    f"class='text-xs'>{html.escape(text)}</pre>")
+            if outcome["status"] != "ok":
+                render_failure(outcome)
+                return
+            for caption, path in outcome["out"].figures:
+                figure_card(caption, path)
+            if outcome["out"].html_3d is not None:
+                ui.label("Vista 3D interactiva: ábrela desde el editor de "
+                         "este modelo.").classes("text-xs italic text-grey-5")
+
+    async def compare_clicked() -> None:
+        chosen = [d for d in docs if d["id"] in ws["compare"]]
+        if not 2 <= len(chosen) <= 4:
+            ui.notify("Elige de 2 a 4 modelos para comparar.", type="warning")
+            return
+        current()["state"] = copy.deepcopy(live_state())   # the active one, up to date
+        ws["comparing"] = True
+        editor_row.set_visibility(False)
+        compare_box.set_visibility(True)
+        paint_docs_bar()
+        compare_box.clear()
+        with compare_box, ui.card().classes(CARD).props(FLAT):
+            with ui.column().classes("w-full items-center py-10 gap-2"):
+                ui.spinner(size="lg")
+                ui.label(f"Preparando {len(chosen)} modelos…") \
+                    .classes("text-grey-5")
+        for doc in chosen:
+            if doc["outcome"] is None or doc["dirty"]:
+                doc["outcome"] = await compute(copy.deepcopy(doc["state"]), doc["id"])
+                doc["dirty"] = False
+        compare_box.clear()
+        with compare_box, ui.row().classes("w-full no-wrap items-start gap-4"):
+            for doc in chosen:
+                render_panel(doc)
+        # The active document's editor stays consistent with what was just computed.
+        render_outcome(current()["outcome"], results)
+
+    def exit_compare() -> None:
+        ws["comparing"] = False
+        compare_box.set_visibility(False)
+        editor_row.set_visibility(True)
+        paint_docs_bar()
+
+    # First paint: the thesis example with its preview, and the illustrated
+    # empty state in the results area.
+    ws["active"] = new_doc("Modelo 1", blank_state())["id"]
+    load_example("tesis")   # also paints the bar, the preview and the empty state
 
 
-# reload=False: la recarga automática de NiceGUI reimporta el módulo en un
-# subproceso, un comportamiento sorpresivo para una herramienta local sencilla.
-# El guard __mp_main__ es la convención de NiceGUI (uvicorn multiproceso).
+# reload=False: NiceGUI's auto-reload re-imports the module in a subprocess, a
+# surprising behavior for a simple local tool. The __mp_main__ guard is the
+# NiceGUI convention (multiprocess uvicorn).
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(title="La geometría de una creencia falsa", reload=False,
            dark=True)
