@@ -684,6 +684,27 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
     return problems, notes
 
 
+# A facet of n agents is an (n-1)-simplex. Up to a tetrahedron (4 agents) the
+# geometric drawings are faithful (edges, triangles, tetrahedra -- the 2-D
+# figure of a tetrahedron is a projection, but a standard one); from 5 agents
+# on no drawing in 2-D or 3-D is, so the GUI shows those complexes only in the
+# ways that keep their meaning in any dimension: the incidence diagram (a
+# facet is a point joined to its vertices), the face lattice and the text.
+GEOMETRY_MAX_AGENTS = 4
+
+
+def _geometric_ok(model) -> bool:
+    return len(model.agents) <= GEOMETRY_MAX_AGENTS
+
+
+def _dimension_note(model) -> str:
+    n = len(model.agents)
+    return (f"con {n} agentes cada faceta es un {n - 1}-símplex, que no cabe en 3D: "
+            "se omiten el dibujo geométrico y la vista 3D; el complejo se muestra como "
+            "diagrama de incidencia (cada faceta es un punto unido a sus vértices), "
+            "retículo de caras y texto")
+
+
 def preview_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
@@ -700,9 +721,11 @@ def preview_simplicial(
     assignment = simplicial_assignment(by_name, vatoms)
     model, dropped = _consistent_part(model, assignment, by_name)
     path = Path(show(model, _fname("gui_preview", tag), "Complejo tal como se ingresa",
-                     output_dir=str(OUTPUTS), assignment=assignment or None))
+                     output_dir=str(OUTPUTS), assignment=assignment or None,
+                     engine="auto" if _geometric_ok(model) else "dot"))
     problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
-    return path, dropped + problems
+    notes = [] if _geometric_ok(model) else [_dimension_note(model)]
+    return path, dropped + problems + notes
 
 
 def evaluate_simplicial_formula(
@@ -854,14 +877,21 @@ def run_simplicial(
     asg = assignment or None
     # The figures are drawn even for an invalid complex: seeing it is how the
     # user finds the facet that breaks UCF or the isolated perspective.
+    geometric = _geometric_ok(model)
+    if not geometric:
+        step.missing.append(_dimension_note(model))
     result.figures.append((
-        "Fig. 1 · el complejo simplicial declarado",
+        "Fig. 1 · el complejo simplicial declarado" if geometric else
+        "Fig. 1 · el complejo declarado, como diagrama de incidencia (cada faceta es "
+        "un punto unido a sus vértices: con 5 o más agentes no hay dibujo geométrico fiel)",
         Path(show(model, _fname("gui_fig3_simplicial", tag), "Complejo simplicial",
-                  output_dir=str(OUTPUTS), assignment=asg)),
+                  output_dir=str(OUTPUTS), assignment=asg,
+                  engine="auto" if geometric else "dot")),
     ))
     # The interactive 3-D page is the heavy output (~3 MB of embedded
-    # Plotly per run); the GUI's "generar vista 3D" switch skips it.
-    if make_3d:
+    # Plotly per run); the GUI's "generar vista 3D" switch skips it, and so
+    # does a complex of 5+ agents, which has no faithful 3-D drawing.
+    if make_3d and geometric:
         result.html_3d = Path(show(model, _fname("gui_fig3_3d", tag), "Complejo simplicial · 3D",
                                    dim=3, output_dir=str(OUTPUTS), assignment=asg))
     lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
@@ -2251,6 +2281,9 @@ def run_pipeline_from_seeds(
     # are copies (w, u). Comparing against the original world names would never
     # match and NU violations would go silently undetected.
     result.steps.append(diagnose_simplicial(proper, sm, lifted))
+    geometric = _geometric_ok(sm)
+    if not geometric:
+        result.steps[-1].missing.append(_dimension_note(sm))
     sizes = ", ".join(f"S_{a}={len(sm.belief_facets[a])}" for a in sorted(sm.agents))
     result.log.append(
         f"to_simplicial → {len(sm.facets)} facetas; subcomplejos de creencia: {sizes}"
@@ -2259,11 +2292,16 @@ def run_pipeline_from_seeds(
     for a in sorted(sm.agents, key=str):
         result.stats.append((str(len(sm.belief_facets[a])), f"S_{a}"))
     result.figures.append((
-        "Fig. 3 · modelo simplicial de creencia",
+        "Fig. 3 · modelo simplicial de creencia" if geometric else
+        "Fig. 3 · modelo simplicial de creencia, como diagrama de incidencia (cada faceta "
+        "es un punto unido a sus vértices: con 5 o más agentes no hay dibujo geométrico fiel)",
         Path(show(sm, _fname("gui_fig3_simplicial", tag), "Modelo simplicial",
-                  output_dir=str(OUTPUTS), valuation=lifted)),
+                  output_dir=str(OUTPUTS), valuation=lifted,
+                  engine="auto" if geometric else "dot")),
     ))
-    if make_3d:     # the heavy output; see run_simplicial
+    # The heavy output (see run_simplicial); also skipped for 5+ agents, whose
+    # facets have no faithful 3-D drawing.
+    if make_3d and geometric:
         result.html_3d = Path(show(sm, _fname("gui_fig3_3d", tag), "Modelo simplicial · 3D",
                                    dim=3, output_dir=str(OUTPUTS),
                                    valuation=lifted))

@@ -203,7 +203,7 @@ def show(
             # Graphviz route for a complex. Unlike the matplotlib drawing it
             # leaves a .dot beside the .png -- an editable source, like every
             # other figure in this repo -- at the cost of the filled simplices.
-            dot_source = _dot_simplicial(model, caption, valuation)
+            dot_source = _dot_simplicial(model, caption, valuation, assignment)
             path = _write_and_run_dot(dot_source, name, image_format, output_dir)
         elif dim == 3:
             path = _show_simplicial_3d(model, name, output_dir, caption,
@@ -288,7 +288,7 @@ def to_dot(
     raise TypeError(f"No DOT form for {type(model).__name__}; use show(model, name).")
 
 
-def _dot_simplicial(model, title: str | None = None, valuation=None) -> str:
+def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=None) -> str:
     """Return Graphviz DOT source for a SIMPLICIAL belief model.
 
     Why a DOT form exists at all. :func:`_show_simplicial` draws the complex with
@@ -316,6 +316,8 @@ def _dot_simplicial(model, title: str | None = None, valuation=None) -> str:
         valuation: optional ``atom -> worlds`` map; when given, each vertex is
             labelled with the literals that perspective observes (via the induced
             assignment), exactly as the matplotlib drawing labels them.
+        assignment: the vertex assignment itself (``L : N -> 3^P``), for a
+            complex defined directly; takes precedence over ``valuation``.
 
     Returns:
         DOT source, ready for ``dot -Tpng``.
@@ -329,8 +331,8 @@ def _dot_simplicial(model, title: str | None = None, valuation=None) -> str:
     node_color = agent_colors(model)
     signature_color = _signature_colors(model, agents)
 
-    assignment = {}
-    if valuation:
+    assignment = dict(assignment or {})
+    if not assignment and valuation:
         # Same bridge the matplotlib drawing uses: world truth induces what each
         # perspective OBSERVES (1/0/2), and only 1 and 0 are rendered.
         from assignment import assignment_from_model
@@ -386,9 +388,11 @@ def _dot_simplicial(model, title: str | None = None, valuation=None) -> str:
             # point joined to its vertices (incidence rendering). Faithful, and it
             # keeps higher-dimensional complexes drawable instead of refused.
             hub = _dot_id("facet_" + label_facet(facet))
+            # xlabel, not label: Graphviz draws no text inside a point, so the
+            # world's name goes beside it.
             lines.append(
-                f'  {hub} [label="{caption}", shape=point, width=0.18, '
-                f'color="{color}"]'
+                f'  {hub} [label="", xlabel="{caption}", shape=point, width=0.18, '
+                f'color="{color}", fontsize=10]'
             )
             for member in members:
                 lines.append(
