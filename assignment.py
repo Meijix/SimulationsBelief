@@ -30,7 +30,10 @@ Two consequences worth knowing (both from the chapter):
 
     * A facet must be CONSISTENT: no atom with a 1-node and a 0-node in the same
       facet. The **maximal complex** ``M(N, V, L)`` is the set of all UCF,
-      consistent facets buildable from the nodes -- :func:`maximal_complex`.
+      consistent facets buildable from the nodes -- :func:`maximal_complex`
+      (:func:`maximal_model` wraps it into a model). A complex declared by
+      hand is brought to the same footing by :func:`drop_inconsistent`, which
+      REMOVES its inconsistent facets instead of reporting them (GitHub #21).
     * The schema **NU** ("no uncertainties", ``P → ∨_a B_a P``) is sound: an atom
       is true at a facet only when some agent's perspective carries it. When an
       assignment is INDUCED from a Kripke valuation (:func:`assignment_from_model`),
@@ -215,6 +218,59 @@ def maximal_complex(
         for combo in product(*(by_agent[a] for a in agent_list))
         if is_consistent_facet(frozenset(combo), assignment)
     }
+
+
+def maximal_model(
+    agents: Iterable[Hashable],
+    nodes: Iterable[Node],
+    assignment: Assignment,
+    belief_facets: Dict[Hashable, Iterable[Facet]] | None = None,
+    **kwargs,
+) -> SimplicialBeliefModel:
+    """The model ``M(N, V, L)`` of thesis p. 19 in one call (GitHub #21).
+
+    Builds the complex FROM the maximal complex: every UCF facet the nodes can
+    form, minus the inconsistent ones. Without ``belief_facets`` the result is
+    a knowledge complex (``S_a = S``); with them, each ``S_a`` is restricted to
+    the facets that survive, so an inconsistent facet can never be believed.
+    Keyword arguments go to the constructor (``axiom_d``, ``node_names``...).
+    """
+    facets = maximal_complex(agents, nodes, assignment)
+    if belief_facets is None:
+        return SimplicialBeliefModel.knowledge_only(agents, nodes, facets, **kwargs)
+    belief = {a: set(fs) & facets for a, fs in belief_facets.items()}
+    return SimplicialBeliefModel(agents, nodes, facets, belief, **kwargs)
+
+
+def drop_inconsistent(
+    model: SimplicialBeliefModel, assignment: Assignment
+) -> Tuple[SimplicialBeliefModel, List[Facet]]:
+    """``(model without its inconsistent facets, the facets removed)``.
+
+    Chapter 3 defines the model as the MAXIMAL CONSISTENT complex, so a facet
+    whose perspectives disagree on an atom is not an error to report but a
+    facet that does not exist (GitHub #21). This removes such facets from
+    ``S`` and from every ``S_a``, keeping everything else (world names, vertex
+    names, the declared Axiom-D contract) so the result is the same model one
+    would have obtained by never declaring them. The caller decides what to
+    say about the removed ones. Nothing is validated here: dropping a facet
+    can isolate a perspective, and whether that is a violation is the
+    constructor's business under the model's own ``axiom_d_declared``.
+    """
+    bad = {F for F in model.facets if not is_consistent_facet(F, assignment)}
+    if not bad:
+        return model, []
+    keep = model.facets - bad
+    pruned = SimplicialBeliefModel(
+        model.agents, model.nodes, keep,
+        {a: set(fs) - bad for a, fs in model.belief_facets.items()},
+        world_of_facet={F: w for F, w in model.world_of_facet.items() if F in keep},
+        projection={F: w for F, w in model.projection.items() if F in keep},
+        validate=False,
+        axiom_d=getattr(model, "axiom_d_declared", model.axiom_d),
+        node_names=getattr(model, "node_names", None),
+    )
+    return pruned, sorted(bad, key=label_facet)
 
 
 # --------------------------------------------------------------------------- #

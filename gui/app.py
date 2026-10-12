@@ -122,6 +122,7 @@ from adapters import (
     preview_figure,
     preview_simplicial,
     run_simplicial,
+    maximal_facets,
     simplicial_state_from_editor,
     run_pipeline_from_seeds,
     seeds_from_editor,
@@ -1012,6 +1013,20 @@ def index() -> None:
         state["facets"].pop(index)
         repaint_all()
 
+    def fill_maximal() -> None:
+        """Add every consistent UCF facet the vertices can form (issue #21)."""
+        try:
+            state["facets"], added = maximal_facets(
+                state["agents"], state["vertices"], state["vatoms"], state["facets"],
+            )
+        except ValueError as exc:
+            ui.notify(str(exc).splitlines()[0], type="warning")
+            return
+        ui.notify(f"{added} faceta(s) añadida(s)" if added
+                  else "ya estaban todas las facetas consistentes", type="info")
+        if added:
+            repaint_all()
+
     def set_facet(facet: dict, key: str, value, agent: str | None = None) -> None:
         if agent is None:
             facet[key] = value
@@ -1110,12 +1125,23 @@ def index() -> None:
                                 label="la creen posible (está en S_a de)",
                                 on_change=lambda e, f=facet: set_facet(f, "belief", e.value),
                             ).props("use-chips dense").classes("w-full")
-                ui.button("añadir faceta", icon="add", on_click=lambda: add_facet()) \
-                    .props("flat dense")
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.button("añadir faceta", icon="add", on_click=lambda: add_facet()) \
+                        .props("flat dense")
+                    # The thesis's own construction (p. 19): every consistent
+                    # UCF facet the vertices can form. Offered as an action,
+                    # not applied silently, because a declared complex is
+                    # often meant to be a proper subcomplex of M(N, V, L).
+                    ui.button("completar al complejo maximal", icon="auto_awesome",
+                              on_click=lambda: fill_maximal()) \
+                        .props("flat dense")
                 ui.markdown(
                     "Cada faceta lleva exactamente un vértice de cada agente "
-                    "(UCF). Bajo el Axioma D, todo vértice debe estar en alguna "
-                    "faceta del subcomplejo de creencia de su agente."
+                    "(UCF). Una faceta cuyos vértices se contradicen en un átomo "
+                    "no existe en el modelo: se elimina y se avisa. «Completar al "
+                    "complejo maximal» añade todas las facetas consistentes que "
+                    "faltan (M(N, V, L)). Bajo el Axioma D, todo vértice debe "
+                    "estar en alguna faceta del subcomplejo de creencia de su agente."
                 ).classes("text-xs text-grey-5")
 
     def paint_editor() -> None:

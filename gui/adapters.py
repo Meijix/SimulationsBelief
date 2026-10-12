@@ -54,7 +54,9 @@ from properness import (  # noqa: E402
 )
 from relational_frame import RelationalFrame  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
-from simplicial import Node, SimplicialBeliefModel, to_simplicial  # noqa: E402
+import copy  # noqa: E402
+from assignment import drop_inconsistent, facet_inconsistencies, maximal_complex  # noqa: E402
+from simplicial import Node, SimplicialBeliefModel, label_node, to_simplicial  # noqa: E402
 from visualization import PALETTE, show, visualize  # noqa: E402
 import hasse  # noqa: E402  -- face lattice (Fig. 4)
 
@@ -608,9 +610,36 @@ def simplicial_assignment(by_name: Dict[str, Node], vatoms: Dict[str, dict]):
     return out
 
 
+def _consistent_part(model, assignment, by_name) -> Tuple[SimplicialBeliefModel, List[str]]:
+    """Drop the inconsistent facets of a declared complex and say which went.
+
+    Chapter 3's model is the maximal CONSISTENT complex, so a facet whose
+    vertices disagree on an atom is not a validation error but a facet that
+    does not exist (GitHub #21): it is removed from S and every S_a, and the
+    user is told, facet by facet, which atom clashed and where. Returns the
+    pruned model and the notes (empty when nothing was inconsistent).
+    """
+    names_before = dict(model.world_of_facet)
+    model, removed = drop_inconsistent(model, assignment)
+    if not removed:
+        return model, []
+    name = {n: v for v, n in by_name.items()}
+    details = []
+    for F in removed:
+        why = "; ".join(
+            f"{atom}: {name.get(t, label_node(t))} verdadero, {name.get(f, label_node(f))} falso"
+            for atom, t, f in facet_inconsistencies(F, assignment)
+        )
+        details.append(f"{names_before.get(F, '?')} ({why})")
+    return model, [
+        "facetas eliminadas por inconsistencia (el complejo maximal M(N,V,L) "
+        f"sólo tiene facetas consistentes): {'; '.join(details)}"
+    ]
+
+
 def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str], List[str]]:
-    """``(violations, notes)`` for a hand-declared complex."""
-    problems = model.violations() + consistency_violations(model, assignment)
+    """``(violations, notes)`` for a hand-declared complex (already pruned)."""
+    problems = model.violations()
     name = {n: v for v, n in by_name.items()}
     notes = []
     loose = sorted(name[n] for n in model.isolated_nodes())
@@ -645,14 +674,20 @@ def preview_simplicial(
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
     knowledge_only: bool = False,
 ) -> Tuple[Path, List[str]]:
-    """Preview of the complex AS DECLARED, without requiring validity."""
+    """Preview of the complex AS DECLARED, without requiring validity.
+
+    "As declared" up to consistency: an inconsistent facet is not drawn (it is
+    not part of the model, see :func:`_consistent_part`) and the returned list
+    says so, next to the structural violations.
+    """
     model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d, validate=False,
                                          knowledge_only=knowledge_only)
     assignment = simplicial_assignment(by_name, vatoms)
+    model, dropped = _consistent_part(model, assignment, by_name)
     path = Path(show(model, _fname("gui_preview", tag), "Complejo tal como se ingresa",
                      output_dir=str(OUTPUTS), assignment=assignment or None))
     problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
-    return path, problems
+    return path, dropped + problems
 
 
 def evaluate_simplicial_formula(
@@ -660,13 +695,70 @@ def evaluate_simplicial_formula(
     vatoms: Dict[str, dict], axiom_d: bool, text: str,
     knowledge_only: bool = False,
 ) -> List[Tuple[str, bool]]:
-    """Evaluate the formula at EVERY facet with the vertex-based semantics (ch. 3)."""
+    """Evaluate the formula at every facet of the model with the vertex-based semantics (ch. 3).
+
+    Inconsistent facets are not part of the model (see :func:`_consistent_part`),
+    so they get no row. Structural violations of what remains are raised, as
+    the constructor would.
+    """
     formula = parse_formula(text, agents, list(vatoms or {}))
     model, by_name, facet_of = build_simplicial(agents, vertices, facets, axiom_d,
-                                                knowledge_only=knowledge_only)
+                                                validate=False, knowledge_only=knowledge_only)
     assignment = simplicial_assignment(by_name, vatoms)
+    model, _ = _consistent_part(model, assignment, by_name)
+    problems = model.violations()
+    if problems:
+        raise ValueError(
+            f"{len(problems)} simplicial-model violation(s) found:\n  - " + "\n  - ".join(problems)
+        )
     return [(f["name"], holds_simplicial(model, assignment, facet_of[f["name"]], formula))
-            for f in facets]
+            for f in facets if facet_of[f["name"]] in model.facets]
+
+
+def maximal_facets(
+    agents: List[str], vertices: Dict[str, List[str]], vatoms: Dict[str, dict],
+    facets: List[dict],
+) -> Tuple[List[dict], int]:
+    """The editor's facet list completed to the maximal complex ``M(N, V, L)``.
+
+    Every UCF facet the declared vertices can form and whose vertex atoms do
+    not clash (:func:`assignment.maximal_complex`) is added, named ``F<n>``
+    and believed by everyone, the editor's default for a new facet; the facets
+    already declared keep their names and belief lists. Returns the new list
+    and how many facets were added. This is the "build from the maximal
+    complex" of GitHub #21, as an action the user takes rather than something
+    done behind their back: a declared complex is often meant to be a proper
+    subcomplex of ``M(N, V, L)``.
+
+    Raises:
+        ValueError: when some agent has no vertex (no UCF facet exists) or the
+            vertex atoms are ill-formed, with the core's own message.
+    """
+    by_name: Dict[str, Node] = {}
+    for a in agents:
+        for v in vertices.get(a, []):
+            by_name[v] = Node(a, frozenset({v}))
+    assignment = simplicial_assignment(by_name, vatoms)
+    wanted = maximal_complex(agents, by_name.values(), assignment)
+    name_of_node = {n: v for v, n in by_name.items()}
+    have = {
+        frozenset(by_name[v] for a in agents
+                  if (v := f.get("nodes", {}).get(a)) in by_name)
+        for f in facets
+    }
+    out = [copy.deepcopy(f) for f in facets]
+    taken = {f["name"] for f in out}
+    n = len(out) + 1
+    added = 0
+    for F in sorted(wanted - have, key=lambda F: sorted(name_of_node[x] for x in F)):
+        while f"F{n}" in taken:
+            n += 1
+        taken.add(f"F{n}")
+        out.append({"name": f"F{n}",
+                    "nodes": {x.agent: name_of_node[x] for x in F},
+                    "belief": list(agents)})
+        added += 1
+    return out, added
 
 
 def _hasse_caption(number: str, full: bool) -> str:
@@ -708,6 +800,11 @@ def run_simplicial(
         step.failed.append(str(exc))
         result.badges.append(("inexpresable", "negative"))
         return result
+    # Inconsistent facets are removed, not refused (GitHub #21): the model is
+    # the maximal consistent complex, and the removal is reported as something
+    # the theory completed for the user.
+    model, dropped = _consistent_part(model, assignment, by_name)
+    step.completed += dropped
     problems, notes = _simplicial_problems(model, assignment, by_name, vertices)
     step.missing += notes
     if problems:

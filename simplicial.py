@@ -130,6 +130,10 @@ class SimplicialBeliefModel:
         # violations() consults the flag; the semantics never does. Left
         # unspecified, the flag is READ OFF the geometry (see the docstring),
         # so the stored value is always a plain bool.
+        # What the caller asked for (None = infer), kept so a derived model --
+        # e.g. assignment.drop_inconsistent -- can be built under the same
+        # contract instead of re-declaring the inferred answer as a demand.
+        self.axiom_d_declared: bool | None = axiom_d
         self.axiom_d: bool = axiom_d if axiom_d is not None else self.satisfies_axiom_d()
         if validate:
             problems = self.violations()
