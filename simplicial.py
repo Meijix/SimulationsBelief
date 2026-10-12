@@ -30,6 +30,10 @@ world passes through any more); such a node is still part of the complex, as a
 therefore never rejects isolated nodes unless Axiom D is DECLARED
 (``axiom_d=True``); see :class:`SimplicialBeliefModel`.
 
+The inverse reading, simplicial -> Kripke (the functor G_B of docs/12), is
+:func:`to_relational`; together with :func:`to_simplicial` it is an equivalence
+up to isomorphism on proper models.
+
 Dependency direction: this module imports the models; nothing imports it.
 """
 
@@ -460,3 +464,101 @@ def to_simplicial(
         # (A wrapped knowledge-only frame has Q = R, reflexive, so D holds.)
         axiom_d=getattr(model, "axiom_d", True),
     )
+
+
+# --------------------------------------------------------------------------- #
+# The inverse translation: simplicial belief model -> proper knowledge+belief
+# model (the functor G_B of docs/12-equivalencia-categorica.md)
+# --------------------------------------------------------------------------- #
+class Relational(NamedTuple):
+    """What :func:`to_relational` returns.
+
+    Attributes:
+        frame: the knowledge+belief model; its worlds are the facets, named
+            by ``world_of_facet`` when the complex has names (a translated
+            or hand-declared complex), by :func:`label_facet` otherwise.
+        valuation: ``atom -> worlds where it is true``, the lift of the vertex
+            assignment (an atom holds at a facet iff some vertex observes it
+            true); empty when no assignment was given.
+        facet_of_world: the bijection back, ``world -> facet``.
+    """
+
+    frame: KnowledgeBeliefFrame
+    valuation: Dict
+    facet_of_world: Dict
+
+
+def to_relational(
+    model: SimplicialBeliefModel,
+    assignment=None,
+    ignore_isolated: bool = False,
+) -> Relational:
+    """Read a simplicial belief model as a knowledge+belief Kripke model.
+
+    This is the functor ``G`` of Goubault, Ledent & Rajsbaum extended to
+    belief (docs/12): one WORLD per facet; ``X R_a Y`` iff the two facets share
+    ``a``'s vertex (knowledge = the gluing of the complex); ``X Q_a Y`` iff
+    they share it AND ``Y`` lies in ``a``'s belief subcomplex ``S_a``. The
+    result is automatically proper (distinct facets differ in some vertex),
+    transitive, Euclidean, ``Q ⊆ R`` and constant on knowledge classes, and
+    it satisfies Axiom D exactly when no perspective is isolated -- so the
+    frame is declared KD45 or K45 by that fact, nothing else. ``to_simplicial``
+    is its inverse up to isomorphism (the round trip is tested).
+
+    Args:
+        model: the complex. Must be UCF (one vertex per agent in every facet).
+        assignment: optional vertex assignment ``L : N -> {0, 1, 2}``; it is
+            lifted to a world valuation (``assignment.lift_to_facets``).
+        ignore_isolated: a vertex in NO facet of ``S`` has no world to live
+            in (it is outside the equivalence, docs/12 §3.3). By default its
+            presence is an error; with ``True`` such vertices are left out.
+
+    Raises:
+        ValueError: isolated nodes without ``ignore_isolated``, or a facet
+            without a vertex of some agent (UCF).
+    """
+    loose = model.isolated_nodes()
+    if loose and not ignore_isolated:
+        raise ValueError(
+            "to_relational: these nodes lie in no facet, so they have no world in the "
+            "Kripke model (pass ignore_isolated=True to leave them out): "
+            + ", ".join(label_node(n) for n in sorted(loose, key=label_node))
+        )
+    agents = sorted(model.agents, key=str)
+    facets = sorted(model.facets, key=label_facet)
+    # World names: the facet's own name when the complex carries one, else
+    # its vertex list; a clash (two facets with the same name) falls back to
+    # the vertex list for both, since a world name must be unique.
+    names: Dict[Facet, World] = {}
+    seen: Dict[World, Facet] = {}
+    for F in facets:
+        w = model.world_of_facet.get(F, label_facet(F))
+        if w in seen:
+            names[seen[w]] = label_facet(seen[w])
+            w = label_facet(F)
+        names[F], seen[w] = w, F
+    knowledge: Dict[Agent, Set] = {a: set() for a in agents}
+    belief: Dict[Agent, Set] = {a: set() for a in agents}
+    serial = True
+    for a in agents:
+        by_vertex: Dict[Node, List[Facet]] = {}
+        for F in facets:
+            by_vertex.setdefault(model.pi(a, F), []).append(F)
+        for group in by_vertex.values():
+            believed = [Y for Y in group if Y in model.belief_facets.get(a, ())]
+            serial = serial and bool(believed)
+            for X in group:
+                for Y in group:
+                    knowledge[a].add((names[X], names[Y]))
+                for Y in believed:
+                    belief[a].add((names[X], names[Y]))
+    frame = KnowledgeBeliefFrame(
+        agents, names.values(), knowledge, belief, axiom_d=serial,
+    )
+    valuation: Dict = {}
+    if assignment:
+        from assignment import lift_to_facets  # local: assignment imports this module
+
+        for atom, fs in lift_to_facets(model, assignment).items():
+            valuation[atom] = {names[F] for F in fs if F in names}
+    return Relational(frame, valuation, {w: F for F, w in names.items()})

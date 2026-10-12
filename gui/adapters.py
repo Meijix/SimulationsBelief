@@ -56,7 +56,7 @@ from relational_frame import RelationalFrame  # noqa: E402
 from semantics import holds_kripke, lift_valuation  # noqa: E402
 import copy  # noqa: E402
 from assignment import drop_inconsistent, facet_inconsistencies, maximal_complex  # noqa: E402
-from simplicial import Node, SimplicialBeliefModel, label_node, to_simplicial  # noqa: E402
+from simplicial import Node, SimplicialBeliefModel, label_node, to_relational, to_simplicial  # noqa: E402
 from visualization import PALETTE, visualize  # noqa: E402
 from visualization import show as _show  # noqa: E402
 
@@ -903,12 +903,43 @@ def run_simplicial(
     ))
     result.text_diagrams.append(("Complejo simplicial", str(model)))
     result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
-    back = StepReport("2 · Modelo relacional equivalente")
-    back.skipped.append(
-        "el complejo se definió directamente; la traducción inversa "
-        "(complejo → modelo de Kripke) no está implementada en el núcleo"
+    # -- Step 2: the Kripke model the complex IS (the functor G_B, docs/12). --
+    # One world per facet, knowledge = sharing a vertex, belief = the facets
+    # of S_a; KD45 or K45 read off the geometry. Vertices in no facet have
+    # no world and are left out, with a note.
+    back = StepReport("2 · Modelo relacional equivalente (complejo → Kripke)")
+    try:
+        rel = to_relational(model, assignment, ignore_isolated=True)
+    except ValueError as exc:
+        back.failed.append(str(exc))
+        result.steps.append(back)
+        return result
+    name = {n: v for v, n in by_name.items()}
+    loose = sorted(name.get(n, label_node(n)) for n in model.isolated_nodes())
+    if loose:
+        back.missing.append(
+            "vértices en ninguna faceta no tienen mundo en el modelo de Kripke "
+            f"(quedan fuera de la equivalencia, docs/12 §3.3): {', '.join(loose)}"
+        )
+    logic = "KD45" if rel.frame.axiom_d else "K45"
+    back.completed.append(
+        f"complejo → modelo de Kripke (G_B): {len(rel.frame.worlds)} mundos, uno por "
+        "faceta; R_a = compartir el vértice de a, Q_a = facetas de S_a con ese vértice; "
+        + ("conocimiento puro (Q_a = R_a)" if model.is_knowledge_only else
+           f"creencia {logic} (D ⟺ sin perspectivas aisladas)")
     )
     result.steps.append(back)
+    if model.is_knowledge_only:
+        kripke, kw = rel.frame.knowledge, {"logic": "S5"}
+    else:
+        kripke, kw = rel.frame, {}
+    result.figures.append((
+        "Fig. 3 · modelo de Kripke equivalente (G_B): mundos = facetas, R_a = compartir "
+        "el vértice de a (línea fina), Q_a = facetas de S_a (flecha gruesa)",
+        Path(show(kripke, _fname("gui_fig1_general", tag), "Modelo relacional equivalente",
+                  output_dir=str(OUTPUTS), valuation=rel.valuation or None, **kw)),
+    ))
+    result.text_diagrams.append(("Modelo relacional equivalente", visualize(rel.frame)))
     return result
 
 
