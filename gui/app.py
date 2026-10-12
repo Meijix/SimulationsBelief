@@ -124,9 +124,17 @@ from adapters import (
     run_simplicial,
     maximal_facets,
     list_saved,
-    load_workspace,
+    load_workspace_full,
     save_workspace,
     workspace_payload,
+    ACTION_EXAMPLES,
+    ACTION_MODES,
+    UPDATE_KINDS,
+    action_node_names,
+    action_problems,
+    apply_action,
+    blank_action,
+    describe_action,
     simplicial_state_from_editor,
     run_pipeline_from_seeds,
     seeds_from_editor,
@@ -404,7 +412,11 @@ def index() -> None:
     #          "origin": {...}|None}  where it came from (e.g. which action)
     docs: list = []
     ws = {"active": None, "next": 1, "loading": False,
-          "comparing": False, "compare": []}
+          "comparing": False, "compare": [],
+          # The action layer (GitHub #6/#13/#18): action specs are workspace-
+          # level, not per model -- the same action is applied to several
+          # models. ``action`` is the index of the one being edited.
+          "actions": [], "action": None}
 
     def current() -> dict:
         """The active document."""
@@ -560,7 +572,7 @@ def index() -> None:
 
             def do_save() -> None:
                 try:
-                    path = save_workspace(docs, name_box.value or "espacio")
+                    path = save_workspace(docs, name_box.value or "espacio", ws["actions"])
                 except OSError as exc:
                     ui.notify(f"No se pudo guardar: {exc}", type="negative")
                     return
@@ -577,7 +589,7 @@ def index() -> None:
     def open_saved(path, replace: bool, dlg=None) -> None:
         """Open a saved workspace, adding to the bar or replacing it."""
         try:
-            loaded = load_workspace(path)
+            loaded, actions = load_workspace_full(path)
         except (OSError, ValueError) as exc:
             ui.notify(str(exc), type="warning")
             return
@@ -588,8 +600,11 @@ def index() -> None:
         if replace:
             docs.clear()
             ws["compare"] = []
+            ws["actions"] = actions
         else:
             current()["state"] = copy.deepcopy(live_state())
+            ws["actions"].extend(actions)
+        ws["action"] = (len(ws["actions"]) - 1) if ws["actions"] else None
         first = None
         for d in loaded:
             doc = new_doc(d["name"], d["state"], readonly=d["readonly"], origin=d["origin"])
@@ -608,8 +623,8 @@ def index() -> None:
                     .classes("text-sm text-grey-5")
             for path in saved:
                 try:
-                    count = len(load_workspace(path))
-                    detail = f"{count} modelo(s)"
+                    models, acts = load_workspace_full(path)
+                    detail = f"{len(models)} modelo(s)" + (f", {len(acts)} acción(es)" if acts else "")
                 except (OSError, ValueError):
                     detail = "archivo no legible"
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
@@ -629,7 +644,7 @@ def index() -> None:
         import json
 
         current()["state"] = copy.deepcopy(live_state())
-        payload = workspace_payload([current()])
+        payload = workspace_payload([current()], ws["actions"])
         data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
         ui.download.content(data, f"{current()['name']}.json")
 
@@ -835,6 +850,19 @@ def index() -> None:
                     .props("outline dense")
                 formula_input.on("keydown.enter", lambda: eval_formula())
                 formula_out = ui.column().classes("w-full gap-2")
+
+            # ---- Simplicial actions (GitHub #6/#13/#18) -------------------- #
+            # Workspace-level card: actions are edited here and APPLIED to the
+            # active model; each result opens as a read-only document (drawn,
+            # evaluated, saved and compared like any other). The interface is
+            # complete; the products themselves are the action layer's: today
+            # only the knowledge product exists (simplicial_actions.update_model,
+            # spec-b), the belief/memory/revision ones are offered but PENDING
+            # (Taiba, #6/#15) -- see adapters.UPDATE_KINDS. Painted by
+            # paint_actions() from ws["actions"].
+            with ui.card().classes(CARD).props(FLAT):
+                _card_title("Acciones simpliciales")
+                actions_box = ui.column().classes("w-full gap-2")
 
         with ui.column().classes("grow min-w-0 gap-4"):
             # ---- Read-only notice (derived documents) ---------------------- #
@@ -1050,6 +1078,7 @@ def index() -> None:
         paint_chips()
         paint_editor()
         paint_atoms()
+        paint_actions()        # the event rows follow the active model's agents
         update_preview()
 
     # ----------------------------------------------------------------------- #
@@ -1120,6 +1149,232 @@ def index() -> None:
                   else "ya estaban todas las facetas consistentes", type="info")
         if added:
             repaint_all()
+
+    # ----------------------------------------------------------------------- #
+    # Simplicial actions: editor + "apply to the active model". Same strategy
+    # as the other editors (every structural change repaints from the spec).
+    # The editor mirrors the complex editor on purpose: an event IS a facet of
+    # action nodes (one per agent), pre/post ARE vertex atoms on those nodes,
+    # so whoever can declare a complex can declare an action. PENDING pieces
+    # (Taiba, #6/#15) are the belief/memory/revision products: the "tipo de
+    # actualización" select lists them disabled, and apply_action refuses them
+    # with a message until adapters.UPDATE_KINDS gets their functions.
+    # ----------------------------------------------------------------------- #
+    def selected_action() -> dict | None:
+        i = ws["action"]
+        return ws["actions"][i] if ws["actions"] and i is not None and i < len(ws["actions"]) else None
+
+    def add_action() -> None:
+        ws["actions"].append(blank_action(state["agents"], f"acción {len(ws['actions']) + 1}"))
+        ws["action"] = len(ws["actions"]) - 1
+        paint_actions()
+
+    def remove_action(index: int) -> None:
+        ws["actions"].pop(index)
+        ws["action"] = (len(ws["actions"]) - 1) if ws["actions"] else None
+        paint_actions()
+
+    def select_action(index: int) -> None:
+        ws["action"] = index
+        paint_actions()
+
+    def load_action_example(key: str) -> None:
+        spec = copy.deepcopy(ACTION_EXAMPLES[key]["spec"])
+        # The example names agents a/b; an action over other agents needs
+        # its own nodes, so the isolated table is re-keyed to the model's.
+        spec["isolated"] = {a: spec["isolated"].get(a, []) for a in state["agents"]}
+        ws["actions"].append(spec)
+        ws["action"] = len(ws["actions"]) - 1
+        paint_actions()
+
+    def add_event(spec: dict) -> None:
+        taken = {e["name"] for e in spec["events"]}
+        n = len(spec["events"]) + 1
+        while f"e{n}" in taken:
+            n += 1
+        spec["events"].append({"name": f"e{n}", "nodes": {a: "" for a in state["agents"]}})
+        paint_actions()
+
+    def remove_event(spec: dict, index: int) -> None:
+        spec["events"].pop(index)
+        paint_actions()
+
+    def add_isolated(spec: dict, agent: str, widget) -> None:
+        name = _take(widget)
+        if not name:
+            return
+        if name in action_node_names(spec):
+            ui.notify(f"el nodo de acción '{name}' ya existe", type="warning")
+            return
+        spec.setdefault("isolated", {}).setdefault(agent, []).append(name)
+        paint_actions()
+
+    def remove_isolated(spec: dict, agent: str, name: str) -> None:
+        spec["isolated"][agent].remove(name)
+        paint_actions()
+
+    def add_action_atom(spec: dict, widget) -> None:
+        name = _take(widget)
+        if not name:
+            return
+        for table in ("pre", "post"):
+            spec.setdefault(table, {}).setdefault(name, {"true": [], "false": []})
+        paint_actions()
+
+    def remove_action_atom(spec: dict, name: str) -> None:
+        for table in ("pre", "post"):
+            spec.get(table, {}).pop(name, None)
+        paint_actions()
+
+    def apply_clicked() -> None:
+        """Apply the selected action to the ACTIVE model; the result opens as a document."""
+        spec = selected_action()
+        if spec is None:
+            ui.notify("Primero define (o carga) una acción.", type="warning")
+            return
+        problems = action_problems(spec, state["agents"])
+        if problems:
+            ui.notify("La acción no está completa: " + problems[0], type="warning")
+            return
+        try:
+            doc_spec = apply_action(live_state(), spec, model_name=current()["name"])
+        except NotImplementedError as exc:
+            # PENDING product (Taiba): the interface is ready, the function is not.
+            ui.notify(str(exc), type="warning", timeout=6000)
+            return
+        except ValueError as exc:
+            ui.notify(str(exc).splitlines()[0], type="negative", timeout=6000)
+            return
+        current()["state"] = copy.deepcopy(live_state())
+        doc = new_doc(doc_spec["name"], doc_spec["state"], readonly=True,
+                      origin=doc_spec["origin"])
+        activate(doc["id"])
+        ui.notify(f"Resultado abierto como «{doc['name']}» (sólo lectura). "
+                  "Compáralo con su modelo de entrada desde la barra.", type="positive")
+
+    def paint_actions() -> None:
+        actions_box.clear()
+        agents = state["agents"]
+        with actions_box:
+            # The list: one chip per action, the selected one in lime.
+            with ui.row().classes("w-full items-center gap-2"):
+                for i, a in enumerate(ws["actions"]):
+                    sel = i == ws["action"]
+                    ui.chip(a.get("name") or f"acción {i + 1}", icon="bolt", removable=True,
+                            color=POSTER["lime"] if sel else "rgba(255,255,255,.14)",
+                            text_color=POSTER["surface"] if sel else "white",
+                            on_click=lambda _, k=i: select_action(k),
+                            on_value_change=lambda e, k=i: remove_action(k))
+                ui.button(icon="add", on_click=lambda: add_action()) \
+                    .props("round dense flat").tooltip("Acción nueva")
+            ui.select({k: v["label"] for k, v in ACTION_EXAMPLES.items()}, value=None,
+                      label="cargar acción de ejemplo",
+                      on_change=lambda e: e.value and load_action_example(e.value)) \
+                .props("dense outlined options-dense").classes("w-full")
+            spec = selected_action()
+            if spec is None:
+                ui.label("Una acción es un complejo de EVENTOS: en cada evento, un nodo "
+                         "de acción por agente; cada nodo puede exigir átomos "
+                         "(precondición) y fijarlos (postcondición). Se aplica al "
+                         "modelo activo y el resultado se abre como modelo nuevo."
+                         ).classes("text-xs text-grey-5")
+                return
+            if not agents:
+                ui.label("Agrega agentes al modelo activo: los eventos llevan un nodo "
+                         "por agente.").classes("text-xs text-grey-5")
+                return
+            # ---- name, update kind, compatibility mode ---------------------- #
+            ui.input("nombre de la acción", value=spec.get("name", ""),
+                     on_change=lambda e: spec.__setitem__("name", e.value)) \
+                .props("dense outlined").classes("w-full") \
+                .on("blur", lambda: paint_actions())
+            ui.select({k: v[0] for k, v in UPDATE_KINDS.items()},
+                      value=spec.get("update", "knowledge"), label="tipo de actualización",
+                      on_change=lambda e: spec.__setitem__("update", e.value)) \
+                .props("dense outlined options-dense").classes("w-full")
+            if UPDATE_KINDS[spec.get("update", "knowledge")][1] is None:
+                ui.label("Pendiente: este producto aún no está implementado en el "
+                         "núcleo (capa de acciones de Taiba). La acción se puede "
+                         "definir y guardar; aplicarla avisará.") \
+                    .classes("text-xs").style(f"color:{POSTER['yellow']}")
+            ui.select(ACTION_MODES, value=int(spec.get("mode", 3)),
+                      label="compatibilidad vértice / nodo de acción",
+                      on_change=lambda e: spec.__setitem__("mode", int(e.value))) \
+                .props("dense outlined options-dense").classes("w-full")
+            # ---- events: one action node per agent (UCF, like facets) ------ #
+            ui.label("Eventos (un nodo de acción por agente)").classes("eyebrow mt-1")
+            colors = agent_color_map(agents)
+            for i, ev in enumerate(spec["events"]):
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.input("evento", value=ev["name"],
+                             on_change=lambda e, v=ev: v.__setitem__("name", e.value)) \
+                        .props("dense outlined").classes("w-24")
+                    for agent in agents:
+                        ui.input(agent, value=ev["nodes"].get(agent, ""),
+                                 on_change=lambda e, v=ev, a=agent:
+                                     v["nodes"].__setitem__(a, (e.value or "").strip())) \
+                            .props("dense outlined").classes("grow min-w-[64px]") \
+                            .style(f"border-bottom:2px solid {colors[agent]}") \
+                            .on("blur", lambda: paint_actions())
+                    ui.button(icon="delete", on_click=lambda _, k=i: remove_event(spec, k)) \
+                        .props("flat dense color=grey")
+            ui.button("añadir evento", icon="add", on_click=lambda: add_event(spec)) \
+                .props("flat dense")
+            # ---- isolated action nodes (in no event) ------------------------ #
+            with ui.expansion("nodos de acción aislados (en ningún evento)") \
+                    .classes("w-full text-xs"):
+                for agent in agents:
+                    with ui.row().classes("w-full no-wrap items-center gap-2"):
+                        box = ui.input(f"nuevo nodo de {agent}").props("dense outlined") \
+                            .classes("grow")
+                        ui.button(icon="add", on_click=lambda _, a=agent, w=box:
+                                  add_isolated(spec, a, w)).props("round dense")
+                    with ui.row().classes("w-full gap-2"):
+                        for name in spec.get("isolated", {}).get(agent, []):
+                            ui.chip(name, removable=True, color=colors[agent],
+                                    text_color="white",
+                                    on_value_change=lambda e, a=agent, n=name:
+                                        remove_isolated(spec, a, n))
+            # ---- pre / post conditions: vertex atoms on action nodes -------- #
+            ui.label("Precondiciones y postcondiciones (átomos sobre nodos de acción)") \
+                .classes("eyebrow mt-1")
+            nodes = action_node_names(spec)
+            with ui.row().classes("w-full no-wrap items-center gap-2"):
+                atom_box = ui.input("átomo (p. ej. uno del modelo)").props("dense outlined") \
+                    .classes("grow")
+                ui.button(icon="add", on_click=lambda: add_action_atom(spec, atom_box)) \
+                    .props("round dense")
+                atom_box.on("keydown.enter", lambda: add_action_atom(spec, atom_box))
+            atoms = sorted(set(spec.get("pre", {})) | set(spec.get("post", {})))
+            for atom in atoms:
+                for table, label in (("pre", "exige"), ("post", "fija")):
+                    cond = spec.setdefault(table, {}).setdefault(atom, {"true": [], "false": []})
+                    with ui.row().classes("w-full no-wrap items-center gap-2"):
+                        ui.label(f"{atom} · {label}").classes("font-mono text-xs w-20")
+                        ui.select(nodes, multiple=True, value=cond["true"], label="verdadero",
+                                  on_change=lambda e, c=cond: c.__setitem__("true", list(e.value))) \
+                            .props("use-chips dense").classes("grow")
+                        ui.select(nodes, multiple=True, value=cond["false"], label="falso",
+                                  on_change=lambda e, c=cond: c.__setitem__("false", list(e.value))) \
+                            .props("use-chips dense").classes("grow")
+                        if table == "pre":
+                            ui.button(icon="delete",
+                                      on_click=lambda _, n=atom: remove_action_atom(spec, n)) \
+                                .props("flat dense color=grey")
+            # ---- status + apply --------------------------------------------- #
+            problems = action_problems(spec, agents)
+            if problems:
+                ui.label("Falta: " + "; ".join(problems)).classes("text-xs") \
+                    .style(f"color:{POSTER['yellow']}")
+            else:
+                ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
+                        f"{html.escape(describe_action(spec, agents))}</pre>")
+            with ui.row().classes("w-full items-center gap-2"):
+                ui.button("Aplicar al modelo activo", icon="play_arrow",
+                          on_click=lambda: apply_clicked()) \
+                    .props("unelevated dense color=primary text-color=dark")
+                ui.label("El resultado se abre como modelo de sólo lectura; "
+                         "compáralo con su entrada.").classes("text-xs text-grey-5")
 
     def set_facet(facet: dict, key: str, value, agent: str | None = None) -> None:
         if agent is None:

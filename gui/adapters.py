@@ -1013,8 +1013,13 @@ SAVED = ROOT / "saved_models"
 WORKSPACE_FORMAT = "simulationsbelief-workspace/1"
 
 
-def workspace_payload(docs: List[dict]) -> dict:
-    """The JSON-ready form of a list of documents (ids and run results are not kept)."""
+def workspace_payload(docs: List[dict], actions: List[dict] | None = None) -> dict:
+    """The JSON-ready form of a workspace: its documents and its action specs.
+
+    Document ids and run results are not kept (results are recomputed on
+    demand, which keeps the files small and the format independent of the
+    figures). ``actions`` are the editor specs of :func:`blank_action`.
+    """
     import datetime
 
     return {
@@ -1025,27 +1030,29 @@ def workspace_payload(docs: List[dict]) -> dict:
              "readonly": bool(d.get("readonly", False)), "origin": d.get("origin")}
             for d in docs
         ],
+        "actions": [copy.deepcopy(a) for a in (actions or [])],
     }
 
 
-def save_workspace(docs: List[dict], name: str) -> Path:
-    """Write ``docs`` to ``saved_models/<name>.json`` and return the path."""
+def save_workspace(docs: List[dict], name: str, actions: List[dict] | None = None) -> Path:
+    """Write ``docs`` (and ``actions``) to ``saved_models/<name>.json`` and return the path."""
     import json
     import re
 
     SAVED.mkdir(exist_ok=True)
     slug = re.sub(r"[^\w\-. ]+", "_", name).strip() or "espacio"
     path = SAVED / (slug if slug.endswith(".json") else slug + ".json")
-    path.write_text(json.dumps(workspace_payload(docs), ensure_ascii=False, indent=1),
+    path.write_text(json.dumps(workspace_payload(docs, actions), ensure_ascii=False, indent=1),
                     encoding="utf-8")
     return path
 
 
-def load_workspace(path: Path) -> List[dict]:
-    """Read a workspace file back into documents (``name/state/readonly/origin``).
+def load_workspace_full(path: Path) -> Tuple[List[dict], List[dict]]:
+    """``(documents, action specs)`` of a workspace file.
 
-    Each state is laid over :func:`blank_state`, so a file written before a
-    key existed still opens: missing switches take their defaults.
+    Each state is laid over :func:`blank_state`, and each action over
+    :func:`blank_action`, so a file written before a key existed still opens:
+    missing fields take their defaults.
 
     Raises:
         ValueError: if the file is not a workspace of a known format.
@@ -1064,7 +1071,17 @@ def load_workspace(path: Path) -> List[dict]:
                      "readonly": bool(m.get("readonly", False)), "origin": m.get("origin")})
     if not docs:
         raise ValueError(f"{path} no contiene modelos")
-    return docs
+    actions = []
+    for a in data.get("actions", []):
+        spec = blank_action([])
+        spec.update(a or {})
+        actions.append(spec)
+    return docs, actions
+
+
+def load_workspace(path: Path) -> List[dict]:
+    """The documents of a workspace file (see :func:`load_workspace_full`)."""
+    return load_workspace_full(path)[0]
 
 
 def list_saved() -> List[Path]:
@@ -1072,6 +1089,234 @@ def list_saved() -> List[Path]:
     if not SAVED.exists():
         return []
     return sorted(SAVED.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+
+
+# --------------------------------------------------------------------------- #
+# Simplicial ACTIONS (GitHub #6, #13, #18). The GUI side of the action layer:
+# an action is edited as a spec with the same shapes the complex editor uses
+# (events are facets of action nodes, one per agent; pre/post conditions are
+# vertex atoms), applied to the active model, and its result opens as a
+# read-only document that is drawn, evaluated, saved and compared like any
+# other. The spec, JSON-friendly:
+#
+#   {"name": str,
+#    "events":   [{"name": "e1", "nodes": {agent: action-node name}}],  (UCF)
+#    "isolated": {agent: [action-node names in no event]},
+#    "pre":      {atom: {"true": [node names], "false": [node names]}},  (as vatoms)
+#    "post":     {atom: {"true": [...], "false": [...]}},
+#    "mode":     1 | 2 | 3,                      compatibility test, see ACTION_MODES
+#    "update":   "knowledge" | ...}              which product to run, see UPDATE_KINDS
+#
+# WHAT IS WIRED AND WHAT IS PENDING. ``simplicial_actions.update_model``
+# (spec-b) implements the KNOWLEDGE product: output nodes are compatible
+# (input, action) pairs, output facets the consistent products, and the
+# result is a knowledge complex (S_a = S, K45). The belief products -- with
+# and without memory -- and belief revision are Taiba's work in progress
+# (#6, #15); they are listed in UPDATE_KINDS so the interface already offers
+# the choice, and apply_action refuses them with a clear message until the
+# functions exist. Plugging one in is a one-line change in UPDATE_KINDS.
+# --------------------------------------------------------------------------- #
+from simplicial_actions import DEFAULT_MODE, MODES, SimplicialAction, update_model  # noqa: E402
+
+ACTION_MODES = {
+    # Labels follow simplicial_actions.compatible(): how an input vertex x and
+    # an action node y must agree on every atom to form the output node (x, y).
+    1: "1 · lo que observa el vértice debe estar en la precondición (x ⇒ pre)",
+    2: "2 · la precondición debe estar observada en el vértice (pre ⇒ x)",
+    3: "3 · basta que no se contradigan (por defecto)",
+}
+
+# update kind -> (label, function or None while pending). The function takes
+# (model, assignment, action, mode) and returns something with ``.model`` and
+# ``.assignment`` (the shape of simplicial_actions.UpdateModel).
+UPDATE_KINDS = {
+    "knowledge": ("conocimiento (producto de spec-b)", update_model),
+    # PENDING (Taiba, #6): belief product -- S_a of the result from the S_a of
+    # input and action, without memory.
+    "belief": ("creencia sin memoria (pendiente, #6)", None),
+    # PENDING (Taiba, #15): belief product with memory.
+    "belief_memory": ("creencia con memoria (pendiente, #15)", None),
+    # PENDING (Taiba, #6): belief revision as an action (cf. revision.py's rule).
+    "revision": ("revisión de creencias (pendiente, #6)", None),
+}
+
+
+def blank_action(agents: List[str], name: str = "acción") -> dict:
+    """An empty action spec with every key the editor and :func:`build_action` expect."""
+    return {"name": name, "events": [], "isolated": {a: [] for a in agents},
+            "pre": {}, "post": {}, "mode": DEFAULT_MODE, "update": "knowledge"}
+
+
+ACTION_EXAMPLES = {
+    "anuncio_noC": {
+        "label": "Anuncio público de ¬C (para el complejo del desastre)",
+        "spec": {
+            "name": "anuncio ¬C",
+            # One event everybody takes part in; each agent's action node
+            # requires ¬C, so the vertices observing C are incompatible with
+            # it and disappear: exactly the public announcement of ¬C.
+            "events": [{"name": "anuncio", "nodes": {"a": "a_oye", "b": "b_oye"}}],
+            "isolated": {"a": [], "b": []},
+            "pre": {"C": {"true": [], "false": ["a_oye", "b_oye"]}},
+            "post": {},
+            "mode": DEFAULT_MODE, "update": "knowledge",
+        },
+    },
+}
+
+
+def action_node_names(spec: dict) -> List[str]:
+    """Every action-node name the spec mentions (events first, then isolated), no repeats."""
+    seen: List[str] = []
+    for ev in spec.get("events", []):
+        for v in ev.get("nodes", {}).values():
+            if v and v not in seen:
+                seen.append(v)
+    for names in spec.get("isolated", {}).values():
+        for v in names:
+            if v and v not in seen:
+                seen.append(v)
+    return seen
+
+
+def _conditions(table: Dict[str, dict]) -> Dict[str, Dict[str, int]]:
+    """vatoms-shaped ``{atom: {"true": [...], "false": [...]}}`` -> ``{node: {atom: 0|1}}``."""
+    out: Dict[str, Dict[str, int]] = {}
+    for atom, spec in (table or {}).items():
+        for v in spec.get("true", []):
+            out.setdefault(v, {})[atom] = 1
+        for v in spec.get("false", []):
+            out.setdefault(v, {})[atom] = 0
+    return out
+
+
+def action_problems(spec: dict, agents: List[str]) -> List[str]:
+    """What stops the spec from being an action (empty list = it builds)."""
+    problems = []
+    if not spec.get("events"):
+        problems.append("la acción no tiene eventos")
+    for ev in spec.get("events", []):
+        missing = [a for a in agents if not ev.get("nodes", {}).get(a)]
+        if missing:
+            problems.append(
+                f"el evento '{ev.get('name')}' no tiene nodo de {', '.join(missing)} (UCF)"
+            )
+    for table in ("pre", "post"):
+        for atom, cond in (spec.get(table) or {}).items():
+            both = sorted(set(cond.get("true", [])) & set(cond.get("false", [])))
+            if both:
+                problems.append(f"{table}: el átomo '{atom}' está verdadero y falso en {both}")
+    if spec.get("update", "knowledge") not in UPDATE_KINDS:
+        problems.append(f"tipo de actualización desconocido: {spec.get('update')!r}")
+    if problems:
+        return problems
+    try:
+        build_action(spec, agents)
+    except ValueError as exc:
+        problems.append(str(exc))
+    return problems
+
+
+def build_action(spec: dict, agents: List[str]) -> SimplicialAction:
+    """The :class:`SimplicialAction` a spec describes (the core validates it)."""
+    events = {ev["name"]: {a: v for a, v in ev.get("nodes", {}).items() if v}
+              for ev in spec.get("events", [])}
+    return SimplicialAction.from_events(
+        agents, events, pre=_conditions(spec.get("pre")), post=_conditions(spec.get("post")),
+        isolated={a: list(v) for a, v in (spec.get("isolated") or {}).items() if v},
+    )
+
+
+def describe_action(spec: dict, agents: List[str]) -> str:
+    """The core's text rendering of the action (events, nodes, pre/post)."""
+    return build_action(spec, agents).describe()
+
+
+def apply_action(state: dict, spec: dict, model_name: str = "modelo") -> dict:
+    """Apply an action to a model state; returns the document of the result.
+
+    The model may be of any kind: a relational one is first translated to its
+    complex (general -> proper -> simplicial, as the direct editor's bootstrap
+    does), because the product is defined on complexes. Inconsistent facets
+    are dropped first (GitHub #21) and structural violations are refused, so
+    the product runs on a valid model only.
+
+    Returns:
+        ``{"name", "state", "readonly": True, "origin"}`` -- what the GUI's
+        ``new_doc`` takes. The state is a direct complex (see
+        :func:`state_from_simplicial_model`).
+
+    Raises:
+        ValueError: an invalid model or action, or a core refusal, with the
+            core's message.
+        NotImplementedError: the chosen update kind is not available yet
+            (see ``UPDATE_KINDS``: the pending products of the action layer).
+    """
+    update = spec.get("update", "knowledge")
+    label, fn = UPDATE_KINDS.get(update, (update, None))
+    if fn is None:
+        raise NotImplementedError(
+            f"la actualización «{label}» todavía no está implementada; por ahora sólo "
+            "el producto de conocimiento (simplicial_actions.update_model)"
+        )
+    if state["kind"] != "simplicial":
+        vertices, facets, vatoms = simplicial_state_from_editor(
+            state["kind"], state["agents"], state["worlds"], state["per_agent"],
+            state["atoms"], state["axiom_d"], not state.get("silent_defunct", False),
+        )
+        state = {**blank_state("simplicial"), "agents": list(state["agents"]),
+                 "vertices": vertices, "facets": facets, "vatoms": vatoms,
+                 "axiom_d": state["axiom_d"],
+                 "complex_kind": "knowledge" if state["kind"] == "knowledge" else "kb"}
+    agents = list(state["agents"])
+    model, by_name, _ = build_simplicial(agents, state["vertices"], state["facets"],
+                                         state["axiom_d"], validate=False,
+                                         knowledge_only=_knowledge_only(state))
+    assignment = simplicial_assignment(by_name, state["vatoms"])
+    model, _ = _consistent_part(model, assignment, by_name)
+    problems = model.violations()
+    if problems:
+        raise ValueError("el modelo no es válido:\n  - " + "\n  - ".join(problems))
+    action = build_action(spec, agents)
+    mode = int(spec.get("mode", DEFAULT_MODE))
+    if mode not in MODES:
+        raise ValueError(f"modo de compatibilidad desconocido: {mode}")
+    result = fn(model, assignment, action, mode)
+    # The product names output nodes by (input, action) pairs and facets by
+    # (world, event) pairs; state_from_simplicial_model turns both into the
+    # editor's names, so the result reads "a0⋅a_oye", "(nS, anuncio)".
+    out_model = result.model
+    out_model.node_names = {
+        n: "⋅".join(_pair_text(p) for p in sorted(map(_pair_parts, n.cls)))
+        for n in out_model.nodes
+    }
+    out_model.world_of_facet = {
+        F: "(" + ", ".join(map(str, w)) + ")" if isinstance(w, tuple) else w
+        for F, w in out_model.world_of_facet.items()
+    }
+    doc = doc_from_model(f"{model_name} ⋅ {spec.get('name') or 'acción'}", out_model,
+                         result.assignment,
+                         origin=f"acción «{spec.get('name') or 'acción'}» ({label}) "
+                                f"sobre {model_name}")
+    return doc
+
+
+def _pair_parts(pair) -> Tuple[str, str]:
+    """``Pair(input node, action node)`` -> the two nodes' own names, as text."""
+    def one(node) -> str:
+        cls = getattr(node, "cls", None)
+        if cls is None:
+            return str(node)
+        if len(cls) == 1:
+            member = next(iter(cls))
+            return "⋅".join(_pair_text(_pair_parts(member))) if isinstance(member, tuple) \
+                and len(member) == 2 and hasattr(member[0], "agent") else str(member)
+        return "{" + ",".join(sorted(map(str, cls))) + "}"
+    return one(pair[0]), one(pair[1])
+
+
+def _pair_text(parts: Tuple[str, str]) -> str:
+    return f"{parts[0]}⋅{parts[1]}"
 
 
 # --------------------------------------------------------------------------- #
