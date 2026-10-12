@@ -9,32 +9,32 @@ directly, with no API and no serialization), it runs in the browser (the 3D
 plotly figures are already HTML and are embedded as they are), and a single
 page is enough.
 
-VISUAL SYSTEM. It follows the project poster ("La geometría de una creencia
-falsa… y por qué importa", Coloquio de Lenguajes, UNAM 2026), so that the
-tool and its presentation look like one single thing:
+VISUAL SYSTEM. Navy and lime, nothing decorative: the palette comes from the
+project poster ("La geometría de una creencia falsa… y por qué importa",
+Coloquio de Lenguajes, UNAM 2026), the drawings do not (2026-10-11: the star
+field, the rainbow rings and the seal were removed so that the only things
+on screen are data and controls).
 
-    * Background: near-black navy (``POSTER["page"]``) with a subtle star
-      field made only of CSS gradients (no images). Surfaces (cards, header)
-      are a slightly lighter navy with a translucent white border; there are
-      NO grey shadows, the only "elevation" is the lime-green halo of the
-      preview (the live element).
+    * Background: plain near-black navy (``POSTER["page"]``). Surfaces
+      (cards, header) are a slightly lighter navy with a translucent white
+      border; there are NO grey shadows, the only "elevation" is the
+      lime-green halo of the preview (the live element).
     * Typography: Inter for the interface, JetBrains Mono for formulas and
-      diagrams (Google Fonts). Three fixed levels: the card EYEBROW in orange
-      small caps with wide tracking (``_card_title``; it is the "COLOQUIO
-      DE …" line of the poster), content in white/light grey, and text-xs
-      grey notes.
-    * Color: the primary is the poster's LIME GREEN (the dividing rule and
-      the octahedron), reserved for the "Correr pipeline" button, the rule
-      under the header and the preview halo. The six rainbow rings of the
-      poster give the ROLE colors (``POSTER``): green = valid / ok, yellow =
-      to be completed, pink = rejected / error, cyan = completed by a
-      closure, blue = information. Each agent still carries in its chips the
-      SAME Okabe-Ito color as its edges in the figures (``agent_color_map``):
-      that thread between editor and results does not change.
-    * Header: navy with a lime rule at the bottom; on the right, the
-      concentric rings with the octahedron (inline SVG, clipped by the edge
-      as in the poster) and on the left the small pink/yellow ring seal as
-      a logo.
+      diagrams (Google Fonts). Three fixed levels: the card EYEBROW in muted
+      slate small caps with wide tracking (``_card_title``), content in
+      white/light grey, and text-xs grey notes.
+    * Color: ONE accent, the poster's LIME GREEN, for everything that is
+      action or good news -- the "Correr pipeline" button, the rule under
+      the header, the preview halo, "válido", what a closure completed. Two
+      status hues besides it (``POSTER``): amber = to be completed / stale,
+      rose = rejected / error. Anything that is a label rather than a
+      verdict (the logic, "propio", information) is slate. Each agent keeps
+      in its chips the SAME Okabe-Ito color as its edges in the figures
+      (``agent_color_map``): that is data, not chrome, and the thread between
+      editor and results does not change.
+    * Header: a wrapping flex row (CSS ``.poster-header``): title block on
+      the left, controls on the right; on narrow windows the tagline hides
+      first and then the controls drop below the title, never overlapping.
     * Figures: each one on a light "sheet" (the Graphviz PNGs have a white
       background) with an italic caption below, paper-figure style, limited
       in height and expandable to full screen with one click (lightbox).
@@ -153,14 +153,18 @@ POSTER = {
     "page": "#0a0e1f",      # page background (near-black navy)
     "surface": "#121833",   # cards and header
     "line": "rgba(255,255,255,.10)",  # card borders
-    "lime": "#c9ee6b",      # rule, octahedron, primary button
-    "orange": "#f4a531",    # eyebrows (the "COLOQUIO DE …" line)
-    "green": "#79c94b",     # ring 1 · role: valid / ok
-    "yellow": "#f7d94c",    # ring 2 · role: to be completed
-    "pink": "#ec4b8a",      # ring 3 · role: rejected / error
-    "purple": "#8a5cf5",    # ring 4 · decorative
-    "blue": "#3d7bf6",      # ring 5 · role: information
-    "cyan": "#38d6f0",      # ring 6 · role: completed by a closure
+    "lime": "#c9ee6b",      # THE accent: primary button, live halo, ok, completed
+    "muted": "#9aa6c2",     # eyebrows and neutral chips (slate over navy)
+    # Status hues, the only other colour the chrome uses: one for "to be
+    # completed" and one for "rejected / error". Everything that is not a
+    # status (KD45, propio, info) is neutral slate. Agents keep their own
+    # Okabe-Ito colours in chips and figures: that is data, not chrome.
+    "yellow": "#e8c35a",    # role: to be completed / stale / warning
+    "pink": "#e5648f",      # role: rejected / error
+    # Kept for callers that still name the old rainbow roles; all resolved to
+    # the two-accent system above so no third hue sneaks back in.
+    "green": "#c9ee6b", "cyan": "#c9ee6b", "blue": "#9aa6c2", "purple": "#9aa6c2",
+    "orange": "#9aa6c2",
 }
 
 # Base class of ALL cards: flat, translucent border over navy and wide corners
@@ -170,59 +174,9 @@ CARD = "w-full rounded-xl poster-card"
 FLAT = "flat"
 
 
-def _rings_svg(size: int, colors: list, center: str, octa: bool) -> str:
-    """The poster's concentric rings as inline SVG.
-
-    ``colors`` goes from the outside in, every ring with the same thickness;
-    ``center`` is the color of the central disc and ``octa`` draws the
-    lime-green wireframe octahedron on top (the poster figure: a simplicial
-    complex seen as a polyhedron). It is generated here, not shipped as a
-    file, so the GUI does not depend on any static resource of its own.
-    """
-    r = size / 2
-    # As in the poster, the central disc takes a bit more than half the radius
-    # and the rings share the rest in equal parts.
-    core = r * 0.55
-    step = (r - core) / len(colors)
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {size} {size}" '
-             f'width="{size}" height="{size}">']
-    for i, c in enumerate(colors):
-        parts.append(f'<circle cx="{r}" cy="{r}" r="{r - i * step:.1f}" fill="{c}"/>')
-    parts.append(f'<circle cx="{r}" cy="{r}" r="{core:.1f}" fill="{center}"/>')
-    if octa:
-        # Projected octahedron: a slightly tilted "equatorial" square with the
-        # two polar vertices above and below, all wireframe. It fits in the
-        # header band (see .poster-header min-height).
-        k = core * 0.45
-        top, bot = (r, r - k), (r, r + k)
-        eq = [(r - k * 0.9, r + k * 0.15), (r - k * 0.25, r + k * 0.45),
-              (r + k * 0.9, r - k * 0.15), (r + k * 0.25, r - k * 0.45)]
-        stroke = f'stroke="{POSTER["lime"]}" stroke-width="1" fill="none" opacity=".9"'
-        pts = " ".join(f"{x:.1f},{y:.1f}" for x, y in eq)
-        parts.append(f'<polygon points="{pts}" {stroke}/>')
-        for x, y in eq:
-            parts.append(f'<line x1="{top[0]}" y1="{top[1]:.1f}" x2="{x:.1f}" y2="{y:.1f}" {stroke}/>')
-            parts.append(f'<line x1="{bot[0]}" y1="{bot[1]:.1f}" x2="{x:.1f}" y2="{y:.1f}" {stroke}/>')
-    parts.append("</svg>")
-    return "".join(parts)
-
-
-# The two graphic motifs of the poster: the big rainbow with the octahedron
-# (clipped by the right edge of the header, as in the poster) and the small
-# pink/yellow seal that serves as a logo next to the title.
-RINGS_BIG = _rings_svg(
-    320,
-    [POSTER["green"], POSTER["yellow"], POSTER["pink"], POSTER["purple"],
-     POSTER["blue"], POSTER["cyan"]],
-    center="#0b1330", octa=True,
-)
-RINGS_SMALL = _rings_svg(
-    36, [POSTER["pink"], POSTER["yellow"]], center="#d63d8a", octa=False,
-)
-
-# Fonts + the CSS that Tailwind/Quasar do not cover: the star field (repeated
-# radial gradients only, no images), the navy surfaces, the lime halo of the
-# preview, the thin scrollbar and the pulsing dot.
+# Fonts + the CSS that Tailwind/Quasar do not cover: the navy surfaces, the
+# lime halo of the preview, the responsive header, the thin scrollbar and the
+# pulsing dot. No drawings: the page carries nothing that is not data or UI.
 HEAD_HTML = f"""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -230,23 +184,14 @@ HEAD_HTML = f"""
   :root {{
     --p-page: {POSTER["page"]}; --p-surface: {POSTER["surface"]};
     --p-line: {POSTER["line"]}; --p-lime: {POSTER["lime"]};
-    --p-orange: {POSTER["orange"]}; --p-pink: {POSTER["pink"]};
+    --p-muted: {POSTER["muted"]}; --p-pink: {POSTER["pink"]};
   }}
   body {{ font-family: 'Inter', 'Roboto', sans-serif; }}
   .font-mono, pre, code {{ font-family: 'JetBrains Mono', 'Fira Mono', monospace; }}
 
-  /* Star field: four layers of dots with different periods so the tiling
-     is not noticeable; fixed so it does not move with the scroll. */
-  body.body--dark {{
-    background-color: var(--p-page);
-    background-image:
-      radial-gradient(circle at 12% 18%, rgba(255,255,255,.55) 0 1px, transparent 1.6px),
-      radial-gradient(circle at 71% 63%, rgba(255,255,255,.35) 0 1px, transparent 1.6px),
-      radial-gradient(circle at 43% 86%, rgba(255,255,255,.45) 0 .7px, transparent 1.3px),
-      radial-gradient(circle at 88% 27%, rgba(255,255,255,.30) 0 1.2px, transparent 1.8px);
-    background-size: 640px 640px, 420px 420px, 530px 530px, 770px 770px;
-    background-attachment: fixed;
-  }}
+  /* Plain navy page: a data tool's background says nothing. (The poster's
+     star field was dropped: its dots read as noise next to the figures.) */
+  body.body--dark {{ background: var(--p-page); }}
 
   /* Surfaces: navy with a translucent border; no shadow (flat). */
   .poster-card {{ background: var(--p-surface) !important; border: 1px solid var(--p-line); box-shadow: none !important; }}
@@ -255,22 +200,50 @@ HEAD_HTML = f"""
                   box-shadow: 0 0 0 1px rgba(201,238,107,.25), 0 10px 40px rgba(201,238,107,.10) !important; }}
   /* Core error / bug: pink tint (the "rejected" ring of the poster). */
   .poster-bad {{ background: rgba(236,75,138,.10) !important; border-color: rgba(236,75,138,.45); }}
-  /* Light sheet behind the figures (the Graphviz PNGs have a white background). */
-  .fig-frame {{ background: #f4f5f9; border-radius: .5rem; padding: .75rem; }}
-  /* Card eyebrow: the orange small-caps line of the poster. */
-  .eyebrow {{ color: var(--p-orange); font-size: .68rem; font-weight: 600;
+  /* Light sheet behind the figures (Graphviz and matplotlib draw on white).
+     The sheet hugs the figure (fit-content) instead of spanning the card: a
+     narrow figure used to float in a wide grey rectangle. */
+  .fig-frame {{ background: #f4f5f9; border-radius: .5rem; padding: .75rem;
+                width: fit-content; max-width: 100%; margin: 0 auto; }}
+  /* Figure grid of the results: tall figures share a row two by two, wide
+     ones (the Hasse band, a flat strip of triangles) take the whole row. */
+  .fig-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }}
+  .fig-grid .fig-wide {{ grid-column: 1 / -1; }}
+  @media (max-width: 1100px) {{ .fig-grid {{ grid-template-columns: minmax(0, 1fr); }} }}
+  /* Card eyebrow: small caps in muted slate, so the only coloured things on a
+     card are its status chips and the agents. */
+  .eyebrow {{ color: var(--p-muted); font-size: .68rem; font-weight: 600;
               letter-spacing: .18em; text-transform: uppercase; }}
-  /* Header: navy, lime rule below, and the rainbow clipped at the right.
-     NOTE: no ``position`` here on purpose. Quasar leaves it ``fixed`` (which
-     already contains the absolutely positioned rings); setting ``relative``
-     put it back in the flow and duplicated its height as a gap below it. */
+  /* Header: navy with a lime rule, nothing else. It is a wrapping flex row:
+     the title block and the controls sit on one line when there is room and
+     the controls drop to a second line below the title when there is not,
+     instead of overlapping. NOTE: no ``position`` here on purpose (Quasar
+     keeps it ``fixed``; ``relative`` duplicated its height as a gap). */
   .poster-header {{ background: var(--p-surface) !important; border-bottom: 2px solid var(--p-lime);
-                    overflow: hidden; min-height: 88px; }}
-  /* Rainbow centre 60px from the right edge and at mid height (44px): half
-     the wheel is visible with the whole octahedron, clipped as on the poster. */
-  .poster-rings {{ position: absolute; right: -100px; top: -116px; width: 320px; height: 320px;
-                   pointer-events: none; opacity: .95; }}
-  .poster-seal {{ width: 36px; height: 36px; flex: none; }}
+                    display: flex; flex-wrap: wrap; align-items: center;
+                    column-gap: 1.5rem; row-gap: .5rem; min-height: 72px; }}
+  .header-title {{ min-width: 0; flex: 1 1 320px; }}
+  .header-title .q-item__label, .header-sub {{ overflow: hidden; text-overflow: ellipsis; }}
+  .header-controls {{ margin-left: auto; display: flex; align-items: center; gap: .75rem;
+                      flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }}
+  .header-example {{ width: 360px; max-width: calc(100vw - 3rem); }}
+  @media (max-width: 1100px) {{
+    .header-sub {{ display: none; }}            /* the tagline is the first thing to go */
+    .header-example {{ width: 280px; }}
+  }}
+  @media (max-width: 720px) {{
+    .header-controls {{ margin-left: 0; width: 100%; }}  /* controls on their own row */
+    .header-example {{ flex: 1 1 200px; width: auto; }}
+  }}
+  /* Body: editor (fixed 440px, sticky) beside the results; on narrow windows
+     the row wraps and the editor loses its stickiness and its own scroll,
+     so the page is one normal column instead of two cramped ones. */
+  .editor-row {{ flex-wrap: nowrap; }}
+  @media (max-width: 1000px) {{
+    .editor-row {{ flex-wrap: wrap; }}
+    .editor-col {{ width: 100% !important; position: static !important;
+                   max-height: none !important; overflow: visible !important; }}
+  }}
 
   .thin-scroll::-webkit-scrollbar {{ width: 6px; }}
   .thin-scroll::-webkit-scrollbar-thumb {{ background: rgba(255,255,255,.18); border-radius: 3px; }}
@@ -321,6 +294,37 @@ def _url(path) -> str:
     return f"/outputs/{path.name}?v={int(path.stat().st_mtime)}"
 
 
+def _figure_size(path) -> tuple[float, float] | None:
+    """``(width, height)`` of a figure file, from its header, without decoding it.
+
+    SVG (Graphviz/matplotlib write ``width="…pt" height="…pt"`` on the root
+    element) and PNG (the IHDR chunk) are enough for the figures this GUI
+    produces. Used only to decide the layout: whether a figure is tall or
+    wide. ``None`` when it cannot be told, which lays the figure out wide.
+    """
+    import re
+    import struct
+
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(2048)
+    except OSError:
+        return None
+    if head.startswith(b"\x89PNG") and len(head) >= 24:
+        w, h = struct.unpack(">II", head[16:24])
+        return float(w), float(h)
+    m = re.search(rb'<svg[^>]*?\swidth="([\d.]+)(?:pt|px)?"[^>]*?\sheight="([\d.]+)(?:pt|px)?"', head)
+    if m:
+        return float(m.group(1)), float(m.group(2))
+    return None
+
+
+def _is_wide(path) -> bool:
+    """A figure wider than 1.6 : 1 takes a whole row of the grid; others share one."""
+    size = _figure_size(path)
+    return size is None or size[1] == 0 or size[0] / size[1] > 1.6
+
+
 def _figure_img(path) -> None:
     """An ``<img>`` that shrinks to its content inside the sheet.
 
@@ -337,13 +341,14 @@ def _figure_img(path) -> None:
 
 
 def _card_title(text: str) -> None:
-    """Card title of the visual system: orange small-caps eyebrow."""
+    """Card title of the visual system: muted small-caps eyebrow."""
     ui.label(text).classes("eyebrow")
 
 
-# ROLE chips. The tones are rings of the poster's rainbow: translucent
-# background of the color and text in the same color, readable over navy (the
-# Quasar pastels -- green-1, red-1... -- looked washed out in dark mode).
+# ROLE chips: translucent background of the tone and text in the same tone,
+# readable over navy. Two accents only -- lime for "good / done", amber for
+# "to be completed", rose for "rejected" -- and slate for anything that is a
+# label rather than a verdict (the logic, "propio", information).
 _TONES = {
     "ok": POSTER["green"], "warn": POSTER["yellow"],
     "bad": POSTER["pink"], "done": POSTER["cyan"], "info": POSTER["blue"],
@@ -471,6 +476,7 @@ def index() -> None:
         apply_readonly(doc)
         repaint_all()
         doc["dirty"] = dirty
+        refresh_stale()                 # with the real dirty flag, not the repaint's
         formula_out.clear()
         render_outcome(doc["outcome"], results)
 
@@ -663,9 +669,13 @@ def index() -> None:
         lb_cap.set_text(caption)
         lightbox.open()
 
-    def figure_card(caption: str, path) -> None:
-        """Paper-style figure: grey frame, italic caption, click to enlarge."""
-        with ui.card().classes(CARD).props(FLAT):
+    def figure_card(caption: str, path, span: bool = False) -> None:
+        """Paper-style figure: grey frame, italic caption, click to enlarge.
+
+        ``span`` marks a wide figure inside a ``.fig-grid``: it takes the
+        whole row while tall ones sit two by two (see the CSS).
+        """
+        with ui.card().classes(CARD + (" fig-wide" if span else "")).props(FLAT):
             holder = ui.element("div").classes(
                 "w-full fig-frame cursor-zoom-in"
             )
@@ -674,31 +684,24 @@ def index() -> None:
             holder.on("click", lambda p=path, c=caption: open_lightbox(p, c))
             ui.label(caption).classes("text-xs italic text-grey-5 mt-2")
 
-    # ---- Header: navy with lime rule, poster seal + rainbow --------------- #
-    # wrap=False: with the default ``wrap`` Quasar measured the header as
-    # wrapped onto two rows and left a ~60px gap below it.
-    with ui.header(wrap=False).classes(
-        "poster-header text-white items-center justify-between px-6 py-3 "
-        "shadow-none"
-    ):
-        # Rainbow with octahedron, clipped by the right edge as in the
-        # poster; it goes first so it stays underneath the controls.
-        ui.html(RINGS_BIG).classes("poster-rings")
-        with ui.row().classes("items-center gap-3 no-wrap"):
-            ui.html(RINGS_SMALL).classes("poster-seal")
-            with ui.column().classes("gap-0"):
-                ui.label("La geometría de una creencia falsa") \
-                    .classes("text-xl font-extrabold text-white leading-tight")
-                ui.label("Una herramienta para construir, validar y traducir "
-                         "modelos de lógica epistémica · pipeline general → "
-                         "propio → simplicial") \
-                    .classes("text-xs italic text-grey-4")
-        with ui.row().classes("items-center gap-3 relative"):
+    # ---- Header: title on the left, controls on the right, nothing else -- #
+    # The layout is the CSS of .poster-header (a wrapping flex row), so the
+    # controls move below the title on narrow windows instead of overlapping;
+    # wrap=True lets Quasar size the header to its wrapped height.
+    with ui.header(wrap=True).classes("poster-header text-white px-6 py-3 shadow-none"):
+        with ui.column().classes("gap-0 header-title"):
+            ui.label("La geometría de una creencia falsa") \
+                .classes("text-xl font-extrabold text-white leading-tight")
+            ui.label("Una herramienta para construir, validar y traducir "
+                     "modelos de lógica epistémica · pipeline general → "
+                     "propio → simplicial") \
+                .classes("text-xs italic text-grey-4 header-sub")
+        with ui.element("div").classes("header-controls"):
             ui.select(
                 {k: ex["label"] for k, ex in EXAMPLES.items()},
                 value=None, label="cargar ejemplo",
                 on_change=lambda e: load_example(e.value),
-            ).props("dense outlined options-dense").classes("min-w-[360px]")
+            ).props("dense outlined options-dense").classes("header-example")
             # Lime with navy text: the only filled button on the page.
             run_btn = ui.button("Correr pipeline", icon="play_arrow",
                                 on_click=lambda: run_clicked()) \
@@ -708,167 +711,204 @@ def index() -> None:
     # ---- Models bar: the open documents and the comparison ---------------- #
     docs_bar = ui.row().classes("w-full items-center gap-2 px-4 pt-3")
 
-    with ui.row().classes("w-full no-wrap items-start gap-4 p-4") as editor_row:
+    # Two columns side by side; below 1000px the CSS (.editor-row) lets them
+    # wrap, so the editor takes the full width and the results follow under
+    # it instead of being squeezed into a 200px strip.
+    with ui.row().classes("w-full items-start gap-4 p-4 editor-row") as editor_row:
 
         # ---- Editing panel: sticky with its own scroll (thin scrollbar) ---- #
         with ui.column().classes(
-            "w-[440px] shrink-0 gap-4 sticky top-2 self-start "
+            "editor-col w-[440px] shrink-0 gap-4 sticky top-2 self-start "
             "max-h-[calc(100vh-150px)] overflow-y-auto pr-1 thin-scroll"
         ):
-            # ---- Identifiers ----------------------------------------------- #
-            with ui.card().classes(CARD).props(FLAT) as ident_card:
-                _card_title("Agentes y mundos")
-                # Document name: the one shown in the models bar and in the
-                # comparison panels.
-                name_in = ui.input("nombre del modelo") \
-                    .props("dense outlined").classes("w-full")
-                name_in.on("blur", lambda: rename_current())
-                name_in.on("keydown.enter", lambda: rename_current())
-                # The core's model kinds. Changing it repaints the editor (the
-                # rows change meaning), adjusts which switches apply and
-                # redraws the preview.
-                kind_in = ui.select(
-                    KINDS, value="kb", label="tipo de modelo",
-                    on_change=lambda e: set_kind(e.value),
-                ).props("dense outlined options-dense").classes("w-full")
-                with ui.row().classes("w-full no-wrap items-center gap-2"):
-                    agent_input = ui.input("nuevo agente") \
-                        .props("dense outlined").classes("grow")
-                    ui.button(icon="add", on_click=lambda: add_agent()) \
-                        .props("round dense")
-                agent_chips = ui.row().classes("w-full gap-2")
-                agent_input.on("keydown.enter", lambda: add_agent())
+            # The panel is four TABS -- Modelo · Átomos · Fórmulas · Acciones --
+            # instead of one 1900px stack of cards: what is edited most (the
+            # model) is always at hand, and atoms, formulas and actions are
+            # one click away without scrolling. Help paragraphs became
+            # tooltips on the switches, and the two drawing switches live
+            # under a collapsed "Opciones de dibujo".
+            with ui.tabs().classes("w-full").props(
+                "dense no-caps align=justify indicator-color=primary "
+                "active-color=primary"
+            ) as left_tabs:
+                tab_model = ui.tab("modelo", label="Modelo", icon="tune")
+                tab_atoms = ui.tab("atomos", label="Átomos", icon="label")
+                tab_formulas = ui.tab("formulas", label="Fórmulas", icon="calculate")
+                tab_actions = ui.tab("acciones", label="Acciones", icon="bolt")
+            # Quasar paints the panels on an opaque surface with padding; both
+            # are undone so the cards sit on the navy page like before.
+            with ui.tab_panels(left_tabs, value=tab_model).classes("w-full") \
+                    .style("background:transparent"):
+                with ui.tab_panel(tab_model).style("padding:0"), \
+                        ui.column().classes("w-full gap-4"):
+                    # ---- Identifiers ------------------------------------------ #
+                    with ui.card().classes(CARD).props(FLAT) as ident_card:
+                        _card_title("Agentes y mundos")
+                        # Document name: the one shown in the models bar and in
+                        # the comparison panels.
+                        name_in = ui.input("nombre del modelo") \
+                            .props("dense outlined").classes("w-full")
+                        name_in.on("blur", lambda: rename_current())
+                        name_in.on("keydown.enter", lambda: rename_current())
+                        # The core's model kinds. Changing it repaints the editor
+                        # (the rows change meaning), adjusts which switches apply
+                        # and redraws the preview.
+                        kind_in = ui.select(
+                            KINDS, value="kb", label="tipo de modelo",
+                            on_change=lambda e: set_kind(e.value),
+                        ).props("dense outlined options-dense").classes("w-full")
+                        with ui.row().classes("w-full no-wrap items-center gap-2"):
+                            agent_input = ui.input("nuevo agente") \
+                                .props("dense outlined").classes("grow")
+                            ui.button(icon="add", on_click=lambda: add_agent()) \
+                                .props("round dense")
+                        agent_chips = ui.row().classes("w-full gap-2")
+                        agent_input.on("keydown.enter", lambda: add_agent())
 
-                # Worlds go in their own container: a direct complex has no
-                # worlds (it has facets, declared in their own card), so for
-                # that kind the whole block is hidden.
-                with ui.column().classes("w-full gap-2") as worlds_box:
-                    with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
-                        world_input = ui.input("nuevo mundo") \
-                            .props("dense outlined").classes("grow")
-                        ui.button(icon="add", on_click=lambda: add_world()) \
-                            .props("round dense")
-                    world_chips = ui.row().classes("w-full gap-2")
-                    world_input.on("keydown.enter", lambda: add_world())
+                        # Worlds go in their own container: a direct complex has
+                        # no worlds (it has facets, declared in their own card),
+                        # so for that kind the whole block is hidden.
+                        with ui.column().classes("w-full gap-2") as worlds_box:
+                            with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
+                                world_input = ui.input("nuevo mundo") \
+                                    .props("dense outlined").classes("grow")
+                                ui.button(icon="add", on_click=lambda: add_world()) \
+                                    .props("round dense")
+                            world_chips = ui.row().classes("w-full gap-2")
+                            world_input.on("keydown.enter", lambda: add_world())
 
-                # The core's KD45/K45 switch (axiom_d), exposed as is: turning
-                # it off legalizes defunct beliefs (Q_a(w) = ∅).
-                axiom_d_in = ui.switch("Axioma D (KD45; apagado = K45)",
-                                       value=True)
+                        # The core's KD45/K45 switch (axiom_d), exposed as is:
+                        # turning it off legalizes defunct beliefs (Q_a(w) = ∅).
+                        axiom_d_in = ui.switch("Axioma D (KD45; apagado = K45)",
+                                               value=True).tooltip(
+                            "KD45 exige que todo agente crea algo en cada mundo "
+                            "(seriedad). Apagado (K45) una creencia vacía es legal: "
+                            "ahí el agente cree todo, ⊥ incluido.")
 
-                # Turning Axiom D off only LEGALIZES defunct belief; it does
-                # not produce it. The project convention is that silence
-                # about belief means "believe exactly what you know" (Q = R),
-                # in both logics, and that defunct belief is an explicit
-                # opt-in. Without this box the opt-in did not exist in the
-                # GUI: K45 was indistinguishable from KD45 and B_a ⊥ was
-                # unreachable. It is global (so is the core flag): it affects
-                # EVERY class with no belief marked.
-                silent_defunct_in = ui.switch(
-                    "Creencia vacía si no se marca nada (Q = ∅)", value=False,
-                )
-                ui.label(
-                    "Sólo con K45. Apagada, una clase sin creencia marcada "
-                    "cree lo que sabe (Q = R)."
-                ).classes("text-xs text-grey-5 -mt-2")
+                        # Turning Axiom D off only LEGALIZES defunct belief; it
+                        # does not produce it. The project convention is that
+                        # silence about belief means "believe exactly what you
+                        # know" (Q = R), in both logics, and that defunct belief
+                        # is an explicit opt-in. Without this box the opt-in did
+                        # not exist in the GUI: K45 was indistinguishable from
+                        # KD45 and B_a ⊥ was unreachable. It is global (so is
+                        # the core flag): it affects EVERY class with no belief
+                        # marked.
+                        silent_defunct_in = ui.switch(
+                            "Creencia vacía si no se marca nada (Q = ∅)", value=False,
+                        ).tooltip(
+                            "Sólo con K45. Apagada, una clase sin creencia marcada "
+                            "cree lo que sabe (Q = R).")
 
-                def _reset_silent_defunct() -> None:
-                    """KD45 forbids Q = ∅: going back to KD45 clears the box.
+                        def _reset_silent_defunct() -> None:
+                            """KD45 forbids Q = ∅: going back to KD45 clears the box.
 
-                    Leaving it checked but disabled would send the core a
-                    combination it rejects, and the user would see a validation
-                    error caused by a box they can no longer see active.
-                    """
-                    if axiom_d_in.value:
-                        silent_defunct_in.value = False
+                            Leaving it checked but disabled would send the core a
+                            combination it rejects, and the user would see a
+                            validation error caused by a box they can no longer
+                            see active.
+                            """
+                            if axiom_d_in.value:
+                                silent_defunct_in.value = False
 
-                # Changing the logic repaints the preview: the "to be
-                # completed" list and the red worlds come from the frame's
-                # contract (KD45 demands seriality, K45 does not), so without
-                # a repaint the preview kept judging with the previous axiom.
-                axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
-                axiom_d_in.on_value_change(lambda _: sync_switches())
-                axiom_d_in.on_value_change(lambda _: update_preview())
+                        # Changing the logic repaints the preview: the "to be
+                        # completed" list and the red worlds come from the frame's
+                        # contract (KD45 demands seriality, K45 does not), so
+                        # without a repaint the preview kept judging with the
+                        # previous axiom.
+                        axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
+                        axiom_d_in.on_value_change(lambda _: sync_switches())
+                        axiom_d_in.on_value_change(lambda _: update_preview())
 
-                # The relational figures omit what the logic already implies:
-                # reflexive loops and the second arrow of each symmetric pair
-                # (S5 is drawn undirected). This switch draws them all, as
-                # they are in the relation: it is the way to SEE what the
-                # closures added. It repaints the preview at once and, if
-                # there are results already, reruns the pipeline so that
-                # Figures 1 and 2 agree.
-                explicit_in = ui.switch(
-                    "Mostrar aristas implícitas (lazos y simetría)", value=False,
-                    on_change=lambda _: explicit_changed(),
-                )
-                ui.label(
-                    "Dibuja los lazos reflexivos y ambas direcciones de cada "
-                    "par simétrico en vez de darlos por sobreentendidos."
-                ).classes("text-xs text-grey-5 -mt-2")
+                        # Drawing options, collapsed: they change figures, not
+                        # the model, so they need not be in sight all the time.
+                        with ui.expansion("Opciones de dibujo", icon="brush") \
+                                .classes("w-full text-sm").props("dense"):
+                            # The relational figures omit what the logic already
+                            # implies: reflexive loops and the second arrow of
+                            # each symmetric pair (S5 is drawn undirected). This
+                            # switch draws them all, as they are in the relation:
+                            # it is the way to SEE what the closures added. It
+                            # repaints the preview at once and, if there are
+                            # results already, reruns the pipeline so that
+                            # Figures 1 and 2 agree.
+                            explicit_in = ui.switch(
+                                "Mostrar aristas implícitas (lazos y simetría)",
+                                value=False, on_change=lambda _: explicit_changed(),
+                            ).tooltip(
+                                "Dibuja los lazos reflexivos y ambas direcciones de "
+                                "cada par simétrico en vez de darlos por "
+                                "sobreentendidos.")
+                            # The lattice figure shows only vertices and facets
+                            # by default (issue #7): perspectives below, worlds
+                            # above. The full lattice, with every intermediate
+                            # face, is optional: with three agents it is already
+                            # hundreds of boxes. Since it only changes one figure
+                            # of the result, touching it reruns the pipeline if
+                            # there were results already.
+                            hasse_full_in = ui.switch(
+                                "Retículo de caras completo (todas las dimensiones)",
+                                value=False, on_change=lambda _: hasse_full_changed(),
+                            ).tooltip(
+                                "Apagado, el diagrama de Hasse sólo dibuja las "
+                                "perspectivas y los mundos, unidos cuando una es "
+                                "parte del otro.")
 
-                # The lattice figure shows only vertices and facets by default
-                # (issue #7): perspectives below, worlds above. The full
-                # lattice, with every intermediate face, is optional: with
-                # three agents it is already hundreds of boxes. Since it only
-                # changes one figure of the result, touching it reruns the
-                # pipeline if there were results already.
-                hasse_full_in = ui.switch(
-                    "Retículo de caras completo (todas las dimensiones)",
-                    value=False, on_change=lambda _: hasse_full_changed(),
-                )
-                ui.label(
-                    "Apagado, el diagrama de Hasse sólo dibuja las perspectivas "
-                    "y los mundos, unidos cuando una es parte del otro."
-                ).classes("text-xs text-grey-5 -mt-2")
+                    # ---- Per-agent relation editor ---------------------------- #
+                    editor_box = ui.column().classes("w-full gap-4")
 
-            # ---- Per-agent relation editor --------------------------------- #
-            editor_box = ui.column().classes("w-full gap-4")
+                with ui.tab_panel(tab_atoms).style("padding:0"):
+                    # ---- Atoms: the valuation v (where each atom is true) ----- #
+                    with ui.card().classes(CARD).props(FLAT) as atoms_card:
+                        _card_title("Átomos (proposiciones)")
+                        atoms_help = ui.markdown(ATOMS_HELP["kb"]) \
+                            .classes("text-xs text-grey-5")
+                        with ui.row().classes("w-full no-wrap items-center gap-2"):
+                            atom_input = ui.input("nuevo átomo") \
+                                .props("dense outlined").classes("grow")
+                            ui.button(icon="add", on_click=lambda: add_atom()) \
+                                .props("round dense")
+                        atom_input.on("keydown.enter", lambda: add_atom())
+                        atoms_box = ui.column().classes("w-full gap-2")
 
-            # ---- Atoms: the valuation v (where each atom is true) ---------- #
-            with ui.card().classes(CARD).props(FLAT) as atoms_card:
-                _card_title("Átomos (proposiciones)")
-                atoms_help = ui.markdown(ATOMS_HELP["kb"]) \
-                    .classes("text-xs text-grey-5")
-                with ui.row().classes("w-full no-wrap items-center gap-2"):
-                    atom_input = ui.input("nuevo átomo") \
-                        .props("dense outlined").classes("grow")
-                    ui.button(icon="add", on_click=lambda: add_atom()) \
-                        .props("round dense")
-                atom_input.on("keydown.enter", lambda: add_atom())
-                atoms_box = ui.column().classes("w-full gap-2")
+                with ui.tab_panel(tab_formulas).style("padding:0"):
+                    # ---- Formula evaluator ------------------------------------ #
+                    with ui.card().classes(CARD).props(FLAT):
+                        _card_title("Evaluar fórmula")
+                        formula_input = ui.input(
+                            "fórmula", placeholder="B_a p & ~K_a p",
+                        ).props("dense outlined input-class=font-mono").classes("w-full")
+                        formula_help = ui.markdown(FORMULA_HELP["kb"]) \
+                            .classes("text-xs text-grey-5")
+                        ui.button("Evaluar", icon="calculate",
+                                  on_click=lambda: eval_formula()) \
+                            .props("outline dense")
+                        formula_input.on("keydown.enter", lambda: eval_formula())
+                        formula_out = ui.column().classes("w-full gap-2")
 
-            # ---- Formula evaluator ----------------------------------------- #
-            with ui.card().classes(CARD).props(FLAT):
-                _card_title("Evaluar fórmula")
-                formula_input = ui.input(
-                    "fórmula", placeholder="B_a p & ~K_a p",
-                ).props("dense outlined input-class=font-mono").classes("w-full")
-                formula_help = ui.markdown(FORMULA_HELP["kb"]) \
-                    .classes("text-xs text-grey-5")
-                ui.button("Evaluar", icon="calculate",
-                          on_click=lambda: eval_formula()) \
-                    .props("outline dense")
-                formula_input.on("keydown.enter", lambda: eval_formula())
-                formula_out = ui.column().classes("w-full gap-2")
-
-            # ---- Simplicial actions (GitHub #6/#13/#18) -------------------- #
-            # Workspace-level card: actions are edited here and APPLIED to the
-            # active model; each result opens as a read-only document (drawn,
-            # evaluated, saved and compared like any other). The interface is
-            # complete; the products themselves are the action layer's: today
-            # only the knowledge product exists (simplicial_actions.update_model,
-            # spec-b), the belief/memory/revision ones are offered but PENDING
-            # (Taiba, #6/#15) -- see adapters.UPDATE_KINDS. Painted by
-            # paint_actions() from ws["actions"].
-            with ui.card().classes(CARD).props(FLAT):
-                _card_title("Acciones simpliciales")
-                actions_box = ui.column().classes("w-full gap-2")
+                with ui.tab_panel(tab_actions).style("padding:0"):
+                    # ---- Simplicial actions (GitHub #6/#13/#18) --------------- #
+                    # Workspace-level card: actions are edited here and APPLIED
+                    # to the active model; each result opens as a read-only
+                    # document (drawn, evaluated, saved and compared like any
+                    # other). The interface is complete; the products themselves
+                    # are the action layer's: today only the knowledge product
+                    # exists (simplicial_actions.update_model, spec-b), the
+                    # belief/memory/revision ones are offered but PENDING
+                    # (Taiba, #6/#15) -- see adapters.UPDATE_KINDS. Painted by
+                    # paint_actions() from ws["actions"].
+                    with ui.card().classes(CARD).props(FLAT):
+                        _card_title("Acciones simpliciales")
+                        actions_box = ui.column().classes("w-full gap-2")
 
         with ui.column().classes("grow min-w-0 gap-4"):
             # ---- Read-only notice (derived documents) ---------------------- #
             readonly_box = ui.column().classes("w-full")
             # ---- Live preview (always visible, on top) --------------------- #
             preview_box = ui.column().classes("w-full")
+            # ---- "Results are stale" strip (shown once the model is edited
+            #      after a run; see refresh_stale) ---------------------------- #
+            stale_box = ui.column().classes("w-full")
             # ---- Pipeline output: rebuilt on every run --------------------- #
             results = ui.column().classes("w-full gap-4")
 
@@ -1552,49 +1592,113 @@ def index() -> None:
                                   "creencia difunta bajo K45.",
                     }[kind]).classes("text-xs text-grey-5")
 
-    def update_preview() -> None:
-        """Re-render the model exactly as entered (no closures).
+    # ----------------------------------------------------------------------- #
+    # Live preview. It is the one thing that runs on EVERY edit and it calls
+    # Graphviz / matplotlib (0.3-0.8 s): done synchronously, as it used to be,
+    # it froze the interface at each click of a select. Now:
+    #   1. the synchronous part (update_preview) only marks the document dirty,
+    #      refreshes the "stale results" strip and schedules a render;
+    #   2. a 250 ms debounce collapses a burst of edits into one render, and a
+    #      sequence number drops renders that a newer edit superseded;
+    #   3. the render runs in a worker thread (run.io_bound), so the page
+    #      stays responsive and the spinner in the card header is visible;
+    #   4. results are cached by a hash of the state, and the figure FILE is
+    #      named by that hash too, so going back to a state already drawn
+    #      (switching documents, undoing an edit) costs nothing and a cached
+    #      path always points at the figure of exactly that state.
+    # The card itself is built once; only its badge and body are repainted,
+    # so the frame does not flash on every edit.
+    # ----------------------------------------------------------------------- #
+    preview_cache: dict = {}            # state hash -> (path, violations) | error text
+    preview_seq = {"n": 0}
+    preview_ui: dict = {}               # "badge" and "body" containers of the card
 
-        Runs on every editor change. The card header carries the pulsing
-        "live" dot and a validity chip (green = already valid, amber = N
-        conditions to be completed); the figure shows exactly the drawn
-        chips with what is missing dotted in red. A state inexpressible as
-        seeds (overlapping classes) is shown as text.
-        """
-        if ws["loading"]:
+    def _state_key(st: dict) -> str:
+        import hashlib
+        import json
+
+        return hashlib.sha1(json.dumps(st, sort_keys=True, default=str).encode()).hexdigest()[:12]
+
+    def _preview_card() -> None:
+        """Build the preview card once (the only card WITH elevation: lime halo)."""
+        if preview_ui:
             return
-        # Every edit goes through here: the stored result, if any, no longer
-        # matches the model and the comparison will have to recompute it.
-        current()["dirty"] = True
-        preview_box.clear()
-        # The only card WITH elevation (lime halo): it marks the element that
-        # updates by itself (see "VISUAL SYSTEM").
         with preview_box, ui.card().classes(CARD + " poster-live").props(FLAT):
             with ui.row().classes("w-full items-center gap-2"):
                 ui.element("span").classes("pulse-dot")
                 _card_title("Vista previa · modelo tal como se ingresa")
                 ui.space()
-                badge_slot = ui.row().classes("items-center")
-            missing = state_problem(live_state())
-            if missing:
+                preview_ui["badge"] = ui.row().classes("items-center")
+            preview_ui["body"] = ui.column().classes("w-full gap-2")
+
+    def update_preview() -> None:
+        """Mark the model as edited and schedule a (debounced) re-render."""
+        if ws["loading"]:
+            return
+        # Every edit goes through here: the stored result, if any, no longer
+        # matches the model and the comparison will have to recompute it.
+        current()["dirty"] = True
+        refresh_stale()
+        preview_seq["n"] += 1
+        seq = preview_seq["n"]
+        ui.timer(0.25, lambda: _render_preview(seq), once=True)
+
+    async def _render_preview(seq: int) -> None:
+        """Draw the model exactly as entered (no closures), off the event loop.
+
+        The card header carries the pulsing "live" dot and a validity chip
+        (lime = already valid, amber = N conditions to be completed); the
+        figure shows exactly the drawn chips with what is missing dotted in
+        red. A state inexpressible as seeds (overlapping classes) is shown
+        as text.
+        """
+        if seq != preview_seq["n"] or ws["active"] is None:
+            return                              # superseded by a newer edit
+        _preview_card()
+        badge, body = preview_ui["badge"], preview_ui["body"]
+        st = copy.deepcopy(live_state())
+        doc_id = ws["active"]
+        missing = state_problem(st)
+        if missing:
+            badge.clear()
+            body.clear()
+            with body:
                 ui.label(missing).classes("text-grey-5")
-                return
+            return
+        key = _state_key(st)
+        if key not in preview_cache:
+            badge.clear()
+            with badge:
+                ui.spinner(size="1.2em").style(f"color:{POSTER['lime']}")
             try:
-                # The document id tags the file: two open models do not
-                # overwrite each other's preview.
-                path, violations = preview_state(state, ws["active"])
+                # Document id + state hash tag the file: two open models do
+                # not overwrite each other's preview, and two states of one
+                # model do not either (which is what makes the cache safe).
+                result = await io.io_bound(preview_state, st, f"{doc_id}_{key}")
             except ValueError as exc:
-                with badge_slot:
-                    _chip("inexpresable", "bad")
-                ui.html(f"<pre style='white-space:pre-wrap' "
-                        f"class='text-xs'>{exc}</pre>")
-                return
-            with badge_slot:
-                if violations:
-                    _chip(f"{len(violations)} por completar", "warn",
-                          icon="pending")
-                else:
-                    _chip("válido", "ok", icon="check")
+                result = str(exc)
+            if len(preview_cache) >= 64:        # bounded: oldest entry out
+                preview_cache.pop(next(iter(preview_cache)))
+            preview_cache[key] = result
+            if seq != preview_seq["n"] or doc_id != ws["active"]:
+                return                          # the user moved on meanwhile
+        result = preview_cache[key]
+        badge.clear()
+        body.clear()
+        if isinstance(result, str):
+            with badge:
+                _chip("inexpresable", "bad")
+            with body:
+                ui.html(f"<pre style='white-space:pre-wrap' class='text-xs'>"
+                        f"{html.escape(result)}</pre>")
+            return
+        path, violations = result
+        with badge:
+            if violations:
+                _chip(f"{len(violations)} por completar", "warn", icon="pending")
+            else:
+                _chip("válido", "ok", icon="check")
+        with body:
             with ui.element("div").classes("w-full fig-frame"):
                 _figure_img(path)
             if violations:
@@ -1602,6 +1706,31 @@ def index() -> None:
                         .classes("w-full").style(f"color:{POSTER['yellow']}"):
                     for v in violations:
                         ui.label(v).classes("font-mono text-xs")
+
+    def refresh_stale() -> None:
+        """Show, above the results, that they predate the current edits.
+
+        The preview follows every edit but the Figures 1-4 do not (a run is
+        explicit); without this strip the old figures passed for results of
+        the model now in the editor. ``doc["dirty"]`` already tracks exactly
+        that, so the strip is a pure function of it.
+        """
+        stale_box.clear()
+        if ws["active"] is None or ws["comparing"]:
+            return
+        doc = current()
+        if doc["outcome"] is None or not doc["dirty"]:
+            return
+        with stale_box, ui.row().classes(
+                "w-full items-center gap-3 px-4 py-2 rounded-xl no-wrap").style(
+                f"background:{_tint(POSTER['yellow'], .10)};"
+                f"border:1px solid {_tint(POSTER['yellow'], .45)}"):
+            ui.icon("history").style(f"color:{POSTER['yellow']}")
+            ui.label("Las figuras de abajo son de una versión anterior del modelo.") \
+                .classes("text-sm grow").style(f"color:{POSTER['yellow']}")
+            ui.button("Volver a correr", icon="play_arrow",
+                      on_click=lambda: run_clicked()) \
+                .props("outline dense").style(f"color:{POSTER['yellow']}")
 
     def set_cls(row: dict, cls: list) -> None:
         """Update a class and prune the beliefs that fell outside it.
@@ -1663,10 +1792,10 @@ def index() -> None:
     def paint_results_placeholder(target=None) -> None:
         """Illustrated empty state: never a blank column without a message."""
         target = results if target is None else target
-        with target, ui.column().classes("w-full items-center py-16 gap-2"):
-            ui.icon("account_tree", size="64px").classes("text-grey-9")
+        with target, ui.column().classes("w-full items-center py-16 gap-1"):
+            ui.label("Sin resultados todavía").classes("text-grey-5 font-semibold")
             ui.label("Corre el pipeline para ver las Figuras 1 → 4") \
-                .classes("text-grey-5")
+                .classes("text-xs text-grey-6")
 
     def reset_results() -> None:
         """Forget the active document's result: it belongs to ANOTHER model.
@@ -1680,6 +1809,7 @@ def index() -> None:
             return
         current()["outcome"] = None
         render_outcome(None, results)
+        refresh_stale()                 # nothing to be stale about any more
 
     async def explicit_changed() -> None:
         """Implicit-edges switch: preview now, pipeline if there was a run."""
@@ -1789,13 +1919,14 @@ def index() -> None:
                 with ui.card().classes(CARD).props(FLAT):
                     _card_title("Pipeline paso a paso")
                     for step in out.steps:
-                        # Icons in the poster's role colors: green = as drawn,
-                        # cyan = completed by a closure, pink = failed.
+                        # Two accents: lime for "as drawn" and "completed by a
+                        # closure" (both good outcomes), rose for failed,
+                        # slate for not applicable.
                         icon, color = {
-                            "ok": ("check_circle", POSTER["green"]),
-                            "completed": ("auto_fix_high", POSTER["cyan"]),
+                            "ok": ("check_circle", POSTER["lime"]),
+                            "completed": ("auto_fix_high", POSTER["lime"]),
                             "failed": ("cancel", POSTER["pink"]),
-                            "skipped": ("block", "#9e9e9e"),
+                            "skipped": ("block", POSTER["muted"]),
                         }[step.status]
                         with ui.row().classes("w-full items-center gap-2 mt-3"):
                             ui.icon(icon).style(f"color:{color}")
@@ -1823,7 +1954,7 @@ def index() -> None:
                         for text in step.completed:
                             with ui.row().classes("w-full no-wrap items-start gap-2 ml-8"):
                                 ui.label("+").classes("font-bold") \
-                                    .style(f"color:{POSTER['cyan']}")
+                                    .style(f"color:{POSTER['lime']}")
                                 ui.label(text).classes("text-sm text-grey-4")
                         for text in step.missing:
                             with ui.row().classes("w-full no-wrap items-start gap-2 ml-8"):
@@ -1836,9 +1967,13 @@ def index() -> None:
                     ).classes("text-xs italic text-grey-5 mt-3")
 
             # The pipeline figures, in order, as in thesis_example.py, plus
-            # Fig. 4 (face lattice) added by adapters.
-            for caption, path in out.figures:
-                figure_card(caption, path)
+            # Fig. 4 (face lattice) added by adapters. A grid: tall figures
+            # (Fig. 2a's column of copies, a triangle fan) share a row, wide
+            # ones (the Hasse band) take it whole -- half the scrolling and
+            # no figure floating in a sea of grey.
+            with ui.element("div").classes("w-full fig-grid"):
+                for caption, path in out.figures:
+                    figure_card(caption, path, span=_is_wide(path))
 
             # The interactive 3D view is a complete plotly page: it is embedded
             # in an iframe instead of being rebuilt with components.
@@ -1882,6 +2017,7 @@ def index() -> None:
         finally:
             run_btn.props(remove="loading")
         doc["outcome"], doc["dirty"] = outcome, False
+        refresh_stale()
         if outcome["status"] == "invalid":
             ui.notify("El modelo no es válido — detalle en el panel",
                       type="negative")
@@ -2030,6 +2166,7 @@ def index() -> None:
         compare_box.set_visibility(False)
         editor_row.set_visibility(True)
         paint_docs_bar()
+        refresh_stale()
 
     # First paint: the thesis example with its preview, and the illustrated
     # empty state in the results area.
