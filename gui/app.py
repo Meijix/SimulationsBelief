@@ -123,6 +123,10 @@ from adapters import (
     preview_simplicial,
     run_simplicial,
     maximal_facets,
+    list_saved,
+    load_workspace,
+    save_workspace,
+    workspace_payload,
     simplicial_state_from_editor,
     run_pipeline_from_seeds,
     seeds_from_editor,
@@ -538,6 +542,96 @@ def index() -> None:
         doc["outcome"], doc["dirty"] = None, False
         load_into_editor(doc)
         paint_docs_bar()
+
+    # ---- Save / open workspaces (GitHub #18) ------------------------------- #
+    # Everything open (names, states, read-only flags, provenance) goes to
+    # one JSON file in saved_models/; opening one adds its models to the bar
+    # or replaces what is open. A single model can also be downloaded as a
+    # one-model workspace, which is the unit to share or to hand to a script.
+    def save_dialog() -> None:
+        current()["state"] = copy.deepcopy(live_state())
+        with ui.dialog() as dlg, ui.card().classes(CARD).props(FLAT):
+            _card_title("Guardar espacio de trabajo")
+            ui.label(f"{len(docs)} modelo(s) abiertos → saved_models/‹nombre›.json") \
+                .classes("text-xs text-grey-5")
+            name_box = ui.input("nombre", value=current()["name"] if len(docs) == 1
+                                else f"espacio {ws['next'] - 1} modelos") \
+                .props("dense outlined").classes("w-full")
+
+            def do_save() -> None:
+                try:
+                    path = save_workspace(docs, name_box.value or "espacio")
+                except OSError as exc:
+                    ui.notify(f"No se pudo guardar: {exc}", type="negative")
+                    return
+                ui.notify(f"Guardado: saved_models/{path.name}", type="positive")
+                dlg.close()
+
+            name_box.on("keydown.enter", lambda: do_save())
+            with ui.row().classes("gap-2"):
+                ui.button("Guardar", icon="save", on_click=do_save) \
+                    .props("unelevated dense color=primary text-color=dark")
+                ui.button("Cancelar", on_click=dlg.close).props("flat dense")
+        dlg.open()
+
+    def open_saved(path, replace: bool, dlg=None) -> None:
+        """Open a saved workspace, adding to the bar or replacing it."""
+        try:
+            loaded = load_workspace(path)
+        except (OSError, ValueError) as exc:
+            ui.notify(str(exc), type="warning")
+            return
+        if dlg is not None:
+            dlg.close()
+        if ws["comparing"]:
+            exit_compare()
+        if replace:
+            docs.clear()
+            ws["compare"] = []
+        else:
+            current()["state"] = copy.deepcopy(live_state())
+        first = None
+        for d in loaded:
+            doc = new_doc(d["name"], d["state"], readonly=d["readonly"], origin=d["origin"])
+            first = first or doc
+        ws["active"] = first["id"]
+        load_into_editor(current())
+        paint_docs_bar()
+        ui.notify(f"{len(loaded)} modelo(s) abiertos de {path.name}", type="info")
+
+    def open_dialog() -> None:
+        saved = list_saved()
+        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[520px]").props(FLAT):
+            _card_title("Abrir espacio de trabajo")
+            if not saved:
+                ui.label("No hay espacios guardados todavía (saved_models/ está vacío).") \
+                    .classes("text-sm text-grey-5")
+            for path in saved:
+                try:
+                    count = len(load_workspace(path))
+                    detail = f"{count} modelo(s)"
+                except (OSError, ValueError):
+                    detail = "archivo no legible"
+                with ui.row().classes("w-full items-center gap-2 no-wrap"):
+                    ui.icon("folder").classes("text-grey-5")
+                    with ui.column().classes("gap-0 grow min-w-0"):
+                        ui.label(path.stem).classes("text-sm text-white")
+                        ui.label(detail).classes("text-xs text-grey-5")
+                    ui.button("añadir", on_click=lambda _, p=path: open_saved(p, False, dlg)) \
+                        .props("outline dense").tooltip("Abrir junto a los modelos actuales")
+                    ui.button("sustituir", on_click=lambda _, p=path: open_saved(p, True, dlg)) \
+                        .props("flat dense").tooltip("Cerrar los actuales y abrir estos")
+            ui.button("Cerrar", on_click=dlg.close).props("flat dense")
+        dlg.open()
+
+    def export_active() -> None:
+        """Download the active model as a one-model workspace file."""
+        import json
+
+        current()["state"] = copy.deepcopy(live_state())
+        payload = workspace_payload([current()])
+        data = json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")
+        ui.download.content(data, f"{current()['name']}.json")
 
     # ---- Lightbox: any figure, full screen with one click ------------------ #
     with ui.dialog().props("maximized") as lightbox:
@@ -1575,6 +1669,14 @@ def index() -> None:
                 .props("round dense flat").tooltip("Modelo nuevo en blanco")
             ui.button(icon="content_copy", on_click=lambda: duplicate_active()) \
                 .props("round dense flat").tooltip("Duplicar el modelo activo")
+            # Persistence (GitHub #18): the whole bar to a file, a file back
+            # into the bar, and the active model out as a download.
+            ui.button(icon="save", on_click=lambda: save_dialog()) \
+                .props("round dense flat").tooltip("Guardar todos los modelos abiertos")
+            ui.button(icon="folder_open", on_click=lambda: open_dialog()) \
+                .props("round dense flat").tooltip("Abrir un espacio guardado")
+            ui.button(icon="download", on_click=lambda: export_active()) \
+                .props("round dense flat").tooltip("Descargar el modelo activo (.json)")
             if len(docs) >= 2:
                 # The comparison controls go on their own line: with long
                 # names they got mixed up with the model chips.
