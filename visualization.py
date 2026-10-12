@@ -1081,6 +1081,10 @@ def _spring_layout(nodes, edges, iterations: int = 250):
         for i, v in enumerate(nodes)
     }
     k = 1.0 / math.sqrt(n)
+    # Weak gravity towards the centroid, for the same reason as in the 3-D
+    # layout (GitHub #19): a node no edge pulls on would otherwise be pushed
+    # away on every iteration and end up far from the complex.
+    gravity = 0.08
     for _ in range(iterations):
         disp = {v: [0.0, 0.0] for v in nodes}
         for i in range(n):
@@ -1103,6 +1107,11 @@ def _spring_layout(nodes, edges, iterations: int = 250):
             disp[u][1] -= dy / d * f
             disp[v][0] += dx / d * f
             disp[v][1] += dy / d * f
+        cx = sum(pos[v][0] for v in nodes) / n
+        cy = sum(pos[v][1] for v in nodes) / n
+        for v in nodes:
+            disp[v][0] -= (pos[v][0] - cx) * gravity
+            disp[v][1] -= (pos[v][1] - cy) * gravity
         # Cap each step (the Fruchterman-Reingold "temperature", kept constant):
         # the circular start is already tame, so no cooling schedule is needed.
         for v in nodes:
@@ -1110,7 +1119,38 @@ def _spring_layout(nodes, edges, iterations: int = 250):
             d = math.hypot(dx, dy) or 1e-6
             pos[v][0] += dx / d * min(d, 0.08)
             pos[v][1] += dy / d * min(d, 0.08)
-    return {v: (p[0], p[1]) for v, p in pos.items()}
+    return _park_isolated({v: (p[0], p[1]) for v, p in pos.items()}, edges)
+
+
+def _park_isolated(pos, edges):
+    """Put the nodes no edge touches in a row just past the complex (GitHub #19).
+
+    Gravity (see the layouts) keeps an isolated node from flying away, but
+    where it settles -- a few edge-lengths out, at the equilibrium of
+    repulsion and gravity -- still reads as "something strange at a
+    distance". Its position carries no information anyway (there is no
+    adjacency to respect), so it is placed deliberately: beside the bounding
+    box of the connected part, one median edge-length apart, where it is
+    seen as what it is, a perspective no world passes through. Works for 2-D
+    and 3-D positions alike; a complex with no edges at all is left as laid.
+    """
+    touched = {v for e in edges for v in e}
+    loose = sorted((v for v in pos if v not in touched), key=_node_key)
+    if not loose or len(loose) == len(pos):
+        return pos
+    import math
+
+    anchored = [pos[v] for v in pos if v in touched]
+    dims = len(anchored[0])
+    lengths = sorted(math.dist(pos[u], pos[v]) for u, v in edges)
+    step = lengths[len(lengths) // 2] if lengths else 1.0
+    centre = [sum(p[c] for p in anchored) / len(anchored) for c in range(dims)]
+    right = max(p[0] for p in anchored)
+    for i, v in enumerate(loose):
+        spot = list(centre)
+        spot[0] = right + step * (i + 1)
+        pos[v] = tuple(spot)
+    return pos
 
 
 def _rotate_to_horizontal(pos):
@@ -1254,15 +1294,15 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     edge_pairs = _skeleton_edges(model)
     chain = _strip_order(model)
     pos = _strip_layout(chain) if chain else _spring_layout(model.nodes, edge_pairs)
-    # A node in no facet (an isolated vertex, GitHub #12) is invisible to the
-    # strip layout, which walks the facets: park such nodes in a column just
-    # past the right end of the strip so they are drawn, apart, instead of
-    # raising a KeyError below. (The spring layout already places every node.)
-    loose = sorted((n for n in model.nodes if n not in pos), key=_node_key)
-    if loose:
-        right = max((p[0] for p in pos.values()), default=-1.0) + 1.0
-        for i, n in enumerate(loose):
-            pos[n] = (right + i, 0.75)
+    # Nodes in no facet (isolated vertices, GitHub #12/#19) are placed LAST,
+    # by _park_isolated below, once the connected part has been rotated: they
+    # carry no adjacency, so they must neither steer the rotation (PCA over
+    # the point cloud) nor end up wherever the rotation throws them. The
+    # strip layout never placed them anyway; the spring layout did, and those
+    # positions are dropped here for the same reason.
+    touched = {n for e in edge_pairs for n in e}
+    if touched:
+        pos = {n: p for n, p in pos.items() if n in touched}
     sig_color = _signature_colors(model, agents)
 
     # A 1-dimensional complex (two agents: every facet is an edge) is a graph
@@ -1285,6 +1325,12 @@ def _show_simplicial(model, name, output_dir, title, image_format,
         if one_dimensional or (max(cxs) - min(cxs)) > 1.6 * ((max(cys) - min(cys)) or 1e-9):
             pos = candidate
             flat = True
+    # Now the isolated vertices: in a row just past the right end of the
+    # (rotated) complex, one edge-length apart -- see _park_isolated.
+    for n in model.nodes:
+        if n not in pos:
+            pos[n] = (0.0, 0.0)
+    pos = _park_isolated(pos, edge_pairs)
     xs = [p[0] for p in pos.values()] or [0.0]
     ys = [p[1] for p in pos.values()] or [0.0]
     spread_x = max(xs) - min(xs) or 1.0
@@ -1512,6 +1558,15 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
         theta = golden * i
         pos[v] = [math.cos(theta) * r, y, math.sin(theta) * r]
     k = 1.0 / (n ** (1 / 3)) if n else 1.0   # ideal edge length: cube root in 3-D (sqrt in 2-D)
+    # Gravity towards the centroid (GitHub #19). Plain Fruchterman-Reingold
+    # has nothing holding a node that no edge pulls on: an isolated vertex, or
+    # a whole disconnected piece of the complex, is only ever REPELLED, so it
+    # drifts outwards by the step cap on every iteration and ends up tens of
+    # edge-lengths away -- a dot floating far from a tiny complex, with the
+    # camera zoomed out to fit it. A weak pull proportional to the distance
+    # from the centroid bounds that drift (the standard remedy) while barely
+    # touching connected nodes, whose edge forces dominate it.
+    gravity = 0.08
     for _ in range(iterations):
         disp = {v: [0.0, 0.0, 0.0] for v in nodes}
         for i in range(n):
@@ -1530,11 +1585,15 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
             for c in range(3):
                 disp[u][c] -= d[c] / dist * f
                 disp[v][c] += d[c] / dist * f
+        centre = [sum(pos[v][c] for v in nodes) / n for c in range(3)]
+        for v in nodes:
+            for c in range(3):
+                disp[v][c] -= (pos[v][c] - centre[c]) * gravity
         for v in nodes:
             dist = math.sqrt(sum(x * x for x in disp[v])) or 1e-6
             for c in range(3):
                 pos[v][c] += disp[v][c] / dist * min(dist, 0.1)
-    return {v: tuple(p) for v, p in pos.items()}
+    return _park_isolated({v: tuple(p) for v, p in pos.items()}, edges)
 
 
 def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
