@@ -796,7 +796,7 @@ def _hasse_caption(number: str, full: bool) -> str:
 def run_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
-    hasse_full: bool = False, knowledge_only: bool = False,
+    hasse_full: bool = False, knowledge_only: bool = False, make_3d: bool = True,
 ) -> "PipelineResult":
     """The "pipeline" of a direct complex: validate and draw, nothing to translate.
 
@@ -857,8 +857,11 @@ def run_simplicial(
         Path(show(model, _fname("gui_fig3_simplicial", tag), "Complejo simplicial",
                   output_dir=str(OUTPUTS), assignment=asg)),
     ))
-    result.html_3d = Path(show(model, _fname("gui_fig3_3d", tag), "Complejo simplicial · 3D",
-                               dim=3, output_dir=str(OUTPUTS), assignment=asg))
+    # The interactive 3-D page is the heavy output (~3 MB of embedded
+    # Plotly per run); the GUI's "generar vista 3D" switch skips it.
+    if make_3d:
+        result.html_3d = Path(show(model, _fname("gui_fig3_3d", tag), "Complejo simplicial · 3D",
+                                   dim=3, output_dir=str(OUTPUTS), assignment=asg))
     lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
     result.figures.append((
         _hasse_caption("Fig. 2", hasse_full),
@@ -1365,6 +1368,7 @@ def blank_state(kind: str = "kb") -> dict:
         "silent_defunct": False,           # K45: class with no belief = Q = ∅
         "explicit": False,                 # draw loops and both directions
         "hasse_full": False,               # full lattice, not only vertices+facets
+        "make_3d": True,                   # write the interactive 3-D page (the heavy output)
     }
 
 
@@ -1443,11 +1447,12 @@ def run_state(state: dict, tag: str = "") -> "PipelineResult":
     # ``.get``: states saved before the key existed remain valid and fall
     # back to the default view.
     hasse_full = bool(state.get("hasse_full", False))
+    make_3d = bool(state.get("make_3d", True))
     if state["kind"] == "simplicial":
         return run_simplicial(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
             state["axiom_d"], tag, hasse_full=hasse_full,
-            knowledge_only=_knowledge_only(state),
+            knowledge_only=_knowledge_only(state), make_3d=make_3d,
         )
     knowledge, belief = seeds_from_editor(
         state["agents"], state["worlds"], state["per_agent"], state["kind"]
@@ -1455,7 +1460,7 @@ def run_state(state: dict, tag: str = "") -> "PipelineResult":
     return run_pipeline_from_seeds(
         state["agents"], state["worlds"], knowledge, belief, state["axiom_d"],
         state["atoms"], not state["silent_defunct"], state["explicit"],
-        state["kind"], tag, hasse_full=hasse_full,
+        state["kind"], tag, hasse_full=hasse_full, make_3d=make_3d,
     )
 
 
@@ -2073,6 +2078,7 @@ def run_pipeline_from_seeds(
     kind: str = "kb",
     tag: str = "",
     hasse_full: bool = False,
+    make_3d: bool = True,
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
 
@@ -2255,9 +2261,10 @@ def run_pipeline_from_seeds(
         Path(show(sm, _fname("gui_fig3_simplicial", tag), "Modelo simplicial",
                   output_dir=str(OUTPUTS), valuation=lifted)),
     ))
-    result.html_3d = Path(show(sm, _fname("gui_fig3_3d", tag), "Modelo simplicial · 3D",
-                               dim=3, output_dir=str(OUTPUTS),
-                               valuation=lifted))
+    if make_3d:     # the heavy output; see run_simplicial
+        result.html_3d = Path(show(sm, _fname("gui_fig3_3d", tag), "Modelo simplicial · 3D",
+                                   dim=3, output_dir=str(OUTPUTS),
+                                   valuation=lifted))
     result.text_diagrams.append(("Modelo simplicial", str(sm)))
 
     # -- Fig. 4: the face lattice (Hasse diagram) of the complex. -------------

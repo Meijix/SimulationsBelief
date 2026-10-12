@@ -28,8 +28,11 @@ nothing else.
 from __future__ import annotations
 
 import copy
+import datetime
+import re
+import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from adapters import (
     EXAMPLES,
@@ -44,6 +47,17 @@ from adapters import (
 
 # The comparison view fits at most this many panels side by side.
 MAX_COMPARE = 4
+
+
+def _slug(name: str) -> str:
+    """A folder-safe version of a model name: only path separators and control
+    characters are replaced, so "Tesis · Figuras 1 → 3" keeps its name."""
+    return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip() or "modelo"
+
+
+def _stable_name(file_name: str, doc_id: str) -> str:
+    """``gui_fig1_general_d3.svg`` -> ``gui_fig1_general.svg``: drop the session tag."""
+    return re.sub(rf"_{re.escape(doc_id)}(?=\.[A-Za-z0-9]+$)", "", file_name)
 
 
 class Workspace:
@@ -184,9 +198,65 @@ class Workspace:
     # ------------------------------------------------------------------ #
     # Persistence (GitHub #18)
     # ------------------------------------------------------------------ #
-    def save(self, name: str) -> Path:
-        """Write every open document and the actions to ``saved_models/<name>.json``."""
-        return save_workspace(self.docs, name, self.actions)
+    def save(self, name: str, doc_ids: Optional[List[str]] = None,
+             include_actions: bool = True, include_figures: bool = False) -> Tuple[Path, int]:
+        """Write the chosen documents (default: all) to ``saved_models/<name>.json``.
+
+        ``include_figures`` also copies, for every chosen document that has a
+        finished run, the figures of that run into ``saved_models/<name>/<model>/``
+        -- one folder per model, so the inputs and the results of an action
+        never share one (see :meth:`export_figures`). Returns the JSON path
+        and how many figure files were copied.
+        """
+        docs = [d for d in self.docs if doc_ids is None or d["id"] in doc_ids]
+        path = save_workspace(docs, name, self.actions if include_actions else [])
+        copied = self.export_figures(path.with_suffix(""), docs) if include_figures else 0
+        return path, copied
+
+    @staticmethod
+    def export_figures(root: Path, docs: List[dict]) -> int:
+        """Copy the last-run figures of ``docs`` under ``root/<model name>/``.
+
+        The files in ``outputs/`` are named by SESSION document id
+        (``gui_fig1_general_d3.svg``), which means nothing once the page is
+        closed; here they get stable names (``gui_fig1_general.svg``) and a
+        ``README.md`` per folder that maps each file to its caption. Models
+        without a finished run contribute nothing; two models with the same
+        name get the document id appended so they never share a folder.
+        Returns the number of files copied.
+        """
+        copied = 0
+        taken: set = set()
+        for d in docs:
+            outcome = d.get("outcome")
+            if not outcome or outcome.get("status") != "ok":
+                continue
+            out = outcome["out"]
+            folder_name = _slug(d["name"])
+            if folder_name in taken:
+                folder_name = f"{folder_name}-{d['id']}"
+            taken.add(folder_name)
+            folder = root / folder_name
+            folder.mkdir(parents=True, exist_ok=True)
+            lines = [f"# {d['name']}", "",
+                     f"Figures of the run saved on "
+                     f"{datetime.datetime.now().isoformat(timespec='minutes')}"
+                     + (f" — result of {d['origin']['label']}" if d.get("origin")
+                        and d["origin"].get("label") else "") + ".",
+                     "", "| file | figure |", "|---|---|"]
+            files = list(out.figures)
+            if out.html_3d is not None:
+                files.append(("Vista 3D interactiva (abrir en el navegador)", out.html_3d))
+            for caption, src in files:
+                src = Path(src)
+                if not src.exists():
+                    continue
+                target = folder / _stable_name(src.name, d["id"])
+                shutil.copy2(src, target)
+                copied += 1
+                lines.append(f"| `{target.name}` | {caption} |")
+            (folder / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return copied
 
     def open(self, path: Path, replace: bool) -> List[dict]:
         """Open a saved workspace, adding to the bar or replacing it.

@@ -33,7 +33,7 @@ class EditorView:
         self.agent_input = self.agent_chips = None
         self.worlds_box = self.world_input = self.world_chips = None
         self.axiom_d_in = self.silent_defunct_in = None
-        self.explicit_in = self.hasse_full_in = None
+        self.explicit_in = self.hasse_full_in = self.make_3d_in = None
 
     # ------------------------------------------------------------------ #
     # Build
@@ -140,6 +140,14 @@ class EditorView:
                     value=False, on_change=lambda _: self.hasse_full_changed(),
                 ).tooltip("Apagado, el diagrama de Hasse sólo dibuja las perspectivas "
                           "y los mundos, unidos cuando una es parte del otro.")
+                # The interactive 3-D page is the heavy output of a run (~3 MB
+                # of embedded Plotly) and the slowest to write; off, a run
+                # produces the SVG figures only.
+                self.make_3d_in = ui.switch(
+                    "Generar vista 3D interactiva",
+                    value=True, on_change=lambda _: self.make_3d_changed(),
+                ).tooltip("Apagada, la corrida no escribe la página 3D (~3 MB): "
+                          "sólo las figuras SVG.")
 
         # ---- Per-agent relation editor (or the direct-complex editor) ------ #
         self.editor_box = ui.column().classes("w-full gap-4")
@@ -153,6 +161,7 @@ class EditorView:
         state["silent_defunct"] = self.silent_defunct_in.value
         state["explicit"] = self.explicit_in.value
         state["hasse_full"] = self.hasse_full_in.value
+        state["make_3d"] = self.make_3d_in.value
 
     def show_document(self, state: dict, name: str) -> None:
         """Set the kind, the switches and the name from a document's state."""
@@ -161,6 +170,7 @@ class EditorView:
         self.silent_defunct_in.value = state["silent_defunct"]
         self.explicit_in.value = state["explicit"]
         self.hasse_full_in.value = state.get("hasse_full", False)
+        self.make_3d_in.value = state.get("make_3d", True)
         self.name_in.value = name
 
     def sync_switches(self) -> None:
@@ -180,6 +190,7 @@ class EditorView:
         self.explicit_in.set_enabled(kind not in ("belief", "simplicial"))
         # Belief only never reaches the complex, so there is no lattice to choose.
         self.hasse_full_in.set_enabled(kind != "belief")
+        self.make_3d_in.set_enabled(kind != "belief")
         self.worlds_box.set_visibility(kind != "simplicial")
         self.page.atoms.set_help(kind)
         self.page.formulas.set_help(kind)
@@ -247,6 +258,16 @@ class EditorView:
             await page.results.run()
         else:
             page.state["hasse_full"] = self.hasse_full_in.value
+
+    async def make_3d_changed(self) -> None:
+        """3-D switch: like the lattice one, it only changes what a run writes."""
+        page = self.page
+        if self.make_3d_in.value == page.state.get("make_3d", True):
+            return   # assignment while loading a document, not a click
+        if page.current()["outcome"] is not None:
+            await page.results.run()
+        else:
+            page.state["make_3d"] = self.make_3d_in.value
 
     # ------------------------------------------------------------------ #
     # Agents and worlds

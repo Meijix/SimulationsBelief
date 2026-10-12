@@ -82,21 +82,48 @@ class DocsBarView:
     def save_dialog(self) -> None:
         page, ws = self.page, self.page.ws
         ws.store_active(page.live_state())
-        with ui.dialog() as dlg, ui.card().classes(CARD).props(FLAT):
+        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[460px]").props(FLAT):
             card_title("Guardar espacio de trabajo")
-            ui.label(f"{len(ws.docs)} modelo(s) abiertos → saved_models/‹nombre›.json") \
-                .classes("text-xs text-grey-5")
+            ui.label("Se guarda la DEFINICIÓN de cada modelo (lo que ves en el editor) "
+                     "en saved_models/‹nombre›.json; las figuras se regeneran al correr. "
+                     "Ver saved_models/README.md.").classes("text-xs text-grey-5")
             name_box = ui.input("nombre", value=page.current()["name"] if len(ws.docs) == 1
                                 else f"espacio {len(ws.docs)} modelos") \
                 .props("dense outlined").classes("w-full")
+            # What to include: every open model is ticked by default; a model
+            # without a finished run is said so, since it has no figures to
+            # copy yet.
+            ui.label("Modelos").classes("eyebrow mt-1")
+            picks = {}
+            for d in ws.docs:
+                has_run = bool(d["outcome"]) and d["outcome"].get("status") == "ok"
+                note = "" if has_run else " · sin corrida (no tendrá figuras)"
+                picks[d["id"]] = ui.checkbox(d["name"] + note, value=True).props("dense")
+            # The actions box only exists when there are actions to include.
+            with_actions = ui.checkbox(
+                f"incluir las {len(ws.actions)} acción(es)", value=True,
+            ).props("dense") if ws.actions else None
+            with_figures = ui.checkbox(
+                "incluir las figuras de la última corrida "
+                "(una carpeta por modelo en saved_models/‹nombre›/)", value=False,
+            ).props("dense")
 
             def do_save() -> None:
+                chosen = [i for i, box in picks.items() if box.value]
+                if not chosen:
+                    ui.notify("Elige al menos un modelo.", type="warning")
+                    return
                 try:
-                    path = ws.save(name_box.value or "espacio")
+                    path, copied = ws.save(name_box.value or "espacio", chosen,
+                                           include_actions=bool(with_actions and with_actions.value),
+                                           include_figures=with_figures.value)
                 except OSError as exc:
                     ui.notify(f"No se pudo guardar: {exc}", type="negative")
                     return
-                ui.notify(f"Guardado: saved_models/{path.name}", type="positive")
+                msg = f"Guardado: saved_models/{path.name} ({len(chosen)} modelo(s))"
+                if with_figures.value:
+                    msg += f" + {copied} figura(s) en saved_models/{path.stem}/"
+                ui.notify(msg, type="positive", timeout=6000)
                 dlg.close()
 
             name_box.on("keydown.enter", lambda: do_save())
