@@ -1005,6 +1005,21 @@ def _belief_signature(model, facet, agents):
     return tuple(a for a in agents if facet in model.belief_facets.get(a, ()))
 
 
+def signature_label(model, sig, agents) -> str:
+    """Legend text for a belief signature: ``belief: a+b``, ``belief: none``...
+
+    On a KNOWLEDGE-only complex (``S_a = S`` for every agent, see
+    ``SimplicialBeliefModel.is_knowledge_only``) every facet carries the full
+    signature, and "belief: a+b+c" would suggest a belief model that happens to
+    be unanimous. It is not: there is no belief data at all, so the legend
+    says so. Shared by the 2-D, 3-D and Hasse renderers so the three figures
+    of one model read the same.
+    """
+    if getattr(model, "is_knowledge_only", False) and tuple(sig) == tuple(agents):
+        return "knowledge only (S_a = S)"
+    return "belief: " + ("+".join(map(str, sig)) if sig else "none")
+
+
 def _node_key(node):
     """A canonical, run-stable sort key for a simplicial node.
 
@@ -1441,7 +1456,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     handles = [Line2D([0], [0], marker="o", color="w", markerfacecolor=colors[a],
                       markersize=10, label=f"agent {a}") for a in agents]
     for sig, col in sorted(sig_color.items(), key=lambda item: (len(item[0]), item[0])):
-        label = "belief: " + ("+".join(map(str, sig)) if sig else "none")
+        label = signature_label(model, sig, agents)
         handles.append(Patch(facecolor=col, alpha=0.5, label=label))
     if revision is not None:
         handles.append(Patch(facecolor="white", edgecolor=GONE, hatch="///",
@@ -1559,7 +1574,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
         pts = [pos[nd] for nd in facet]
         sig = _belief_signature(model, facet, agents)
         col = sig_color[sig]
-        label = "belief: " + ("+".join(map(str, sig)) if sig else "none")
+        label = signature_label(model, sig, agents)
         show_in_legend = sig not in seen_sig
         seen_sig.add(sig)
         world = str(model.world_of_facet.get(facet, ""))

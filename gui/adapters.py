@@ -524,6 +524,7 @@ def build_simplicial(
     facets: List[dict],
     axiom_d: bool = True,
     validate: bool = True,
+    knowledge_only: bool = False,
 ) -> Tuple[SimplicialBeliefModel, Dict[str, Node], Dict[str, frozenset]]:
     """The simplicial model exactly as the editor declares it.
 
@@ -574,6 +575,12 @@ def build_simplicial(
         a: {facet_of[f["name"]] for f in facets if a in f.get("belief", [])}
         for a in agents
     }
+    if knowledge_only:
+        # A knowledge complex has no belief data: S_a = S for everyone (the
+        # simplicial analogue of a knowledge-only S5 frame, "believe what you
+        # know"). The per-facet ``belief`` lists are ignored, not erased, so
+        # switching the editor back to knowledge+belief restores them.
+        belief = {a: set(facet_of.values()) for a in agents}
     model = SimplicialBeliefModel(
         agents, by_name.values(), facet_of.values(), belief, world_of_facet=name_of,
         validate=validate, axiom_d=axiom_d,
@@ -636,9 +643,11 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
 def preview_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
+    knowledge_only: bool = False,
 ) -> Tuple[Path, List[str]]:
     """Preview of the complex AS DECLARED, without requiring validity."""
-    model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d, validate=False)
+    model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d, validate=False,
+                                         knowledge_only=knowledge_only)
     assignment = simplicial_assignment(by_name, vatoms)
     path = Path(show(model, _fname("gui_preview", tag), "Complejo tal como se ingresa",
                      output_dir=str(OUTPUTS), assignment=assignment or None))
@@ -649,10 +658,12 @@ def preview_simplicial(
 def evaluate_simplicial_formula(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool, text: str,
+    knowledge_only: bool = False,
 ) -> List[Tuple[str, bool]]:
     """Evaluate the formula at EVERY facet with the vertex-based semantics (ch. 3)."""
     formula = parse_formula(text, agents, list(vatoms or {}))
-    model, by_name, facet_of = build_simplicial(agents, vertices, facets, axiom_d)
+    model, by_name, facet_of = build_simplicial(agents, vertices, facets, axiom_d,
+                                                knowledge_only=knowledge_only)
     assignment = simplicial_assignment(by_name, vatoms)
     return [(f["name"], holds_simplicial(model, assignment, facet_of[f["name"]], formula))
             for f in facets]
@@ -678,19 +689,20 @@ def _hasse_caption(number: str, full: bool) -> str:
 def run_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
-    hasse_full: bool = False,
+    hasse_full: bool = False, knowledge_only: bool = False,
 ) -> "PipelineResult":
     """The "pipeline" of a direct complex: validate and draw, nothing to translate.
 
     ``hasse_full`` picks the lattice figure: by default only vertices and
-    facets (issue #7); ``True`` draws every face.
+    facets (issue #7); ``True`` draws every face. ``knowledge_only`` reads the
+    complex as pure knowledge (``S_a = S``, no belief data).
     """
     result = PipelineResult()
     step = StepReport("1 · Complejo simplicial (definido directamente)")
     result.steps.append(step)
     try:
         model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d,
-                                             validate=False)
+                                             validate=False, knowledge_only=knowledge_only)
         assignment = simplicial_assignment(by_name, vatoms)
     except ValueError as exc:
         step.failed.append(str(exc))
@@ -703,17 +715,28 @@ def run_simplicial(
         result.badges.append(("inválido", "negative"))
     else:
         result.badges.append(("válido", "positive"))
-        sizes = ", ".join(f"S_{a} = {len(model.belief_facets[a])}"
-                          for a in sorted(model.agents, key=str))
-        step.completed.append(
-            f"complejo bien formado: {len(model.facets)} facetas, "
-            f"{len(model.nodes)} vértices; subcomplejos de creencia: {sizes}"
-        )
-    result.badges.append(("KD45" if axiom_d else "K45", "primary"))
+        if knowledge_only:
+            step.completed.append(
+                f"complejo de conocimiento bien formado: {len(model.facets)} facetas, "
+                f"{len(model.nodes)} vértices; S_a = S para todo agente (cada uno "
+                "cree exactamente lo que sabe, B_a coincide con K_a)"
+            )
+        else:
+            sizes = ", ".join(f"S_{a} = {len(model.belief_facets[a])}"
+                              for a in sorted(model.agents, key=str))
+            step.completed.append(
+                f"complejo bien formado: {len(model.facets)} facetas, "
+                f"{len(model.nodes)} vértices; subcomplejos de creencia: {sizes}"
+            )
+    # A knowledge complex has no belief logic to name: S_a = S makes D hold
+    # trivially, so the KD45/K45 badge would say nothing.
+    result.badges.append(("conocimiento (S_a = S)" if knowledge_only
+                          else ("KD45" if axiom_d else "K45"), "primary"))
     result.stats.append((str(len(model.facets)), "facetas"))
     result.stats.append((str(len(model.nodes)), "vértices"))
-    for a in sorted(model.agents, key=str):
-        result.stats.append((str(len(model.belief_facets[a])), f"S_{a}"))
+    if not knowledge_only:
+        for a in sorted(model.agents, key=str):
+            result.stats.append((str(len(model.belief_facets[a])), f"S_{a}"))
     asg = assignment or None
     # The figures are drawn even for an invalid complex: seeing it is how the
     # user finds the facet that breaks UCF or the isolated perspective.
@@ -822,6 +845,7 @@ def blank_state(kind: str = "kb") -> dict:
         "agents": [], "worlds": [], "per_agent": {},
         "atoms": {},                       # atom -> worlds where it is true
         "vertices": {}, "facets": [], "vatoms": {},   # direct complex
+        "complex_kind": "kb",              # direct complex: "kb" (S_a declared) or "knowledge" (S_a = S)
         "axiom_d": True,                   # KD45 (True) or K45 (False)
         "silent_defunct": False,           # K45: class with no belief = Q = ∅
         "explicit": False,                 # draw loops and both directions
@@ -835,7 +859,7 @@ def state_from_example(example: dict) -> dict:
 
     state = blank_state(example.get("kind", "kb"))
     for key in ("agents", "worlds", "per_agent", "atoms", "vertices", "facets",
-                "vatoms", "axiom_d"):
+                "vatoms", "axiom_d", "complex_kind"):
         if key in example:
             state[key] = copy.deepcopy(example[key])
     return state
@@ -856,12 +880,23 @@ def state_problem(state: dict) -> Optional[str]:
     return None
 
 
+def _knowledge_only(state: dict) -> bool:
+    """Whether a direct complex is read as pure knowledge (``S_a = S``).
+
+    ``state["complex_kind"]`` is ``"knowledge"`` or ``"kb"`` (the default, and
+    what states saved before the key existed fall back to). There is no
+    "belief-only" kind on purpose: in a complex the knowledge IS the gluing of
+    the facets along shared vertices, so ``S_a`` cannot be declared without it.
+    """
+    return state.get("complex_kind", "kb") == "knowledge"
+
+
 def preview_state(state: dict, tag: str = "") -> Tuple[Path, List[str]]:
     """Preview of the model AS IT IS, for any kind."""
     if state["kind"] == "simplicial":
         return preview_simplicial(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
-            state["axiom_d"], tag,
+            state["axiom_d"], tag, knowledge_only=_knowledge_only(state),
         )
     return preview_figure(
         state["agents"], state["worlds"], state["per_agent"], state["atoms"],
@@ -874,7 +909,7 @@ def evaluate_state(state: dict, text: str) -> List[Tuple[str, bool]]:
     if state["kind"] == "simplicial":
         return evaluate_simplicial_formula(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
-            state["axiom_d"], text,
+            state["axiom_d"], text, knowledge_only=_knowledge_only(state),
         )
     return evaluate_formula(
         state["agents"], state["worlds"], state["per_agent"], state["atoms"],
@@ -897,6 +932,7 @@ def run_state(state: dict, tag: str = "") -> "PipelineResult":
         return run_simplicial(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
             state["axiom_d"], tag, hasse_full=hasse_full,
+            knowledge_only=_knowledge_only(state),
         )
     knowledge, belief = seeds_from_editor(
         state["agents"], state["worlds"], state["per_agent"], state["kind"]

@@ -799,6 +799,9 @@ def index() -> None:
                     state["per_agent"], state["atoms"], axiom_d_in.value,
                     not silent_defunct_in.value,
                 )
+                # A knowledge-only relational model translates to a knowledge
+                # complex (S_a = S); anything else carries belief data.
+                state["complex_kind"] = "knowledge" if previous == "knowledge" else "kb"
                 ui.notify("Complejo inicial: la traducción del modelo que "
                           "estaba dibujado. Edítalo libremente.", type="info")
             except ValueError as exc:
@@ -1016,6 +1019,21 @@ def index() -> None:
             facet[key][agent] = value
         update_preview()
 
+    def set_complex_kind(value: str) -> None:
+        """Knowledge complex (S_a = S) or knowledge + belief (S_a declared).
+
+        Only these two: in a complex the knowledge IS the gluing of the facets
+        along shared vertices, so there is no belief-only variant (unlike the
+        relational editor, where a lone KD45 relation is a model on its own).
+        The per-facet belief lists are kept while in knowledge mode, so the
+        switch is reversible.
+        """
+        if value == state.get("complex_kind", "kb"):
+            return
+        state["complex_kind"] = value
+        reset_results()
+        repaint_all()
+
     def paint_simplicial_editor() -> None:
         colors = agent_color_map(state["agents"])
         editor_box.clear()
@@ -1046,6 +1064,24 @@ def index() -> None:
                     ui.label("Agrega primero los agentes.").classes("text-grey-5")
             with ui.card().classes(CARD).props(FLAT):
                 _card_title("Facetas (un vértice de cada agente)")
+                # Which of the two readings of the complex is being declared.
+                # Mirrors the model-kind selector of the relational editor,
+                # minus "belief only" (see set_complex_kind for why).
+                knowledge_only = state.get("complex_kind", "kb") == "knowledge"
+                ui.toggle(
+                    {"knowledge": "complejo de conocimiento",
+                     "kb": "conocimiento y creencia"},
+                    value="knowledge" if knowledge_only else "kb",
+                    on_change=lambda e: set_complex_kind(e.value),
+                ).props("dense no-caps unelevated toggle-color=primary")
+                ui.label(
+                    "S_a = S: cada agente cree exactamente lo que sabe, así que "
+                    "B_a coincide con K_a. No hay «sólo creencia»: los vértices "
+                    "que pegan las facetas ya son el conocimiento."
+                    if knowledge_only else
+                    "Cada faceta dice además qué agentes la creen posible "
+                    "(en qué subcomplejos S_a está)."
+                ).classes("text-xs text-grey-5")
                 for i, facet in enumerate(state["facets"]):
                     with ui.column().classes("w-full gap-0 pb-2") \
                             .style("border-bottom:1px solid var(--p-line)"):
@@ -1068,11 +1104,12 @@ def index() -> None:
                             ui.button(icon="delete",
                                       on_click=lambda _, k=i: remove_facet(k)) \
                                 .props("flat dense color=grey")
-                        ui.select(
-                            state["agents"], multiple=True, value=facet["belief"],
-                            label="la creen posible (está en S_a de)",
-                            on_change=lambda e, f=facet: set_facet(f, "belief", e.value),
-                        ).props("use-chips dense").classes("w-full")
+                        if not knowledge_only:
+                            ui.select(
+                                state["agents"], multiple=True, value=facet["belief"],
+                                label="la creen posible (está en S_a de)",
+                                on_change=lambda e, f=facet: set_facet(f, "belief", e.value),
+                            ).props("use-chips dense").classes("w-full")
                 ui.button("añadir faceta", icon="add", on_click=lambda: add_facet()) \
                     .props("flat dense")
                 ui.markdown(

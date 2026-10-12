@@ -98,6 +98,7 @@ from visualization import (
     _signature_colors,
     _write_and_run_dot,
     node_literals,
+    signature_label,
 )
 
 __all__ = [
@@ -470,7 +471,7 @@ def from_simplicial_model(model, *, include_empty: bool = True,
     lattice.legend_cells = [
         _swatch_cell(agent_color[a], f"agent {a}", round_dot=True) for a in agents
     ] + [
-        _swatch_cell(colour, "belief: " + ("+".join(map(str, sig)) if sig else "none"))
+        _swatch_cell(colour, signature_label(model, sig, agents))
         for sig, colour in sorted(sig_color.items(), key=lambda kv: (len(kv[0]), kv[0]))
     ]
     return lattice

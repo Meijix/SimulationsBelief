@@ -163,6 +163,44 @@ class SimplicialBeliefModel:
         return {Y for Y in self.belief_facets[agent] if self.pi(agent, Y) == p}
 
     # ------------------------------------------------------------------ #
+    # Knowledge-only complexes (S_a = S)
+    # ------------------------------------------------------------------ #
+    @property
+    def is_knowledge_only(self) -> bool:
+        """True iff every belief subcomplex is the whole complex (``S_a = S``).
+
+        A complex with no belief data is a chromatic simplicial model of
+        KNOWLEDGE (Goubault, Ledent & Rajsbaum): the gluing of the facets along
+        shared vertices already says what each agent can tell apart. Reading
+        it as a belief model means "believe exactly what you know", ``S_a =
+        S`` -- the silence convention of the relational side (case 3, ``Q_a =
+        R_a``) and what :func:`to_simplicial` produces from a knowledge-only
+        frame. There is no "belief-only" counterpart: ``S_a`` cannot be
+        declared without ``S``, because the vertices that glue the facets ARE
+        the knowledge. Detected, not declared, like
+        ``RelationalFrame.logic_label``: a model whose declared ``S_a`` all
+        happen to equal ``S`` is a knowledge model.
+        """
+        return all(self.belief_facets.get(a, set()) == self.facets for a in self.agents)
+
+    @classmethod
+    def knowledge_only(
+        cls, agents: Iterable[Agent], nodes: Iterable[Node], facets: Iterable[Facet],
+        **kwargs,
+    ) -> "SimplicialBeliefModel":
+        """A complex read as pure knowledge: every ``S_a`` is the whole complex.
+
+        The simplicial analogue of a knowledge-only (S5) relational frame, and
+        the only belief-free way to build a complex: there is no ``S_a`` to
+        declare, so none is asked for. Axiom D then holds trivially (every
+        node lies in some facet of ``S = S_a``). Extra keyword arguments go to
+        the constructor (``world_of_facet``, ``node_names``, ``validate``...).
+        """
+        agents = set(agents)
+        facets = set(facets)
+        return cls(agents, nodes, facets, {a: set(facets) for a in agents}, **kwargs)
+
+    # ------------------------------------------------------------------ #
     # Isolated perspectives (the geometry of Axiom D)
     # ------------------------------------------------------------------ #
     def isolated_nodes(self) -> Set[Node]:
@@ -275,7 +313,8 @@ class SimplicialBeliefModel:
     # ------------------------------------------------------------------ #
     def describe(self) -> str:
         """Return a readable text summary: facets labelled by world and colours."""
-        lines = [f"SimplicialBeliefModel: {len(self.facets)} facets, {len(self.nodes)} nodes"]
+        lines = [f"SimplicialBeliefModel: {len(self.facets)} facets, {len(self.nodes)} nodes"
+                 + ("  [knowledge only: S_a = S for every agent]" if self.is_knowledge_only else "")]
         for facet in sorted(self.facets, key=lambda F: str(self.world_of_facet.get(F, ""))):
             world = self.world_of_facet.get(facet)
             in_belief = [a for a in sorted(self.agents, key=str) if facet in self.belief_facets[a]]
@@ -298,7 +337,8 @@ class SimplicialBeliefModel:
     def __repr__(self) -> str:
         belief_logic = "KD45" if self.axiom_d else "K45"
         return (
-            f"SimplicialBeliefModel(belief={belief_logic}, "
+            f"SimplicialBeliefModel({'knowledge only, ' if self.is_knowledge_only else ''}"
+            f"belief={belief_logic}, "
             f"agents={len(self.agents)}, "
             f"nodes={len(self.nodes)}, facets={len(self.facets)})"
         )
