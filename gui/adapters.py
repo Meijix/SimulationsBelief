@@ -57,7 +57,22 @@ from semantics import holds_kripke, lift_valuation  # noqa: E402
 import copy  # noqa: E402
 from assignment import drop_inconsistent, facet_inconsistencies, maximal_complex  # noqa: E402
 from simplicial import Node, SimplicialBeliefModel, label_node, to_simplicial  # noqa: E402
-from visualization import PALETTE, show, visualize  # noqa: E402
+from visualization import PALETTE, visualize  # noqa: E402
+from visualization import show as _show  # noqa: E402
+
+# The GUI's figures are SVG: crisp at any zoom (retina, the lightbox), a
+# fraction of the PNG size, and sized by the browser from the file's own
+# width/height so the layout can tell tall figures from wide ones without
+# decoding pixels. The CLI scripts keep their PNG default; only this wrapper
+# changes it, and an explicit image_format still wins. (The 3-D figure is
+# HTML either way.)
+FIGURE_FORMAT = "svg"
+
+
+def show(*args, **kwargs):
+    """``visualization.show`` with the GUI's figure format as the default."""
+    kwargs.setdefault("image_format", FIGURE_FORMAT)
+    return _show(*args, **kwargs)
 import hasse  # noqa: E402  -- face lattice (Fig. 4)
 
 
@@ -849,7 +864,7 @@ def run_simplicial(
         _hasse_caption("Fig. 2", hasse_full),
         Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Retículo de caras",
                         output_dir=str(OUTPUTS), rankdir="BT",
-                        facets_and_vertices=not hasse_full)),
+                        facets_and_vertices=not hasse_full, image_format=FIGURE_FORMAT)),
     ))
     result.text_diagrams.append(("Complejo simplicial", str(model)))
     result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
@@ -2007,15 +2022,22 @@ def diagnose_simplicial(proper, sm, valuation) -> StepReport:
     # representable in the vertex-based semantics -- the one real gap here.
     assignment = assignment_from_model(sm, valuation)
     gaps = nu_violations(sm, assignment, valuation)
-    for atom, facet in gaps[:6]:
+    # One line per ATOM, listing its worlds: the same sentence repeated once
+    # per world (six times for the thesis example) buried the one fact that
+    # matters -- which atom is unobserved, and where.
+    by_atom: Dict[str, List[str]] = {}
+    for atom, facet in gaps:
         world = sm.world_of_facet.get(facet, facet)
-        step.missing.append(
-            f"átomo {atom!r} es verdadero en el mundo {world!r} pero ningún agente "
-            f"lo observa allí: el esquema NU (P → ∨_a B_a P) falla, así que esa "
-            f"verdad no es representable en la semántica por vértices"
+        by_atom.setdefault(str(atom), []).append(
+            "(" + ", ".join(map(str, world)) + ")" if isinstance(world, tuple) else str(world)
         )
-    if len(gaps) > 6:
-        step.missing.append(f"… y {len(gaps) - 6} fallo(s) de NU más")
+    for atom, worlds in by_atom.items():
+        shown = ", ".join(worlds[:8]) + (f" … (+{len(worlds) - 8})" if len(worlds) > 8 else "")
+        step.missing.append(
+            f"átomo {atom!r} es verdadero en {len(worlds)} mundo(s) donde ningún "
+            f"agente lo observa ({shown}): ahí falla el esquema NU (P → ∨_a B_a P), "
+            f"así que esa verdad no es representable en la semántica por vértices"
+        )
     return step
 
 
@@ -2255,7 +2277,7 @@ def run_pipeline_from_seeds(
         _hasse_caption("Fig. 4", hasse_full),
         Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Retículo de caras",
                         output_dir=str(OUTPUTS), rankdir="BT",
-                        facets_and_vertices=not hasse_full)),
+                        facets_and_vertices=not hasse_full, image_format=FIGURE_FORMAT)),
     ))
     result.text_diagrams.append(("Retículo de caras", hasse.visualize(lattice)))
 
