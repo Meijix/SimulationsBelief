@@ -85,11 +85,23 @@ class SimplicialEditorView:
         if added:
             self.page.repaint_all()
 
+    def undo_maximal(self) -> None:
+        """Drop the facets "completar al complejo maximal" added, keeping the hand-made ones."""
+        state = self.page.state
+        before = len(state["facets"])
+        state["facets"] = [f for f in state["facets"] if not f.get("auto")]
+        ui.notify(f"{before - len(state['facets'])} faceta(s) añadida(s) quitada(s)", type="info")
+        self.page.repaint_all()
+
     def set_facet(self, facet: dict, key: str, value, agent: str | None = None) -> None:
         if agent is None:
             facet[key] = value
         else:
             facet[key][agent] = value
+        # An added facet the user edits becomes a hand-made one: "deshacer"
+        # must not take away something they shaped on purpose.
+        if facet.pop("auto", None):
+            self.page.editor.paint()
         self.page.preview.update()
 
     def set_complex_kind(self, value: str) -> None:
@@ -161,6 +173,11 @@ class SimplicialEditorView:
                 for i, facet in enumerate(state["facets"]):
                     with ui.column().classes("w-full gap-0 pb-2") \
                             .style("border-bottom:1px solid var(--p-line)"):
+                        if facet.get("auto"):
+                            # Added by "completar al complejo maximal", not typed:
+                            # said on the row so "quitar las añadidas" is predictable.
+                            ui.label("añadida al completar el complejo maximal") \
+                                .classes("text-xs").style("color:var(--p-muted)")
                         with ui.row().classes("w-full items-center gap-2"):
                             # The name is stored on typing and the preview is
                             # redrawn on leaving the field, not on every key.
@@ -196,11 +213,19 @@ class SimplicialEditorView:
                     ui.button("completar al complejo maximal", icon="auto_awesome",
                               on_click=lambda: self.fill_maximal()) \
                         .props("flat dense")
+                    if any(f.get("auto") for f in state["facets"]):
+                        # The way back: only the facets typed by hand remain.
+                        ui.button("quitar las facetas añadidas", icon="undo",
+                                  on_click=lambda: self.undo_maximal()) \
+                            .props("flat dense").tooltip(
+                            "Deja sólo las facetas definidas a mano (una faceta "
+                            "añadida que hayas editado cuenta como hecha a mano).")
                 ui.markdown(
                     "Cada faceta lleva exactamente un vértice de cada agente "
                     "(UCF). Una faceta cuyos vértices se contradicen en un átomo "
                     "no existe en el modelo: se elimina y se avisa. «Completar al "
                     "complejo maximal» añade todas las facetas consistentes que "
-                    "faltan (M(N, V, L)). Bajo el Axioma D, todo vértice debe "
-                    "estar en alguna faceta del subcomplejo de creencia de su agente."
+                    "faltan (M(N, V, L)) y «quitar las facetas añadidas» las vuelve "
+                    "a quitar. Bajo el Axioma D, todo vértice debe estar en alguna "
+                    "faceta del subcomplejo de creencia de su agente."
                 ).classes("text-xs text-grey-5")

@@ -769,9 +769,11 @@ def maximal_facets(
         while f"F{n}" in taken:
             n += 1
         taken.add(f"F{n}")
+        # "auto": the editor shows these as added by the completion and can
+        # remove them again ("quitar las facetas añadidas"); the model ignores it.
         out.append({"name": f"F{n}",
                     "nodes": {x.agent: name_of_node[x] for x in F},
-                    "belief": list(agents)})
+                    "belief": list(agents), "auto": True})
         added += 1
     return out, added
 

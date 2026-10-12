@@ -167,19 +167,29 @@ def index() -> None:
                 tab_atoms = ui.tab("atomos", label="Átomos", icon="label")
                 tab_formulas = ui.tab("formulas", label="Fórmulas", icon="calculate")
                 tab_actions = ui.tab("acciones", label="Acciones", icon="bolt")
-            # Quasar paints the panels on an opaque surface with padding; both
-            # are undone so the cards sit on the navy page.
-            with ui.tab_panels(left_tabs, value=tab_model).classes("w-full") \
-                    .style("background:transparent"):
-                with ui.tab_panel(tab_model).style("padding:0"), \
-                        ui.column().classes("w-full gap-4"):
-                    page.editor.build()
-                with ui.tab_panel(tab_atoms).style("padding:0"):
-                    page.atoms.build()
-                with ui.tab_panel(tab_formulas).style("padding:0"):
-                    page.formulas.build()
-                with ui.tab_panel(tab_actions).style("padding:0"):
-                    page.actions.build()
+            # The panels are plain columns shown one at a time, NOT Quasar's
+            # q-tab-panels: that component clips its content to a measured
+            # height (overflow hidden), so a long editor -- the direct
+            # complex with its vertex and facet cards -- was cut off at the
+            # bottom and the column could not scroll to the rest.
+            panels = {}
+            for tab in (tab_model, tab_atoms, tab_formulas, tab_actions):
+                panels[tab] = ui.column().classes("w-full gap-4")
+            with panels[tab_model]:
+                page.editor.build()
+            with panels[tab_atoms]:
+                page.atoms.build()
+            with panels[tab_formulas]:
+                page.formulas.build()
+            with panels[tab_actions]:
+                page.actions.build()
+
+            def show_tab(name: str) -> None:
+                for tab, panel in panels.items():
+                    panel.set_visibility(tab._props.get("name") == name)
+
+            left_tabs.on_value_change(lambda e: show_tab(e.value))
+            show_tab("modelo")
 
         # ---- Preview and results column ------------------------------------ #
         with ui.column().classes("grow min-w-0 gap-4"):

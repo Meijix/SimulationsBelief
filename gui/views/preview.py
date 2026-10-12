@@ -81,7 +81,13 @@ class PreviewView:
         self.refresh_stale()
         self._seq += 1
         seq = self._seq
-        ui.timer(0.25, lambda: self._render(seq), once=True)
+        # The timer is created inside the preview box, a container that is
+        # never cleared: created in the handler's own slot it died with the
+        # widget that fired the edit whenever that widget was repainted away
+        # (e.g. the knowledge/belief toggle of the complex editor), with
+        # "the parent element this slot belongs to has been deleted".
+        with self.box:
+            ui.timer(0.25, lambda: self._render(seq), once=True)
 
     async def _render(self, seq: int) -> None:
         """Draw the model exactly as entered (no closures), off the event loop.
