@@ -133,9 +133,12 @@ class ActionsView:
         ws.store_active(page.live_state())
         doc = ws.new_doc(doc_spec["name"], doc_spec["state"], readonly=True,
                          origin=doc_spec["origin"])
-        page.activate(doc["id"])
+        # Notify BEFORE activating: activating repaints this card, and the
+        # button whose click we are handling disappears with it (NiceGUI then
+        # has no slot to attach the notification to).
         ui.notify(f"Result opened as “{doc['name']}” (read-only). "
                   "Compare it with its input model from the bar.", type="positive")
+        page.activate(doc["id"])
 
     # ---- paint ------------------------------------------------------------- #
     def paint(self) -> None:
@@ -175,9 +178,13 @@ class ActionsView:
                      on_change=lambda e: spec.__setitem__("name", e.value)) \
                 .props("dense outlined").classes("w-full") \
                 .on("blur", lambda: self.paint())
+            def set_update(value: str) -> None:
+                spec["update"] = value
+                self.paint()      # the "pending" note below follows the choice
+
             ui.select({k: v[0] for k, v in UPDATE_KINDS.items()},
                       value=spec.get("update", "knowledge"), label="update kind",
-                      on_change=lambda e: spec.__setitem__("update", e.value)) \
+                      on_change=lambda e: set_update(e.value)) \
                 .props("dense outlined options-dense").classes("w-full")
             if UPDATE_KINDS[spec.get("update", "knowledge")][1] is None:
                 ui.label("Pending: this product is not implemented in the core yet "

@@ -1204,7 +1204,7 @@ ACTION_MODES = {
     # an action node y must agree on every atom to form the output node (x, y).
     1: "1 · what the vertex observes must be in the precondition (x ⇒ pre)",
     2: "2 · the precondition must be observed at the vertex (pre ⇒ x)",
-    3: "3 · basta que no se contradigan (por defecto)",
+    3: "3 · enough that they do not contradict each other (default)",
 }
 
 # update kind -> (label, function or None while pending). The function takes
