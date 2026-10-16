@@ -44,7 +44,7 @@ class CompareView:
                     ui.label(doc["name"]).classes("font-bold text-white grow")
                 ui.label(KINDS[doc["state"]["kind"]]).classes("eyebrow")
                 if doc["origin"] and doc["origin"].get("label"):
-                    ui.label("Resultado de " + doc["origin"]["label"]) \
+                    ui.label("Result of " + doc["origin"]["label"]) \
                         .classes("text-xs italic text-grey-5")
                 if outcome["status"] == "ok":
                     out = outcome["out"]
@@ -61,7 +61,7 @@ class CompareView:
                     # detail is in that model's editor.
                     for step in out.steps:
                         for text in step.failed:
-                            ui.label(f"{step.name}: falló").classes(
+                            ui.label(f"{step.name}: failed").classes(
                                 "text-xs font-semibold text-pink-3 mt-2")
                             ui.html(f"<pre style='white-space:pre-wrap' "
                                     f"class='text-xs'>{html.escape(text)}</pre>")
@@ -71,14 +71,14 @@ class CompareView:
             for caption, path in outcome["out"].figures:
                 results.figure_card(caption, path)
             if outcome["out"].html_3d is not None:
-                ui.label("Vista 3D interactiva: ábrela desde el editor de "
-                         "este modelo.").classes("text-xs italic text-grey-5")
+                ui.label("Interactive 3D view: open it from this model's "
+                         "editor.").classes("text-xs italic text-grey-5")
 
     async def open(self) -> None:
         page, ws = self.page, self.page.ws
         chosen = ws.chosen()
         if not 2 <= len(chosen) <= 4:
-            ui.notify("Elige de 2 a 4 modelos para comparar.", type="warning")
+            ui.notify("Choose 2 to 4 models to compare.", type="warning")
             return
         ws.store_active(page.live_state())      # the active one, up to date
         ws.comparing = True
@@ -89,7 +89,7 @@ class CompareView:
         with self.box, ui.card().classes(CARD).props(FLAT):
             with ui.column().classes("w-full items-center py-10 gap-2"):
                 ui.spinner(size="lg")
-                ui.label(f"Preparando {len(chosen)} modelos…").classes("text-grey-5")
+                ui.label(f"Preparing {len(chosen)} models…").classes("text-grey-5")
         for doc in chosen:
             if doc["outcome"] is None or doc["dirty"]:
                 doc["outcome"] = await page.results.compute(copy.deepcopy(doc["state"]), doc["id"])

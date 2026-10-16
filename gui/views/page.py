@@ -108,7 +108,7 @@ class Page:
 
     def duplicate_active(self) -> None:
         """Editable copy of the active document (the way out of read-only ones)."""
-        doc = self.ws.new_doc(f"{self.current()['name']} (copia)", self.live_state())
+        doc = self.ws.new_doc(f"{self.current()['name']} (copy)", self.live_state())
         self.activate(doc["id"])
 
     def close_doc(self, doc_id: str) -> None:
@@ -122,8 +122,8 @@ class Page:
     def load_example(self, key: str) -> None:
         """Load a library example INTO the active document."""
         if not self.ws.load_example(key):
-            ui.notify("Este modelo es de sólo lectura: duplícalo o abre uno "
-                      "nuevo para cargar un ejemplo.", type="warning")
+            ui.notify("This model is read-only: duplicate it or open a new "
+                      "one to load an example.", type="warning")
             return
         self.load_into_editor(self.current())
         self.docs_bar.paint()
@@ -150,11 +150,11 @@ class Page:
                 ui.icon("lock").style(f"color:{POSTER['yellow']}")
                 source = (doc["origin"] or {}).get("label")
                 ui.label(
-                    ("Resultado de " + source + ". " if source else "")
-                    + "Este modelo es de sólo lectura: para cambiarlo, "
-                      "duplícalo como modelo nuevo."
+                    ("Result of " + source + ". " if source else "")
+                    + "This model is read-only: to change it, "
+                      "duplicate it as a new model."
                 ).classes("text-sm text-grey-4 grow")
-                ui.button("Duplicar como modelo nuevo", icon="content_copy",
+                ui.button("Duplicate as new model", icon="content_copy",
                           on_click=lambda: self.duplicate_active()) \
                     .props("outline dense")
 

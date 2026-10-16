@@ -31,7 +31,7 @@ class SimplicialEditorView:
         if not name:
             return
         if any(name in vs for vs in state["vertices"].values()):
-            ui.notify(f"el vértice '{name}' ya existe", type="warning")
+            ui.notify(f"vertex '{name}' already exists", type="warning")
             return
         state["vertices"].setdefault(agent, []).append(name)
         self.page.repaint_all()
@@ -80,8 +80,8 @@ class SimplicialEditorView:
         except ValueError as exc:
             ui.notify(str(exc).splitlines()[0], type="warning")
             return
-        ui.notify(f"{added} faceta(s) añadida(s)" if added
-                  else "ya estaban todas las facetas consistentes", type="info")
+        ui.notify(f"{added} facet(s) added" if added
+                  else "every consistent facet was already there", type="info")
         if added:
             self.page.repaint_all()
 
@@ -90,7 +90,7 @@ class SimplicialEditorView:
         state = self.page.state
         before = len(state["facets"])
         state["facets"] = [f for f in state["facets"] if not f.get("auto")]
-        ui.notify(f"{before - len(state['facets'])} faceta(s) añadida(s) quitada(s)", type="info")
+        ui.notify(f"{before - len(state['facets'])} added facet(s) removed", type="info")
         self.page.repaint_all()
 
     def set_facet(self, facet: dict, key: str, value, agent: str | None = None) -> None:
@@ -127,7 +127,7 @@ class SimplicialEditorView:
         container.clear()
         with container:
             with ui.card().classes(CARD).props(FLAT):
-                card_title("Vértices (perspectivas de cada agente)")
+                card_title("Vertices (each agent's perspectives)")
                 for agent in state["agents"]:
                     names = state["vertices"].setdefault(agent, [])
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
@@ -135,7 +135,7 @@ class SimplicialEditorView:
                             f"width:10px;height:10px;border-radius:9999px;"
                             f"flex:none;background:{colors[agent]}"
                         )
-                        v_in = ui.input(f"nuevo vértice de {agent}") \
+                        v_in = ui.input(f"new vertex for {agent}") \
                             .props("dense outlined").classes("grow")
                         ui.button(icon="add",
                                   on_click=lambda _, a=agent, w=v_in: self.add_vertex(a, w)) \
@@ -149,26 +149,26 @@ class SimplicialEditorView:
                                     on_value_change=lambda e, a=agent, n=v:
                                         self.remove_vertex(a, n))
                 if not state["agents"]:
-                    ui.label("Agrega primero los agentes.").classes("text-grey-5")
+                    ui.label("Add the agents first.").classes("text-grey-5")
             with ui.card().classes(CARD).props(FLAT):
-                card_title("Facetas (un vértice de cada agente)")
+                card_title("Facets (one vertex per agent)")
                 # Which of the two readings of the complex is being declared.
                 # Mirrors the model-kind selector of the relational editor,
                 # minus "belief only" (see set_complex_kind for why).
                 knowledge_only = state.get("complex_kind", "kb") == "knowledge"
                 ui.toggle(
-                    {"knowledge": "complejo de conocimiento",
-                     "kb": "conocimiento y creencia"},
+                    {"knowledge": "knowledge complex",
+                     "kb": "knowledge and belief"},
                     value="knowledge" if knowledge_only else "kb",
                     on_change=lambda e: self.set_complex_kind(e.value),
                 ).props("dense no-caps unelevated toggle-color=primary")
                 ui.label(
-                    "S_a = S: cada agente cree exactamente lo que sabe, así que "
-                    "B_a coincide con K_a. No hay «sólo creencia»: los vértices "
-                    "que pegan las facetas ya son el conocimiento."
+                    "S_a = S: every agent believes exactly what it knows, so "
+                    "B_a coincides with K_a. There is no “belief only”: the vertices "
+                    "that glue the facets already are the knowledge."
                     if knowledge_only else
-                    "Cada faceta dice además qué agentes la creen posible "
-                    "(en qué subcomplejos S_a está)."
+                    "Each facet also says which agents believe it possible "
+                    "(which subcomplexes S_a it is in)."
                 ).classes("text-xs text-grey-5")
                 for i, facet in enumerate(state["facets"]):
                     with ui.column().classes("w-full gap-0 pb-2") \
@@ -176,12 +176,12 @@ class SimplicialEditorView:
                         if facet.get("auto"):
                             # Added by "completar al complejo maximal", not typed:
                             # said on the row so "quitar las añadidas" is predictable.
-                            ui.label("añadida al completar el complejo maximal") \
+                            ui.label("added when completing the maximal complex") \
                                 .classes("text-xs").style("color:var(--p-muted)")
                         with ui.row().classes("w-full items-center gap-2"):
                             # The name is stored on typing and the preview is
                             # redrawn on leaving the field, not on every key.
-                            ui.input("nombre", value=facet["name"],
+                            ui.input("name", value=facet["name"],
                                      on_change=lambda e, f=facet:
                                          f.__setitem__("name", e.value)) \
                                 .props("dense outlined").classes("w-24") \
@@ -200,32 +200,32 @@ class SimplicialEditorView:
                         if not knowledge_only:
                             ui.select(
                                 state["agents"], multiple=True, value=facet["belief"],
-                                label="la creen posible (está en S_a de)",
+                                label="believed possible by (in S_a of)",
                                 on_change=lambda e, f=facet: self.set_facet(f, "belief", e.value),
                             ).props("use-chips dense").classes("w-full")
                 with ui.row().classes("w-full items-center gap-2"):
-                    ui.button("añadir faceta", icon="add", on_click=lambda: self.add_facet()) \
+                    ui.button("add facet", icon="add", on_click=lambda: self.add_facet()) \
                         .props("flat dense")
                     # The thesis's own construction (p. 19): every consistent
                     # UCF facet the vertices can form. Offered as an action,
                     # not applied silently, because a declared complex is
                     # often meant to be a proper subcomplex of M(N, V, L).
-                    ui.button("completar al complejo maximal", icon="auto_awesome",
+                    ui.button("complete to the maximal complex", icon="auto_awesome",
                               on_click=lambda: self.fill_maximal()) \
                         .props("flat dense")
                     if any(f.get("auto") for f in state["facets"]):
                         # The way back: only the facets typed by hand remain.
-                        ui.button("quitar las facetas añadidas", icon="undo",
+                        ui.button("remove the added facets", icon="undo",
                                   on_click=lambda: self.undo_maximal()) \
                             .props("flat dense").tooltip(
-                            "Deja sólo las facetas definidas a mano (una faceta "
-                            "añadida que hayas editado cuenta como hecha a mano).")
+                            "Keeps only the hand-made facets (an added facet "
+                            "you have edited counts as hand-made).")
                 ui.markdown(
-                    "Cada faceta lleva exactamente un vértice de cada agente "
-                    "(UCF). Una faceta cuyos vértices se contradicen en un átomo "
-                    "no existe en el modelo: se elimina y se avisa. «Completar al "
-                    "complejo maximal» añade todas las facetas consistentes que "
-                    "faltan (M(N, V, L)) y «quitar las facetas añadidas» las vuelve "
-                    "a quitar. Bajo el Axioma D, todo vértice debe estar en alguna "
-                    "faceta del subcomplejo de creencia de su agente."
+                    "Each facet carries exactly one vertex of each agent "
+                    "(UCF). A facet whose vertices contradict each other on an atom "
+                    "does not exist in the model: it is removed and reported. “Complete "
+                    "to the maximal complex” adds every missing consistent facet "
+                    "(M(N, V, L)) and “remove the added facets” takes them away "
+                    "again. Under Axiom D, every vertex must be in some facet "
+                    "of its agent's belief subcomplex."
                 ).classes("text-xs text-grey-5")

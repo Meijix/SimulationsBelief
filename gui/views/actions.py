@@ -9,7 +9,7 @@ action. The interface is complete; the products themselves are the action
 layer's: today only the knowledge product exists
 (``simplicial_actions.update_model``, spec-b); the belief / memory / revision
 ones are offered but PENDING (Taiba, #6/#15) -- see ``adapters.UPDATE_KINDS``:
-the "tipo de actualización" select lists them, and ``apply_action`` refuses
+the "update kind" select lists them, and ``apply_action`` refuses
 them with a message until their functions exist.
 """
 
@@ -44,7 +44,7 @@ class ActionsView:
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT):
-            card_title("Acciones simpliciales")
+            card_title("Simplicial actions")
             self.box = ui.column().classes("w-full gap-2")
 
     # ---- the list of actions ----------------------------------------------- #
@@ -87,7 +87,7 @@ class ActionsView:
         if not name:
             return
         if name in action_node_names(spec):
-            ui.notify(f"el nodo de acción '{name}' ya existe", type="warning")
+            ui.notify(f"action node '{name}' already exists", type="warning")
             return
         spec.setdefault("isolated", {}).setdefault(agent, []).append(name)
         self.paint()
@@ -115,11 +115,11 @@ class ActionsView:
         page, ws = self.page, self.page.ws
         spec = ws.selected_action()
         if spec is None:
-            ui.notify("Primero define (o carga) una acción.", type="warning")
+            ui.notify("Define (or load) an action first.", type="warning")
             return
         problems = action_problems(spec, page.state["agents"])
         if problems:
-            ui.notify("La acción no está completa: " + problems[0], type="warning")
+            ui.notify("The action is not complete: " + problems[0], type="warning")
             return
         try:
             doc_spec = apply_action(page.live_state(), spec, model_name=page.current()["name"])
@@ -134,8 +134,8 @@ class ActionsView:
         doc = ws.new_doc(doc_spec["name"], doc_spec["state"], readonly=True,
                          origin=doc_spec["origin"])
         page.activate(doc["id"])
-        ui.notify(f"Resultado abierto como «{doc['name']}» (sólo lectura). "
-                  "Compáralo con su modelo de entrada desde la barra.", type="positive")
+        ui.notify(f"Result opened as “{doc['name']}” (read-only). "
+                  "Compare it with its input model from the bar.", type="positive")
 
     # ---- paint ------------------------------------------------------------- #
     def paint(self) -> None:
@@ -147,53 +147,53 @@ class ActionsView:
             with ui.row().classes("w-full items-center gap-2"):
                 for i, a in enumerate(ws.actions):
                     sel = i == ws.action
-                    ui.chip(a.get("name") or f"acción {i + 1}", icon="bolt", removable=True,
+                    ui.chip(a.get("name") or f"action {i + 1}", icon="bolt", removable=True,
                             color=POSTER["lime"] if sel else "rgba(255,255,255,.14)",
                             text_color=POSTER["surface"] if sel else "white",
                             on_click=lambda _, k=i: self.select_action(k),
                             on_value_change=lambda e, k=i: self.remove_action(k))
                 ui.button(icon="add", on_click=lambda: self.add_action()) \
-                    .props("round dense flat").tooltip("Acción nueva")
+                    .props("round dense flat").tooltip("New action")
             ui.select({k: v["label"] for k, v in ACTION_EXAMPLES.items()}, value=None,
-                      label="cargar acción de ejemplo",
+                      label="load example action",
                       on_change=lambda e: e.value and self.load_example(e.value)) \
                 .props("dense outlined options-dense").classes("w-full")
             spec = ws.selected_action()
             if spec is None:
-                ui.label("Una acción es un complejo de EVENTOS: en cada evento, un nodo "
-                         "de acción por agente; cada nodo puede exigir átomos "
-                         "(precondición) y fijarlos (postcondición). Se aplica al "
-                         "modelo activo y el resultado se abre como modelo nuevo."
+                ui.label("An action is a complex of EVENTS: in each event, one action "
+                         "node per agent; each node may require atoms "
+                         "(precondition) and set them (postcondition). It is applied to "
+                         "the active model and the result opens as a new model."
                          ).classes("text-xs text-grey-5")
                 return
             if not agents:
-                ui.label("Agrega agentes al modelo activo: los eventos llevan un nodo "
-                         "por agente.").classes("text-xs text-grey-5")
+                ui.label("Add agents to the active model: events carry one node "
+                         "per agent.").classes("text-xs text-grey-5")
                 return
             # ---- name, update kind, compatibility mode ---------------------- #
-            ui.input("nombre de la acción", value=spec.get("name", ""),
+            ui.input("action name", value=spec.get("name", ""),
                      on_change=lambda e: spec.__setitem__("name", e.value)) \
                 .props("dense outlined").classes("w-full") \
                 .on("blur", lambda: self.paint())
             ui.select({k: v[0] for k, v in UPDATE_KINDS.items()},
-                      value=spec.get("update", "knowledge"), label="tipo de actualización",
+                      value=spec.get("update", "knowledge"), label="update kind",
                       on_change=lambda e: spec.__setitem__("update", e.value)) \
                 .props("dense outlined options-dense").classes("w-full")
             if UPDATE_KINDS[spec.get("update", "knowledge")][1] is None:
-                ui.label("Pendiente: este producto aún no está implementado en el "
-                         "núcleo (capa de acciones de Taiba). La acción se puede "
-                         "definir y guardar; aplicarla avisará.") \
+                ui.label("Pending: this product is not implemented in the core yet "
+                         "(Taiba's action layer). The action can be defined and "
+                         "saved; applying it will warn.") \
                     .classes("text-xs").style(f"color:{POSTER['yellow']}")
             ui.select(ACTION_MODES, value=int(spec.get("mode", 3)),
-                      label="compatibilidad vértice / nodo de acción",
+                      label="vertex / action-node compatibility",
                       on_change=lambda e: spec.__setitem__("mode", int(e.value))) \
                 .props("dense outlined options-dense").classes("w-full")
             # ---- events: one action node per agent (UCF, like facets) ------ #
-            ui.label("Eventos (un nodo de acción por agente)").classes("eyebrow mt-1")
+            ui.label("Events (one action node per agent)").classes("eyebrow mt-1")
             colors = agent_color_map(agents)
             for i, ev in enumerate(spec["events"]):
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                    ui.input("evento", value=ev["name"],
+                    ui.input("event", value=ev["name"],
                              on_change=lambda e, v=ev: v.__setitem__("name", e.value)) \
                         .props("dense outlined").classes("w-24")
                     for agent in agents:
@@ -205,10 +205,10 @@ class ActionsView:
                             .on("blur", lambda: self.paint())
                     ui.button(icon="delete", on_click=lambda _, k=i: self.remove_event(spec, k)) \
                         .props("flat dense color=grey")
-            ui.button("añadir evento", icon="add", on_click=lambda: self.add_event(spec)) \
+            ui.button("add event", icon="add", on_click=lambda: self.add_event(spec)) \
                 .props("flat dense")
             # ---- isolated action nodes (in no event) ------------------------ #
-            with ui.expansion("nodos de acción aislados (en ningún evento)") \
+            with ui.expansion("isolated action nodes (in no event)") \
                     .classes("w-full text-xs"):
                 for agent in agents:
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
@@ -223,25 +223,25 @@ class ActionsView:
                                     on_value_change=lambda e, a=agent, n=name:
                                         self.remove_isolated(spec, a, n))
             # ---- pre / post conditions: vertex atoms on action nodes -------- #
-            ui.label("Precondiciones y postcondiciones (átomos sobre nodos de acción)") \
+            ui.label("Preconditions and postconditions (atoms on action nodes)") \
                 .classes("eyebrow mt-1")
             nodes = action_node_names(spec)
             with ui.row().classes("w-full no-wrap items-center gap-2"):
-                atom_box = ui.input("átomo (p. ej. uno del modelo)").props("dense outlined") \
+                atom_box = ui.input("atom (e.g. one of the model's)").props("dense outlined") \
                     .classes("grow")
                 ui.button(icon="add", on_click=lambda: self.add_atom(spec, atom_box)) \
                     .props("round dense")
                 atom_box.on("keydown.enter", lambda: self.add_atom(spec, atom_box))
             atoms = sorted(set(spec.get("pre", {})) | set(spec.get("post", {})))
             for atom in atoms:
-                for table, label in (("pre", "exige"), ("post", "fija")):
+                for table, label in (("pre", "requires"), ("post", "sets")):
                     cond = spec.setdefault(table, {}).setdefault(atom, {"true": [], "false": []})
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
                         ui.label(f"{atom} · {label}").classes("font-mono text-xs w-20")
-                        ui.select(nodes, multiple=True, value=cond["true"], label="verdadero",
+                        ui.select(nodes, multiple=True, value=cond["true"], label="true",
                                   on_change=lambda e, c=cond: c.__setitem__("true", list(e.value))) \
                             .props("use-chips dense").classes("grow")
-                        ui.select(nodes, multiple=True, value=cond["false"], label="falso",
+                        ui.select(nodes, multiple=True, value=cond["false"], label="false",
                                   on_change=lambda e, c=cond: c.__setitem__("false", list(e.value))) \
                             .props("use-chips dense").classes("grow")
                         if table == "pre":
@@ -257,8 +257,8 @@ class ActionsView:
                 ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
                         f"{html.escape(describe_action(spec, agents))}</pre>")
             with ui.row().classes("w-full items-center gap-2"):
-                ui.button("Aplicar al modelo activo", icon="play_arrow",
+                ui.button("Apply to the active model", icon="play_arrow",
                           on_click=lambda: self.apply()) \
                     .props("unelevated dense color=primary text-color=dark")
-                ui.label("El resultado se abre como modelo de sólo lectura; "
-                         "compáralo con su entrada.").classes("text-xs text-grey-5")
+                ui.label("The result opens as a read-only model; "
+                         "compare it with its input.").classes("text-xs text-grey-5")

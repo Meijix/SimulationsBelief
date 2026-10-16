@@ -140,28 +140,28 @@ HEAD_HTML = f"""
 # on the VERTICES (what each perspective observes) and formulas are evaluated
 # facet by facet, with no closures in between.
 _ATOMS_WORLDS = (
-    "Declara cada átomo y en qué mundos es **verdadero**. Con átomos, las "
-    "figuras etiquetan los mundos con sus literales y puedes evaluar fórmulas."
+    "Declare each atom and the worlds where it is **true**. With atoms, the "
+    "figures label the worlds with their literals and you can evaluate formulas."
 )
 ATOMS_HELP = {
     "kb": _ATOMS_WORLDS, "knowledge": _ATOMS_WORLDS, "belief": _ATOMS_WORLDS,
     "simplicial": (
-        "Los átomos se asignan a **vértices**: qué perspectivas lo observan "
-        "verdadero y cuáles falso; las demás no lo saben. Una faceta satisface "
-        "el átomo si algún vértice suyo lo observa verdadero."
+        "Atoms are assigned to **vertices**: which perspectives observe it "
+        "true and which false; the rest do not know it. A facet satisfies "
+        "the atom if one of its vertices observes it true."
     ),
 }
 _FORMULA_WORLDS = (
-    "Sintaxis: átomos declarados, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
-    "`bot`, paréntesis. Se evalúa **mundo por mundo** sobre el modelo ya "
-    "completado por las clausuras."
+    "Syntax: declared atoms, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
+    "`bot`, parentheses. Evaluated **world by world** on the model already "
+    "completed by the closures."
 )
 FORMULA_HELP = {
     "kb": _FORMULA_WORLDS, "knowledge": _FORMULA_WORLDS, "belief": _FORMULA_WORLDS,
     "simplicial": (
-        "Sintaxis: átomos declarados, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
-        "`bot`, paréntesis. Se evalúa **faceta por faceta** con la semántica "
-        "por vértices; el complejo debe ser válido."
+        "Syntax: declared atoms, `K_a`, `B_a`, `~`/`¬`, `&`, `|`, `->`, "
+        "`bot`, parentheses. Evaluated **facet by facet** with the vertex-based "
+        "semantics; the complex must be valid."
     ),
 }
 

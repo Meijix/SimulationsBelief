@@ -42,10 +42,10 @@ class EditorView:
         page = self.page
         # ---- Identifiers ------------------------------------------------- #
         with ui.card().classes(CARD).props(FLAT) as self.ident_card:
-            card_title("Agentes y mundos")
+            card_title("Agents and worlds")
             # Document name: the one shown in the models bar and in the
             # comparison panels.
-            self.name_in = ui.input("nombre del modelo") \
+            self.name_in = ui.input("model name") \
                 .props("dense outlined").classes("w-full")
             self.name_in.on("blur", lambda: self.rename_current())
             self.name_in.on("keydown.enter", lambda: self.rename_current())
@@ -53,11 +53,11 @@ class EditorView:
             # rows change meaning), adjusts which switches apply and redraws
             # the preview.
             self.kind_in = ui.select(
-                KINDS, value="kb", label="tipo de modelo",
+                KINDS, value="kb", label="model kind",
                 on_change=lambda e: self.set_kind(e.value),
             ).props("dense outlined options-dense").classes("w-full")
             with ui.row().classes("w-full no-wrap items-center gap-2"):
-                self.agent_input = ui.input("nuevo agente") \
+                self.agent_input = ui.input("new agent") \
                     .props("dense outlined").classes("grow")
                 ui.button(icon="add", on_click=lambda: self.add_agent()) \
                     .props("round dense")
@@ -69,7 +69,7 @@ class EditorView:
             # kind the whole block is hidden.
             with ui.column().classes("w-full gap-2") as self.worlds_box:
                 with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
-                    self.world_input = ui.input("nuevo mundo") \
+                    self.world_input = ui.input("new world") \
                         .props("dense outlined").classes("grow")
                     ui.button(icon="add", on_click=lambda: self.add_world()) \
                         .props("round dense")
@@ -78,10 +78,10 @@ class EditorView:
 
             # The core's KD45/K45 switch (axiom_d), exposed as is: turning it
             # off legalizes defunct beliefs (Q_a(w) = ∅).
-            self.axiom_d_in = ui.switch("Axioma D (KD45; apagado = K45)", value=True).tooltip(
-                "KD45 exige que todo agente crea algo en cada mundo (seriedad). "
-                "Apagado (K45) una creencia vacía es legal: ahí el agente cree "
-                "todo, ⊥ incluido.")
+            self.axiom_d_in = ui.switch("Axiom D (KD45; off = K45)", value=True).tooltip(
+                "KD45 requires every agent to believe something in every world (seriality). "
+                "Off (K45), an empty belief is legal: there the agent believes "
+                "everything, ⊥ included.")
 
             # Turning Axiom D off only LEGALIZES defunct belief; it does not
             # produce it. The project convention is that silence about belief
@@ -91,9 +91,9 @@ class EditorView:
             # from KD45 and B_a ⊥ was unreachable. It is global (so is the
             # core flag): it affects EVERY class with no belief marked.
             self.silent_defunct_in = ui.switch(
-                "Creencia vacía si no se marca nada (Q = ∅)", value=False,
-            ).tooltip("Sólo con K45. Apagada, una clase sin creencia marcada "
-                      "cree lo que sabe (Q = R).")
+                "Empty belief when nothing is marked (Q = ∅)", value=False,
+            ).tooltip("Only with K45. Off, a class with no belief marked "
+                      "believes what it knows (Q = R).")
 
             def _reset_silent_defunct() -> None:
                 """KD45 forbids Q = ∅: going back to KD45 clears the box.
@@ -115,7 +115,7 @@ class EditorView:
 
             # Drawing options, collapsed: they change figures, not the model,
             # so they need not be in sight all the time.
-            with ui.expansion("Opciones de dibujo", icon="brush") \
+            with ui.expansion("Drawing options", icon="brush") \
                     .classes("w-full text-sm").props("dense"):
                 # The relational figures omit what the logic already implies:
                 # reflexive loops and the second arrow of each symmetric pair
@@ -125,10 +125,10 @@ class EditorView:
                 # there are results already, reruns the pipeline so that
                 # Figures 1 and 2 agree.
                 self.explicit_in = ui.switch(
-                    "Mostrar aristas implícitas (lazos y simetría)",
+                    "Show implicit edges (loops and symmetry)",
                     value=False, on_change=lambda _: self.explicit_changed(),
-                ).tooltip("Dibuja los lazos reflexivos y ambas direcciones de cada "
-                          "par simétrico en vez de darlos por sobreentendidos.")
+                ).tooltip("Draw the reflexive loops and both directions of each "
+                          "symmetric pair instead of taking them for granted.")
                 # The lattice figure shows only vertices and facets by default
                 # (issue #7): perspectives below, worlds above. The full
                 # lattice, with every intermediate face, is optional: with
@@ -136,18 +136,18 @@ class EditorView:
                 # changes one figure of the result, touching it reruns the
                 # pipeline if there were results already.
                 self.hasse_full_in = ui.switch(
-                    "Retículo de caras completo (todas las dimensiones)",
+                    "Full face lattice (all dimensions)",
                     value=False, on_change=lambda _: self.hasse_full_changed(),
-                ).tooltip("Apagado, el diagrama de Hasse sólo dibuja las perspectivas "
-                          "y los mundos, unidos cuando una es parte del otro.")
+                ).tooltip("Off, the Hasse diagram draws only the perspectives "
+                          "and the worlds, joined when one is part of the other.")
                 # The interactive 3-D page is the heavy output of a run (~3 MB
                 # of embedded Plotly) and the slowest to write; off, a run
                 # produces the SVG figures only.
                 self.make_3d_in = ui.switch(
-                    "Generar vista 3D interactiva",
+                    "Generate interactive 3D view",
                     value=True, on_change=lambda _: self.make_3d_changed(),
-                ).tooltip("Apagada, la corrida no escribe la página 3D (~3 MB): "
-                          "sólo las figuras SVG.")
+                ).tooltip("Off, the run does not write the 3D page (~3 MB): "
+                          "only the SVG figures.")
 
         # ---- Per-agent relation editor (or the direct-complex editor) ------ #
         self.editor_box = ui.column().classes("w-full gap-4")
@@ -221,11 +221,11 @@ class EditorView:
                 # A knowledge-only relational model translates to a knowledge
                 # complex (S_a = S); anything else carries belief data.
                 state["complex_kind"] = "knowledge" if previous == "knowledge" else "kb"
-                ui.notify("Complejo inicial: la traducción del modelo que "
-                          "estaba dibujado. Edítalo libremente.", type="info")
+                ui.notify("Initial complex: the translation of the model that "
+                          "was drawn. Edit it freely.", type="info")
             except ValueError as exc:
                 state["vertices"] = {a: [] for a in state["agents"]}
-                ui.notify(f"Complejo en blanco ({str(exc).splitlines()[0]})",
+                ui.notify(f"Blank complex ({str(exc).splitlines()[0]})",
                           type="warning")
         page.reset_results()
         if kind == "knowledge":
@@ -296,7 +296,7 @@ class EditorView:
         if not name:
             return
         if name in state["agents"]:
-            ui.notify(f"el agente '{name}' ya existe", type="warning")
+            ui.notify(f"agent '{name}' already exists", type="warning")
             return
         state["agents"].append(name)
         state["per_agent"].setdefault(name, [])
@@ -315,7 +315,7 @@ class EditorView:
         if not name:
             return
         if name in state["worlds"]:
-            ui.notify(f"el mundo '{name}' ya existe", type="warning")
+            ui.notify(f"world '{name}' already exists", type="warning")
             return
         state["worlds"].append(name)
         self.page.repaint_all()
@@ -380,7 +380,7 @@ class EditorView:
                             f"width:10px;height:10px;border-radius:9999px;"
                             f"background:{colors[agent]}"
                         )
-                        ui.label(f"Agente {agent}").classes("font-semibold")
+                        ui.label(f"Agent {agent}").classes("font-semibold")
                     kind = state["kind"]
                     for i, row in enumerate(rows):
                         with ui.row().classes("w-full no-wrap items-center gap-2"):
@@ -390,8 +390,8 @@ class EditorView:
                             # options depend on the chosen class.
                             ui.select(
                                 state["worlds"], multiple=True, value=row["cls"],
-                                label=("desde (mundos)" if kind == "belief"
-                                       else "clase (indistinguibles)"),
+                                label=("from (worlds)" if kind == "belief"
+                                       else "class (indistinguishable)"),
                                 on_change=lambda e, r=row: self.set_cls(r, e.value),
                             ).props("use-chips dense").classes("grow")
                             # Believed worlds: restricted to the class (so a
@@ -402,8 +402,8 @@ class EditorView:
                                 ui.select(
                                     state["worlds"] if kind == "belief" else row["cls"],
                                     multiple=True, value=row["bel"],
-                                    label=("cree (mundos)" if kind == "belief"
-                                           else "cree (vacío = lo que sabe)"),
+                                    label=("believes (worlds)" if kind == "belief"
+                                           else "believes (empty = what it knows)"),
                                     on_change=lambda e, r=row: self.set_bel(r, e.value),
                                 ).props("use-chips dense").classes("grow")
                             ui.button(
@@ -411,13 +411,13 @@ class EditorView:
                                 on_click=lambda _, a=agent, k=i: self.remove_row(a, k),
                             ).props("flat dense color=grey")
                     ui.button(
-                        "añadir fila" if kind == "belief" else "añadir clase",
+                        "add row" if kind == "belief" else "add class",
                         icon="add", on_click=lambda _, a=agent: self.add_row(a),
                     ).props("flat dense")
                     ui.markdown({
-                        "kb": "Mundos fuera de toda clase quedan como clases unitarias.",
-                        "knowledge": "Mundos fuera de toda clase quedan como clases "
-                                     "unitarias (el agente los distingue).",
-                        "belief": "Mundos sin fila no creen nada: inválido bajo KD45, "
-                                  "creencia difunta bajo K45.",
+                        "kb": "Worlds outside every class remain singleton classes.",
+                        "knowledge": "Worlds outside every class remain singleton "
+                                     "classes (the agent tells them apart).",
+                        "belief": "Worlds without a row believe nothing: invalid under KD45, "
+                                  "defunct belief under K45.",
                     }[kind]).classes("text-xs text-grey-5")

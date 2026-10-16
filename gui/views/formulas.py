@@ -22,12 +22,12 @@ class FormulasView:
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT):
-            card_title("Evaluar fórmula")
+            card_title("Evaluate formula")
             self.input = ui.input(
-                "fórmula", placeholder="B_a p & ~K_a p",
+                "formula", placeholder="B_a p & ~K_a p",
             ).props("dense outlined input-class=font-mono").classes("w-full")
             self.help = ui.markdown(FORMULA_HELP["kb"]).classes("text-xs text-grey-5")
-            ui.button("Evaluar", icon="calculate", on_click=lambda: self.evaluate()) \
+            ui.button("Evaluate", icon="calculate", on_click=lambda: self.evaluate()) \
                 .props("outline dense")
             self.input.on("keydown.enter", lambda: self.evaluate())
             self.out = ui.column().classes("w-full gap-2")
@@ -54,9 +54,9 @@ class FormulasView:
             with ui.row().classes("gap-1"):
                 for world, ok in rows:
                     chip(world, "ok" if ok else "bad", icon="check" if ok else "close")
-            unit = "facetas" if simplicial else "mundos"
+            unit = "facets" if simplicial else "worlds"
             ui.label(
-                f"Válida en el modelo (vale en todas las {unit})." if simplicial and holds == len(rows)
-                else "Válida en el modelo (vale en todos los mundos)." if holds == len(rows)
-                else f"Vale en {holds} de {len(rows)} {unit}."
+                f"Valid in the model (holds in every facet)." if simplicial and holds == len(rows)
+                else "Valid in the model (holds in every world)." if holds == len(rows)
+                else f"Holds in {holds} of {len(rows)} {unit}."
             ).classes("text-xs text-grey-5")

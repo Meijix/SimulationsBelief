@@ -65,7 +65,7 @@ class PreviewView:
         with self.box, ui.card().classes(CARD + " poster-live").props(FLAT):
             with ui.row().classes("w-full items-center gap-2"):
                 ui.element("span").classes("pulse-dot")
-                card_title("Vista previa · modelo tal como se ingresa")
+                card_title("Preview · the model as entered")
                 ui.space()
                 self._badge = ui.row().classes("items-center")
             self._body = ui.column().classes("w-full gap-2")
@@ -134,7 +134,7 @@ class PreviewView:
         body.clear()
         if isinstance(result, str):
             with badge:
-                chip("inexpresable", "bad")
+                chip("inexpressible", "bad")
             with body:
                 ui.html(f"<pre style='white-space:pre-wrap' class='text-xs'>"
                         f"{html.escape(result)}</pre>")
@@ -142,14 +142,14 @@ class PreviewView:
         path, violations = result
         with badge:
             if violations:
-                chip(f"{len(violations)} por completar", "warn", icon="pending")
+                chip(f"{len(violations)} to complete", "warn", icon="pending")
             else:
-                chip("válido", "ok", icon="check")
+                chip("valid", "ok", icon="check")
         with body:
             with ui.element("div").classes("w-full fig-frame"):
                 figure_img(path)
             if violations:
-                with ui.expansion("Lo que las clausuras completarán") \
+                with ui.expansion("What the closures will complete") \
                         .classes("w-full").style(f"color:{POSTER['yellow']}"):
                     for v in violations:
                         ui.label(v).classes("font-mono text-xs")
@@ -174,8 +174,8 @@ class PreviewView:
                 f"background:{tint(POSTER['yellow'], .10)};"
                 f"border:1px solid {tint(POSTER['yellow'], .45)}"):
             ui.icon("history").style(f"color:{POSTER['yellow']}")
-            ui.label("Las figuras de abajo son de una versión anterior del modelo.") \
+            ui.label("The figures below belong to an earlier version of the model.") \
                 .classes("text-sm grow").style(f"color:{POSTER['yellow']}")
-            ui.button("Volver a correr", icon="play_arrow",
+            ui.button("Run again", icon="play_arrow",
                       on_click=lambda: page.results.run()) \
                 .props("outline dense").style(f"color:{POSTER['yellow']}")

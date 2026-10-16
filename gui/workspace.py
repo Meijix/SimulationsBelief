@@ -52,7 +52,7 @@ MAX_COMPARE = 4
 def _slug(name: str) -> str:
     """A folder-safe version of a model name: only path separators and control
     characters are replaced, so "Tesis · Figuras 1 → 3" keeps its name."""
-    return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip() or "modelo"
+    return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip() or "model"
 
 
 def _stable_name(file_name: str, doc_id: str) -> str:
@@ -89,8 +89,8 @@ class Workspace:
     def get(self, doc_id: str) -> Optional[dict]:
         return next((d for d in self.docs if d["id"] == doc_id), None)
 
-    def next_name(self, prefix: str = "Modelo") -> str:
-        """``"Modelo 3"``: the number of the next document, as the bar shows it."""
+    def next_name(self, prefix: str = "Model") -> str:
+        """``"Model 3"``: the number of the next document, as the bar shows it."""
         return f"{prefix} {self._next}"
 
     def new_doc(self, name: str, state: dict, readonly: bool = False,
@@ -179,7 +179,7 @@ class Workspace:
         return self.actions[i]
 
     def add_action(self, agents: List[str], name: str | None = None) -> dict:
-        spec = blank_action(agents, name or f"acción {len(self.actions) + 1}")
+        spec = blank_action(agents, name or f"action {len(self.actions) + 1}")
         return self.add_action_spec(spec)
 
     def add_action_spec(self, spec: dict) -> dict:
@@ -246,7 +246,7 @@ class Workspace:
                      "", "| file | figure |", "|---|---|"]
             files = list(out.figures)
             if out.html_3d is not None:
-                files.append(("Vista 3D interactiva (abrir en el navegador)", out.html_3d))
+                files.append(("Interactive 3D view (open in the browser)", out.html_3d))
             for caption, src in files:
                 src = Path(src)
                 if not src.exists():

@@ -23,10 +23,10 @@ class AtomsView:
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT) as self.card:
-            card_title("Átomos (proposiciones)")
+            card_title("Atoms (propositions)")
             self.help = ui.markdown(ATOMS_HELP["kb"]).classes("text-xs text-grey-5")
             with ui.row().classes("w-full no-wrap items-center gap-2"):
-                self.atom_input = ui.input("nuevo átomo") \
+                self.atom_input = ui.input("new atom") \
                     .props("dense outlined").classes("grow")
                 ui.button(icon="add", on_click=lambda: self.add_atom()) \
                     .props("round dense")
@@ -43,7 +43,7 @@ class AtomsView:
             return
         simplicial = state["kind"] == "simplicial"
         if name in (state["vatoms"] if simplicial else state["atoms"]):
-            ui.notify(f"el átomo '{name}' ya existe", type="warning")
+            ui.notify(f"atom '{name}' already exists", type="warning")
             return
         if simplicial:
             state["vatoms"][name] = {"true": [], "false": []}
@@ -81,12 +81,12 @@ class AtomsView:
                         ui.label(name).classes("font-mono w-10")
                         ui.select(
                             every, multiple=True, value=spec["true"],
-                            label="lo observan verdadero",
+                            label="observed true by",
                             on_change=lambda e, n=name: self.set_vatom(n, "true", e.value),
                         ).props("use-chips dense").classes("grow")
                         ui.select(
                             every, multiple=True, value=spec["false"],
-                            label="lo observan falso",
+                            label="observed false by",
                             on_change=lambda e, n=name: self.set_vatom(n, "false", e.value),
                         ).props("use-chips dense").classes("grow")
                         ui.button(
@@ -100,7 +100,7 @@ class AtomsView:
                     ui.label(name).classes("font-mono w-10")
                     ui.select(
                         state["worlds"], multiple=True, value=trues,
-                        label="verdadero en",
+                        label="true in",
                         on_change=lambda e, n=name: self.set_atom(n, e.value),
                     ).props("use-chips dense").classes("grow")
                     ui.button(

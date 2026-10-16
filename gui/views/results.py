@@ -92,7 +92,7 @@ class ResultsView:
         with self.container, ui.card().classes(CARD).props(FLAT):
             with ui.column().classes("w-full items-center py-10 gap-2"):
                 ui.spinner(size="lg")
-                ui.label("Generando figuras…").classes("text-grey-5")
+                ui.label("Generating figures…").classes("text-grey-5")
         try:
             outcome = await self.compute(copy.deepcopy(page.live_state()), doc["id"])
         finally:
@@ -100,9 +100,9 @@ class ResultsView:
         doc["outcome"], doc["dirty"] = outcome, False
         page.preview.refresh_stale()
         if outcome["status"] == "invalid":
-            ui.notify("El modelo no es válido — detalle en el panel", type="negative")
+            ui.notify("The model is not valid — details in the panel", type="negative")
         elif outcome["status"] == "error":
-            ui.notify("Error al correr el pipeline — detalle en el panel", type="negative")
+            ui.notify("Error while running the pipeline — details in the panel", type="negative")
         if doc["id"] == page.ws.active:   # the model may have been switched mid-run
             self.render_outcome(outcome)
 
@@ -111,30 +111,30 @@ class ResultsView:
         """Empty state: never a blank column without a message."""
         target = self.container if target is None else target
         with target, ui.column().classes("w-full items-center py-16 gap-1"):
-            ui.label("Sin resultados todavía").classes("text-grey-5 font-semibold")
-            ui.label("Corre el pipeline para ver las Figuras 1 → 4") \
+            ui.label("No results yet").classes("text-grey-5 font-semibold")
+            ui.label("Run the pipeline to see Figures 1 → 4") \
                 .classes("text-xs text-grey-6")
 
     def render_failure(self, outcome: dict) -> None:
         """Failure card for an 'invalid' or 'error' outcome."""
         with ui.card().classes(CARD + " poster-bad").props(FLAT):
             if outcome["status"] == "invalid":
-                ui.label("Modelo rechazado por la validación del núcleo:") \
+                ui.label("Model rejected by the core's validation:") \
                     .classes("font-semibold text-pink-3")
                 ui.html(f"<pre style='white-space:pre-wrap'>"
                         f"{html.escape(outcome['message'])}</pre>")
                 return
             if outcome["no_dot"]:
-                ui.label("Falta Graphviz").classes("font-semibold text-pink-3")
+                ui.label("Graphviz is missing").classes("font-semibold text-pink-3")
                 ui.html(
-                    "<p>El pipeline necesita el binario <code>dot</code> "
-                    "para dibujar las figuras, y no está en el PATH.</p>"
-                    "<p>Instálalo con <code>brew install graphviz</code> "
-                    "(macOS) o <code>apt install graphviz</code> (Linux) "
-                    "y vuelve a correr.</p>"
+                    "<p>The pipeline needs the <code>dot</code> binary "
+                    "to draw the figures, and it is not on the PATH.</p>"
+                    "<p>Install it with <code>brew install graphviz</code> "
+                    "(macOS) or <code>apt install graphviz</code> (Linux) "
+                    "and run again.</p>"
                 )
             else:
-                ui.label("Error inesperado (esto es un bug, repórtalo):") \
+                ui.label("Unexpected error (this is a bug, please report it):") \
                     .classes("font-semibold text-pink-3")
             ui.html(f"<pre style='white-space:pre-wrap' class='text-xs'>"
                     f"{html.escape(outcome['trace'])}</pre>")
@@ -156,7 +156,7 @@ class ResultsView:
             # the old text log, readable in a second).
             with ui.card().classes(CARD).props(FLAT):
                 with ui.row().classes("w-full items-center gap-2"):
-                    card_title("Resultado del pipeline")
+                    card_title("Pipeline result")
                     ui.space()
                     # Badges come with Quasar palette names
                     # (positive/negative/primary); they are mapped to the
@@ -176,7 +176,7 @@ class ResultsView:
             # they start looking at the figures.
             if out.steps:
                 with ui.card().classes(CARD).props(FLAT):
-                    card_title("Pipeline paso a paso")
+                    card_title("Pipeline step by step")
                     for step in out.steps:
                         # Two accents: lime for "as drawn" and "completed by a
                         # closure" (both good outcomes), rose for failed,
@@ -191,9 +191,9 @@ class ResultsView:
                             ui.icon(icon).style(f"color:{color}")
                             ui.label(step.name).classes("font-semibold")
                             if step.status == "ok":
-                                ui.label("tal cual se dibujó").classes("text-xs text-grey-5")
+                                ui.label("exactly as drawn").classes("text-xs text-grey-5")
                             if step.status == "skipped":
-                                ui.label("no aplica a este tipo de modelo") \
+                                ui.label("does not apply to this model kind") \
                                     .classes("text-xs text-grey-5")
                         for text in step.skipped:
                             with ui.row().classes("w-full no-wrap items-start gap-2 ml-8"):
@@ -201,7 +201,7 @@ class ResultsView:
                                 ui.label(text).classes("text-sm text-grey-4")
                         for text in step.failed:
                             with ui.column().classes("w-full gap-0 ml-8 p-2 rounded poster-bad"):
-                                ui.label("Falló aquí — el pipeline se detuvo:") \
+                                ui.label("Failed here — the pipeline stopped:") \
                                     .classes("text-xs font-semibold text-pink-3")
                                 ui.html(f"<pre style='white-space:pre-wrap' "
                                         f"class='text-xs'>{html.escape(text)}</pre>")
@@ -214,8 +214,8 @@ class ResultsView:
                                 ui.label("?").classes("font-bold").style(f"color:{POSTER['yellow']}")
                                 ui.label(text).classes("text-sm text-grey-4")
                     ui.label(
-                        "+ lo que una clausura o convención completó por ti · "
-                        "? lo que sigue sin especificar y qué significa ese silencio"
+                        "+ what a closure or convention completed for you · "
+                        "? what is still unspecified and what that silence means"
                     ).classes("text-xs italic text-grey-5 mt-3")
 
             # The pipeline figures, in order, as in thesis_example.py, plus
@@ -231,7 +231,7 @@ class ResultsView:
             # in an iframe instead of being rebuilt with components.
             if out.html_3d is not None:
                 with ui.card().classes(CARD).props(FLAT):
-                    card_title("Vista 3D interactiva del complejo")
+                    card_title("Interactive 3D view of the complex")
                     # The plotly page is light: it goes on the same sheet as
                     # the figures so it is not a loose white block over navy.
                     # sanitize=False: ui.html sanitizes HTML by default and
@@ -243,12 +243,12 @@ class ResultsView:
                         'display:block;border-radius:.375rem"></iframe>',
                         sanitize=False,
                     ).classes("w-full fig-frame fig-fill")
-                    ui.label("Arrastra para rotar; rueda para acercar.") \
+                    ui.label("Drag to rotate; scroll to zoom.") \
                         .classes("text-xs italic text-grey-5")
 
             # Text diagrams (visualize): the dependency-free view, collapsed
             # by default so it does not compete with the figures.
-            with ui.expansion("Diagramas de texto").classes("w-full"):
+            with ui.expansion("Text diagrams").classes("w-full"):
                 for caption, diagram in out.text_diagrams:
                     ui.label(caption).classes("font-semibold mt-2")
                     ui.html(f"<pre style='white-space:pre-wrap' "

@@ -25,7 +25,7 @@ on screen are data and controls).
       white/light grey, and text-xs grey notes.
     * Color: ONE accent, the poster's LIME GREEN, for everything that is
       action or good news -- the "Correr pipeline" button, the rule under
-      the header, the preview halo, "válido", what a closure completed. Two
+      the header, the preview halo, "valid", what a closure completed. Two
       status hues besides it (``POSTER``): amber = to be completed / stale,
       rose = rejected / error. Anything that is a label rather than a
       verdict (the logic, "propio", information) is slate. Each agent keeps
@@ -152,7 +152,7 @@ def index() -> None:
     with ui.row().classes("w-full items-start gap-4 p-4 editor-row") as page.editor_row:
 
         # ---- Editing panel: sticky with its own scroll (thin scrollbar) ---- #
-        # Four TABS -- Modelo · Átomos · Fórmulas · Acciones -- instead of one
+        # Four TABS -- Model · Atoms · Formulas · Actions -- instead of one
         # 1900px stack of cards: what is edited most (the model) is always at
         # hand, and atoms, formulas and actions are one click away.
         with ui.column().classes(
@@ -163,10 +163,10 @@ def index() -> None:
                 "dense no-caps align=justify indicator-color=primary "
                 "active-color=primary"
             ) as left_tabs:
-                tab_model = ui.tab("modelo", label="Modelo", icon="tune")
-                tab_atoms = ui.tab("atomos", label="Átomos", icon="label")
-                tab_formulas = ui.tab("formulas", label="Fórmulas", icon="calculate")
-                tab_actions = ui.tab("acciones", label="Acciones", icon="bolt")
+                tab_model = ui.tab("modelo", label="Model", icon="tune")
+                tab_atoms = ui.tab("atomos", label="Atoms", icon="label")
+                tab_formulas = ui.tab("formulas", label="Formulas", icon="calculate")
+                tab_actions = ui.tab("acciones", label="Actions", icon="bolt")
             # The panels are plain columns shown one at a time, NOT Quasar's
             # q-tab-panels: that component clips its content to a measured
             # height (overflow hidden), so a long editor -- the direct
@@ -204,7 +204,7 @@ def index() -> None:
 
     # First paint: the thesis example with its preview, and the empty state in
     # the results area.
-    page.ws.active = page.ws.new_doc("Modelo 1", blank_state())["id"]
+    page.ws.active = page.ws.new_doc("Model 1", blank_state())["id"]
     page.load_example("tesis")   # also paints the bar, the preview and the empty state
 
 
@@ -212,4 +212,4 @@ def index() -> None:
 # surprising behavior for a simple local tool. The __mp_main__ guard is the
 # NiceGUI convention (multiprocess uvicorn).
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(title="La geometría de una creencia falsa", reload=False, dark=True)
+    ui.run(title="The geometry of a false belief", reload=False, dark=True)
