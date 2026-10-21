@@ -107,3 +107,37 @@ proper3 = improper3.to_proper()
 assert proper3.is_proper()
 simp3 = to_simplicial(proper3)
 trio(simp3, "ex3", "Example 3", relational=proper3, rel_title="Example 3, after to_proper")
+
+
+# --------------------------------------------------------------------------- #
+# Background figures of the paper (Section 2): the three-agent bit complex as
+# the GUI draws it, before and after the announcement that a's bit is 1 with
+# revision. Written next to the .tex under the names it includes
+# (SimplicialExample1/2, HasseExample0.2/0.3/0.4), with English titles:
+# "Complex as entered" is the GUI's preview title, "Simplicial complex" and
+# "Face lattice" the titles of its pipeline figures. Node and facet names
+# (a0..c1, F1..F3) and the vertex atoms are the ones typed in the GUI.
+# --------------------------------------------------------------------------- #
+PAPER = os.path.dirname(os.path.abspath(__file__))
+_names = {a0: "a0", a1: "a1", b0: "b0", b1: "b1", c0: "c0", c1: "c1"}
+_bits = {a0: {"Pa": 0}, a1: {"Pa": 1}, b0: {"Pb": 0}, b1: {"Pb": 1}, c0: {"Pc": 0}, c1: {"Pc": 1}}
+F1, F2 = frozenset({a1, b1, c1}), frozenset({a1, b1, c0})
+F3_before, F3_after = frozenset({a0, b0, c0}), frozenset({a1, b0, c0})
+before = SimplicialBeliefModel(agents, nodes, {F1, F2, F3_before},
+                               {ag: {F1, F2, F3_before} for ag in agents},
+                               world_of_facet={F1: "F1", F2: "F2", F3_before: "F3"},
+                               node_names=_names)
+# After the announcement a0 lies in no facet (an isolated perspective, K45) and
+# F3 = {a1, b0, c0} is believed by b and c only.
+after = SimplicialBeliefModel(agents, nodes, {F1, F2, F3_after},
+                              {"a": {F1, F2}, "b": {F1, F2, F3_after}, "c": {F1, F2, F3_after}},
+                              world_of_facet={F1: "F1", F2: "F2", F3_after: "F3"},
+                              node_names=_names, axiom_d=False)
+print(show(before, "SimplicialExample1", "Complex as entered", output_dir=PAPER, assignment=_bits))
+print(show(after, "SimplicialExample2", "Simplicial complex", output_dir=PAPER, assignment=_bits))
+print(hasse.show(hasse.face_lattice(before, include_empty=False, assignment=_bits),
+                 "HasseExample0.4", "Face lattice", output_dir=PAPER))
+print(hasse.show(hasse.face_lattice(after, include_empty=False, assignment=_bits),
+                 "HasseExample0.3", "Face lattice", output_dir=PAPER))
+print(hasse.show(hasse.face_lattice(after, include_empty=False, assignment=_bits),
+                 "HasseExample0.2", "Face lattice", output_dir=PAPER, facets_and_vertices=True))
