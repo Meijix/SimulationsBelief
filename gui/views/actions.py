@@ -33,6 +33,7 @@ from adapters import (
     agent_color_map,
     apply_action,
     describe_action,
+    describe_action_kripke,
     preview_action,
 )
 from theme import CARD, FLAT, POSTER, card_title, figure_img, take
@@ -349,6 +350,16 @@ class ActionsView:
             else:
                 ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
                         f"{html.escape(describe_action(spec, agents, self.model_atoms()))}</pre>")
+                # The same action as a Kripke action model (Def. 4.4): events,
+                # their preconditions as one formula each, and who confuses
+                # which events -- the other side of the equivalence (docs/12).
+                with ui.expansion("as a Kripke action model").classes("w-full text-xs"):
+                    try:
+                        text = describe_action_kripke(spec, agents, self.model_atoms())
+                    except ValueError as exc:
+                        text = str(exc)
+                    ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
+                            f"{html.escape(text)}</pre>")
             # The action drawn as it stands, updated after every edit.
             self._fig_box = ui.column().classes("w-full gap-1")
             self._schedule_preview(copy.deepcopy(spec), list(agents))

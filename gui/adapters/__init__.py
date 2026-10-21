@@ -136,6 +136,7 @@ from .actions import (  # noqa: F401
     blank_action,
     build_action,
     describe_action,
+    describe_action_kripke,
     preview_action,
     spec_atoms,
     update_model,

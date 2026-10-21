@@ -45,7 +45,8 @@ from .formulas import parse_formula
 # the choice, and apply_action refuses them with a clear message until the
 # functions exist. Plugging one in is a one-line change in UPDATE_KINDS.
 # --------------------------------------------------------------------------- #
-from simplicial_actions import DEFAULT_MODE, MODES, SimplicialAction, update_model  # noqa: E402
+from simplicial_actions import (DEFAULT_MODE, MODES, SimplicialAction, describe_relational_action,
+                                to_relational_action, update_model)  # noqa: E402
 
 ACTION_MODES = {
     # Labels follow simplicial_actions.compatible(): how an input vertex x and
@@ -244,6 +245,16 @@ def build_action(spec: dict, agents: List[str], atoms: List[str] | None = None) 
 def describe_action(spec: dict, agents: List[str], atoms: List[str] | None = None) -> str:
     """The core's text rendering of the action (events, nodes, pre/post)."""
     return build_action(spec, agents, atoms).describe()
+
+
+def describe_action_kripke(spec: dict, agents: List[str], atoms: List[str] | None = None) -> str:
+    """The same action read as a Kripke action model (thesis Def. 4.4; docs/12 §4).
+
+    One line per event: its precondition (the conjunction of its nodes'
+    literals and formulas), its postcondition, and which events each agent
+    cannot tell apart from it (those sharing the agent's node).
+    """
+    return describe_relational_action(to_relational_action(build_action(spec, agents, atoms)))
 
 
 def apply_action(state: dict, spec: dict, model_name: str = "model") -> dict:

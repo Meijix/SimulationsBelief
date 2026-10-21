@@ -48,7 +48,8 @@ chromatic simplicial complexes (events = facets of action nodes, one per
 agent) with three-valued literal pre- and postconditions on the nodes and,
 since 2026-10-20, **modal-formula preconditions** (`pre_formula`, in the
 syntax of `assignment.holds`, evaluated at the input facets: an event happens
-at a world only if the formula holds there). The product update
+at a world only if the formula holds there), and event-level formulas
+(`pre_event`, the precondition of a Kripke action model). The product update
 `update_model(model, assignment, action, mode)` is the knowledge product `M[A]`
 of Sink's thesis (Def. 4.5), with three compatibility modes (no-clash by
 default, the thesis's definition); it reproduces the thesis's Alternating
@@ -178,7 +179,8 @@ The GUI only *calls* the core: the `gui/adapters/` package is the single bridge
 Tests live in `tests/`, kept local (git-ignored): one file per core module
 (`test_relational_frame`, `test_knowledge_belief`, `test_properness`,
 `test_simplicial`, `test_semantics`, `test_assignment`, `test_hasse`,
-`test_simplicial_actions`) plus `test_gui_adapters.py` and
+`test_simplicial_actions` for the belief-actions branch, `test_actions_kripke`
+for the action translations and the product on both sides) plus `test_gui_adapters.py` and
 `test_workspace.py` for the GUI bridge (regression cover for the reported
 issues: digit atoms, K45 defunct belief from the GUI, the distinguished
 agent, duplicate and missing facets, the action layer).
