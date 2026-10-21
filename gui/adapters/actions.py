@@ -166,7 +166,7 @@ def action_problems(spec: dict, agents: List[str], atoms: List[str] | None = Non
     return problems
 
 
-def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path:
+def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path | str:
     """Draw the action AS DEFINED, complete or not: the Actions tab's live figure.
 
     An action is a chromatic complex like a model (thesis Def. 4.5): its
@@ -177,8 +177,12 @@ def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path:
     agent's node is drawn with the nodes it has, a node in no event is drawn
     loose, and the validity report next to the figure says what is missing.
 
-    Raises:
-        ValueError: when there is nothing to draw yet (no action node at all).
+    Returns:
+        The figure's path, or a one-line message when there is nothing to
+        draw yet (no action node at all). A message, not an exception: that
+        is the normal state of a freshly created action, it is rendered in a
+        worker thread, and a raise there makes a debugger stop on it as if
+        something had gone wrong.
     """
     agents = list(agents)
     nodes: Dict[str, Node] = {}
@@ -191,7 +195,7 @@ def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path:
             if v and a in agents:
                 nodes.setdefault(v, Node(a, frozenset({v})))
     if not nodes:
-        raise ValueError("add an event with at least one action node to see the action")
+        return "add an event with at least one action node to see the action"
     pre, post = _conditions(spec.get("pre")), _conditions(spec.get("post"))
 
     def lits(table: Dict[str, int]) -> List[str]:
