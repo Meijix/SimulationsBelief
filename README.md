@@ -13,6 +13,11 @@ no relational model behind it — `examples/examplesimplicial1.py`; facet-consis
 checks; isolated perspectives are legal unless `axiom_d=True`)
 
 Step 4: Function that translates proper relational model into simplicial model — `simplicial.to_simplicial` ✔
+(and back: `simplicial.to_relational` is the inverse translation `G_B` of the
+categorical equivalence of Goubault, Ledent & Rajsbaum extended to belief, one
+world per facet, `R_a` = sharing `a`'s vertex, `Q_a` = the facets of `S_a`;
+the round trip is tested, and the GUI shows the equivalent Kripke model of any
+complex typed by hand and opens it as a document of its own)
 
 Step 5: Validate with thesis example — `examples/thesis_example.py` + `tests/` ✔
 
@@ -37,16 +42,24 @@ poster figures (`poster/poster-code/make_figs_3agentes*.py`); `python poster/pos
 runs the three-agent disaster example. The relational-side operator `M[φ]` with imaging
 and iterated announcements with memory (doc 05 §2.3–2.5) are still *pending*.
 
-Part 3: Simulating Dynamic Update — **partial**. `simplicial_actions.py`
-implements action models as chromatic simplicial complexes (events = facets,
-three-valued pre- and postconditions) and the product update
-`update_model(model, assignment, action, mode)` (three compatibility modes,
-no-clash by default), in the simplicial-DEL tradition of Goubault, Ledent &
-Rajsbaum. **Knowledge actions only** for now: the action has one facet set,
-the input's `S_a` is never read and the output sets `S_a = S`; the belief
-products `M[A]_B` and `M[A]_BR` (action with revision) and protocols are
-*pending*. The output is built with `axiom_d=False` (K45) because an update
-routinely leaves isolated perspectives. No script or test exercises it yet.
+Part 3: Simulating Dynamic Update — **knowledge actions done, belief
+products pending**. `simplicial_actions.py` implements action models as
+chromatic simplicial complexes (events = facets of action nodes, one per
+agent) with three-valued literal pre- and postconditions on the nodes and,
+since 2026-10-20, **modal-formula preconditions** (`pre_formula`, in the
+syntax of `assignment.holds`, evaluated at the input facets: an event happens
+at a world only if the formula holds there). The product update
+`update_model(model, assignment, action, mode)` is the knowledge product `M[A]`
+of Sink's thesis (Def. 4.5), with three compatibility modes (no-clash by
+default, the thesis's definition); it reproduces the thesis's Alternating
+Message Passing Protocol (8 vertices after one step, 12 after two) and is
+walked step by step in `examples/action_knowledge_example.py`. The output is
+built with `axiom_d=False` (K45) because an update routinely leaves isolated
+perspectives, and it chains. The GUI's *Actions* tab defines actions (with a
+live drawing of the action as it is typed) and applies them to the active
+model. Still *pending*: the belief product `M[A]_B`, the product with
+revision `M[A]_BR` and protocols (iterating an action and tracking collapse
+and convergence).
 
 ## Layout
 
@@ -56,8 +69,8 @@ routinely leaves isolated perspectives. No script or test exercises it yet.
   and `regenerate_outputs.py`;
 - `examples/` — the demo scripts (`thesis_example.py`, `example_val.py`,
   `examples*.py`, `examplesimplicial1.py`, the three `Example for Poster N.py`,
-  `Natural Disaster Example.py`); each puts the repo root on `sys.path`
-  itself, so they run from any working directory;
+  `Natural Disaster Example.py`, `action_knowledge_example.py`); each puts the
+  repo root on `sys.path` itself, so they run from any working directory;
 - `gui/` — the web GUI; `tests/` — the pytest suite (git-ignored);
   `docs/` — the notes (git-ignored); `references/` — the source PDFs;
 - `poster/` — the Coloquio poster: `poster-code/` (the figure scripts,
@@ -97,6 +110,7 @@ the GUI and the poster figures is `docs/11-scripts-gui-and-figures.md`):
 .venv/bin/python examples/examples.py --open      # ...and open each image in your viewer
 .venv/bin/python examples/examples2.py            # a single belief-only (KD45) frame, step by step
 .venv/bin/python "examples/Example For Poster 1.py"   # poster Examples 1-3 and "Natural Disaster Example.py"
+.venv/bin/python examples/action_knowledge_example.py # a knowledge action step by step (thesis §4.4 signal, Fig. 52 action)
 ```
 
 The core modules live in the repository root; every demo script is under
@@ -127,7 +141,10 @@ changed ones are recomputed). Each document has a **model kind**:
 * **belief only** — KD45/K45 `RelationalFrame`; no properness and no
   simplicial translation, the pipeline stops at step 1 and says so;
 * **direct simplicial complex** — named vertices per agent, facets and `S_a`
-  typed by hand, atoms on vertices; the "pipeline" only validates and draws.
+  typed by hand (or none: a 0-dimensional complex is drawn too), atoms on
+  vertices; the "pipeline" validates, draws, and shows the equivalent Kripke
+  model (`to_relational`), which can be opened as a new document and sent
+  back through the pipeline.
 
 Agents, worlds, knowledge classes, believed worlds and atoms are entered as
 chips; a live preview draws the model exactly as entered; an example library
@@ -135,8 +152,15 @@ in the header loads complete states (the scripts in `examples/` and the poster
 examples); a formula evaluator (`K_a`, `B_a`, `¬ & | ->`) runs on the result.
 Figures: relational model, proper model, 2-D complex, interactive **3-D**
 complex, and the **Hasse lattice** (vertices-and-facets by default, full
-lattice on demand). Read-only documents with an annotated origin are the hook
-through which action-model results will arrive.
+lattice on demand). The **Actions** tab defines simplicial actions (events,
+isolated action nodes, literal pre/postconditions, modal-formula
+preconditions), draws the action as it is being defined, and applies it to
+the active model with the knowledge product; the result opens as a read-only
+document with an annotated origin, and can be saved and compared like any
+other. Workspaces (models and actions, optionally with their figures) are
+saved under `saved_models/` (see its README). Any unhandled exception shows
+as a red notification naming the file and line, besides the terminal
+traceback.
 
 ```bash
 .venv/bin/python gui/app.py     # opens http://localhost:8080
@@ -150,11 +174,12 @@ The GUI only *calls* the core: the `gui/adapters/` package is the single bridge
 
 Tests live in `tests/`, kept local (git-ignored): one file per core module
 (`test_relational_frame`, `test_knowledge_belief`, `test_properness`,
-`test_simplicial`, `test_semantics`, `test_assignment`, `test_hasse`) plus
-`test_gui_adapters.py` for the GUI bridge (regression cover for the reported
+`test_simplicial`, `test_semantics`, `test_assignment`, `test_hasse`,
+`test_simplicial_actions`) plus `test_gui_adapters.py` and
+`test_workspace.py` for the GUI bridge (regression cover for the reported
 issues: digit atoms, K45 defunct belief from the GUI, the distinguished
-agent). `poster/poster-code/revision.py` and `simplicial_actions.py` have no
-tests yet. To run:
+agent, duplicate and missing facets, the action layer).
+`poster/poster-code/revision.py` has no tests yet. To run:
 ```bash
 .venv/bin/python -m pytest -q
 ```
