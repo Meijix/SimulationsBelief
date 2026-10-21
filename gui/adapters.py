@@ -1358,6 +1358,65 @@ def action_problems(spec: dict, agents: List[str]) -> List[str]:
     return problems
 
 
+def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path:
+    """Draw the action AS DEFINED, complete or not: the Actions tab's live figure.
+
+    An action is a chromatic complex like a model (thesis Def. 4.5): its
+    events are the facets and its action nodes the vertices, so the model
+    renderer draws it unchanged. Each node is labelled ``name(pre)[post]``,
+    the notation of the thesis (p. 50), and each event by its name. Nothing
+    is validated here, exactly like the model preview: an event missing some
+    agent's node is drawn with the nodes it has, a node in no event is drawn
+    loose, and the validity report next to the figure says what is missing.
+
+    Raises:
+        ValueError: when there is nothing to draw yet (no action node at all).
+    """
+    agents = list(agents)
+    nodes: Dict[str, Node] = {}
+    for ev in spec.get("events", []):
+        for a, v in ev.get("nodes", {}).items():
+            if v and a in agents:
+                nodes.setdefault(v, Node(a, frozenset({v})))
+    for a, names in (spec.get("isolated") or {}).items():
+        for v in names:
+            if v and a in agents:
+                nodes.setdefault(v, Node(a, frozenset({v})))
+    if not nodes:
+        raise ValueError("add an event with at least one action node to see the action")
+    pre, post = _conditions(spec.get("pre")), _conditions(spec.get("post"))
+
+    def lits(table: Dict[str, int]) -> List[str]:
+        return [("" if val else "¬") + atom for atom, val in sorted(table.items())]
+
+    labels: Dict[Node, str] = {}
+    for v, n in nodes.items():
+        requires = lits(pre.get(v, {}))
+        if (spec.get("pre_formula") or {}).get(v):
+            requires.append(spec["pre_formula"][v])
+        sets = lits(post.get(v, {}))
+        sets += [f"{atom} := {phi}"
+                 for atom, phi in sorted(((spec.get("post_formula") or {}).get(v) or {}).items())]
+        labels[n] = (v + (f"({', '.join(requires)})" if requires else "")
+                     + (f"[{', '.join(sets)}]" if sets else ""))
+    event_of: Dict[frozenset, str] = {}
+    belief: Dict[str, set] = {a: set() for a in agents}
+    for i, ev in enumerate(spec.get("events", [])):
+        members = frozenset(nodes[v] for a, v in ev.get("nodes", {}).items()
+                            if v in nodes and nodes[v].agent == a)
+        if not members or members in event_of:
+            continue
+        event_of[members] = ev.get("name") or f"e{i + 1}"
+        for a in (ev["belief"] if "belief" in ev else agents):
+            if a in belief:
+                belief[a].add(members)
+    model = SimplicialBeliefModel(agents, nodes.values(), event_of.keys(), belief,
+                                  world_of_facet=event_of, validate=False, axiom_d=False,
+                                  node_names=labels)
+    return Path(show(model, _fname("gui_action", tag), "Action as defined",
+                     output_dir=str(OUTPUTS), engine="auto" if _geometric_ok(model) else "dot"))
+
+
 def build_action(spec: dict, agents: List[str]) -> SimplicialAction:
     """The :class:`SimplicialAction` a spec describes (the core validates it)."""
     events = {ev["name"]: {a: v for a, v in ev.get("nodes", {}).items() if v}

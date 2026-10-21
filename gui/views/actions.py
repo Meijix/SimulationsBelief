@@ -16,10 +16,12 @@ them with a message until their functions exist.
 from __future__ import annotations
 
 import copy
+import hashlib
 import html
+import json
 from typing import TYPE_CHECKING
 
-from nicegui import ui
+from nicegui import run as io, ui
 
 from adapters import (
     ACTION_EXAMPLES,
@@ -30,8 +32,9 @@ from adapters import (
     agent_color_map,
     apply_action,
     describe_action,
+    preview_action,
 )
-from theme import CARD, FLAT, POSTER, card_title, take
+from theme import CARD, FLAT, POSTER, card_title, figure_img, take
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -41,6 +44,9 @@ class ActionsView:
     def __init__(self, page: Page) -> None:
         self.page = page
         self.box = None
+        self._fig_box = None        # the live drawing of the action
+        self._seq = 0
+        self._cache: dict = {}      # spec hash -> figure path | message
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT):
@@ -140,6 +146,49 @@ class ActionsView:
                   "Compare it with its input model from the bar.", type="positive")
         page.activate(doc["id"])
 
+    # ---- live drawing of the action, like the model preview ---------------- #
+    def _schedule_preview(self, spec: dict, agents: list) -> None:
+        """Debounced, off the event loop, cached by the spec's content."""
+        self._seq += 1
+        seq = self._seq
+        # The timer lives in the figure box, which is cleared but never
+        # deleted between renders, so it survives the widget that fired it.
+        with self._fig_box:
+            ui.timer(0.25, lambda: self._render_preview(seq, spec, agents), once=True)
+
+    def refresh_preview(self, spec: dict) -> None:
+        """Redraw after an edit that keeps the card as it is (a select, a name)."""
+        if self._fig_box is not None:
+            self._schedule_preview(copy.deepcopy(spec), list(self.page.state["agents"]))
+
+    async def _render_preview(self, seq: int, spec: dict, agents: list) -> None:
+        if seq != self._seq or self._fig_box is None:
+            return
+        key = hashlib.sha1(json.dumps([spec, agents], sort_keys=True,
+                                      default=str).encode()).hexdigest()[:12]
+        if key not in self._cache:
+            try:
+                result = await io.io_bound(preview_action, spec, agents, key)
+            except ValueError as exc:
+                result = str(exc)
+            if len(self._cache) >= 32:
+                self._cache.pop(next(iter(self._cache)))
+            self._cache[key] = result
+        if seq != self._seq:
+            return
+        result = self._cache[key]
+        self._fig_box.clear()
+        with self._fig_box:
+            ui.label("Action as defined").classes("eyebrow mt-1")
+            if isinstance(result, str):
+                ui.label(result).classes("text-xs text-grey-5")
+            else:
+                # Small in the editor column: a click opens it full screen.
+                with ui.element("div").classes("w-full fig-frame cursor-pointer") \
+                        .on("click", lambda r=result: self.page.results.open_lightbox(
+                            r, "Action as defined")):
+                    figure_img(result)
+
     # ---- paint ------------------------------------------------------------- #
     def paint(self) -> None:
         ws = self.page.ws
@@ -201,7 +250,8 @@ class ActionsView:
             for i, ev in enumerate(spec["events"]):
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
                     ui.input("event", value=ev["name"],
-                             on_change=lambda e, v=ev: v.__setitem__("name", e.value)) \
+                             on_change=lambda e, v=ev: (v.__setitem__("name", e.value),
+                                                        self.refresh_preview(spec))) \
                         .props("dense outlined").classes("w-24")
                     for agent in agents:
                         ui.input(agent, value=ev["nodes"].get(agent, ""),
@@ -246,10 +296,12 @@ class ActionsView:
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
                         ui.label(f"{atom} · {label}").classes("font-mono text-xs w-20")
                         ui.select(nodes, multiple=True, value=cond["true"], label="true",
-                                  on_change=lambda e, c=cond: c.__setitem__("true", list(e.value))) \
+                                  on_change=lambda e, c=cond: (c.__setitem__("true", list(e.value)),
+                                                               self.refresh_preview(spec))) \
                             .props("use-chips dense").classes("grow")
                         ui.select(nodes, multiple=True, value=cond["false"], label="false",
-                                  on_change=lambda e, c=cond: c.__setitem__("false", list(e.value))) \
+                                  on_change=lambda e, c=cond: (c.__setitem__("false", list(e.value)),
+                                                               self.refresh_preview(spec))) \
                             .props("use-chips dense").classes("grow")
                         if table == "pre":
                             ui.button(icon="delete",
@@ -258,11 +310,14 @@ class ActionsView:
             # ---- status + apply --------------------------------------------- #
             problems = action_problems(spec, agents)
             if problems:
-                ui.label("Falta: " + "; ".join(problems)).classes("text-xs") \
+                ui.label("Missing: " + "; ".join(problems)).classes("text-xs") \
                     .style(f"color:{POSTER['yellow']}")
             else:
                 ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
                         f"{html.escape(describe_action(spec, agents))}</pre>")
+            # The action drawn as it stands, updated after every edit.
+            self._fig_box = ui.column().classes("w-full gap-1")
+            self._schedule_preview(copy.deepcopy(spec), list(agents))
             with ui.row().classes("w-full items-center gap-2"):
                 ui.button("Apply to the active model", icon="play_arrow",
                           on_click=lambda: self.apply()) \
