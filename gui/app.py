@@ -47,7 +47,7 @@ duplicated, renamed and closed, and COMPARED 2 to 4 side by side (their
 results are stored per document and only the ones that changed are
 recomputed). A document can be READ-ONLY with an annotated origin: this is
 how the results of applying action models will come in (``new_doc`` is the
-hook; the state API lives in ``adapters.py``).
+hook; the state API lives in ``adapters/states.py``).
 
 HOW MODELS ARE ENTERED. Everything is interactive and propagates in a chain:
 
@@ -89,7 +89,8 @@ WHAT IS IN THIS FILE -- the layout and the wiring, nothing else. The visual
 system lives in ``gui/theme.py``, the bookkeeping of open documents in
 ``gui/workspace.py`` (tested without a browser) and each region of the page
 in ``gui/views/`` (see that package's docstring for the map). All the logic
-lives in ``gui/adapters.py``; the views consume it and show already-flattened
+lives in the ``gui/adapters/`` package (one module per concern, see its
+``__init__``); the views consume it and show already-flattened
 results (file paths and strings). That boundary keeps the core untouched.
 
 HOW FIGURES ARE SHOWN. ``visualization.show`` writes SVG/HTML into

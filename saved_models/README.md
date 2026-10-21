@@ -42,7 +42,7 @@ are recomputed in seconds and would go stale as the code evolves.
 
 | field | meaning |
 |---|---|
-| `models[].state` | the editor state (`gui/adapters.py: blank_state`). Relational kinds use `worlds`, `per_agent` (knowledge classes and believed worlds) and `atoms`; a direct complex uses `vertices`, `facets`, `vatoms` and `complex_kind`. The switches (`axiom_d`, `silent_defunct`, `explicit`, `hasse_full`, `make_3d`) travel with the model. |
+| `models[].state` | the editor state (`gui/adapters/base.py: blank_state`). Relational kinds use `worlds`, `per_agent` (knowledge classes and believed worlds) and `atoms`; a direct complex uses `vertices`, `facets`, `vatoms` and `complex_kind`. The switches (`axiom_d`, `silent_defunct`, `explicit`, `hasse_full`, `make_3d`) travel with the model. |
 | `models[].readonly` / `origin` | a **derived** model (the result of an action) is read-only and says where it came from; it is drawn, evaluated and compared like any other, and "duplicar como modelo nuevo" gives an editable copy. |
 | `actions[]` | the action specs of the *Actions* tab: events (one action node per agent), isolated action nodes, pre/post conditions as vertex atoms, the compatibility `mode` (1–3) and the `update` kind (`knowledge` today; `belief`, `belief_memory`, `revision` are listed but pending in the core). |
 

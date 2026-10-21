@@ -142,7 +142,7 @@ through which action-model results will arrive.
 .venv/bin/python gui/app.py     # opens http://localhost:8080
 ```
 
-The GUI only *calls* the core: `gui/adapters.py` is the single bridge
+The GUI only *calls* the core: the `gui/adapters/` package is the single bridge
 (parsing + pipeline + rendering via `visualization.show` and `hasse.show`),
 `gui/app.py` is presentation only, and no core module knows the GUI exists.
 
