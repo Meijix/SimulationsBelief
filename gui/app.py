@@ -99,7 +99,12 @@ HOW FIGURES ARE SHOWN. ``visualization.show`` writes SVG/HTML into
 
 from __future__ import annotations
 
-from nicegui import app, ui
+import logging
+import time
+import traceback
+from pathlib import Path
+
+from nicegui import Client, app, ui
 
 # Flat imports on purpose: when running ``python gui/app.py`` this folder is
 # sys.path[0], and adapters takes care of putting the repo root on the path.
@@ -121,6 +126,83 @@ from views.simplicial_editor import SimplicialEditorView
 # nor manages files of its own; it shares the artifacts with the CLI scripts.
 OUTPUTS.mkdir(exist_ok=True)
 app.add_static_files("/outputs", str(OUTPUTS))
+
+
+# --------------------------------------------------------------------------- #
+# CRASHES ARE SHOWN, NOT ONLY LOGGED. An exception in a button handler, a
+# timer or a background task leaves NiceGUI's page as it was and prints the
+# traceback to the terminal, where nobody looks while using the browser (that
+# is how a refused preview passed for "the GUI crashed", GitHub #23). Every
+# unhandled exception is therefore reported to every open tab as a red
+# notification that stays until closed: where it happened and what it said.
+# Two hooks, because NiceGUI has two paths: ``app.on_exception`` sees the
+# exceptions it handles itself, and the logging handler sees the ones it can
+# only log (a handler whose own slot is already gone, for instance). An
+# exception reported through the first is not repeated by the second.
+# --------------------------------------------------------------------------- #
+_reported: dict = {}
+
+
+def _root_cause(exc: BaseException) -> BaseException:
+    """The first exception of a chain: a failure while handling a failure
+    (NiceGUI reporting on a slot that is already gone, say) must name the
+    original one, not the reporting accident."""
+    seen = set()
+    while (exc.__cause__ or exc.__context__) is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return exc
+
+
+def _crash_text(exc: BaseException) -> str:
+    """One line: the innermost frame of our own code, the type and the message."""
+    exc = _root_cause(exc)
+    frames = traceback.extract_tb(exc.__traceback__) if exc.__traceback__ else []
+    ours = [f for f in frames if "site-packages" not in f.filename] or frames
+    place = f" in {Path(ours[-1].filename).name}:{ours[-1].lineno} ({ours[-1].name})" if ours else ""
+    msg = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
+    return (f"Internal error{place} · {type(exc).__name__}: {msg} "
+            "· the terminal has the full traceback")
+
+
+def _show_crash(exc: BaseException) -> None:
+    now = time.monotonic()
+    for key, when in list(_reported.items()):
+        if now - when > 5:
+            del _reported[key]
+    if id(exc) in _reported:
+        return
+    _reported[id(exc)] = now
+    text = _crash_text(exc)
+    for client in list(Client.instances.values()):
+        if not client.has_socket_connection:
+            continue
+        with client:
+            ui.notify(text, type="negative", position="top", multi_line=True,
+                      close_button=True, timeout=0)
+
+
+app.on_exception(_show_crash)
+
+
+class _CrashLogHandler(logging.Handler):
+    """Backstop: whatever NiceGUI logs with a traceback is shown too."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        exc = record.exc_info[1] if record.exc_info else None
+        if exc is not None:
+            try:
+                _show_crash(exc)
+            except Exception:       # a reporting failure must never loop
+                pass
+
+
+_log = logging.getLogger("nicegui")
+if not _log.handlers and not logging.getLogger().handlers:
+    # Attaching a handler switches off Python's last-resort printing, which is
+    # what put the tracebacks on the terminal until now: keep that output.
+    _log.addHandler(logging.StreamHandler())
+_log.addHandler(_CrashLogHandler())
 
 
 # --------------------------------------------------------------------------- #
