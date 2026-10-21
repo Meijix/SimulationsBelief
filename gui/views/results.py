@@ -106,6 +106,19 @@ class ResultsView:
         if doc["id"] == page.ws.active:   # the model may have been switched mid-run
             self.render_outcome(outcome)
 
+    def open_kripke(self, state: dict) -> None:
+        """Open the equivalent Kripke model of the active complex as a new document."""
+        page, ws = self.page, self.page.ws
+        source = page.current()
+        ws.store_active(page.live_state())
+        doc = ws.new_doc(f"{source['name']} · Kripke", copy.deepcopy(state), readonly=False,
+                         origin={"label": f"complex → Kripke model (G_B) of {source['name']}"})
+        # Notify BEFORE activating: activating repaints the results column,
+        # and with it the button whose click is being handled.
+        ui.notify(f"Kripke model opened as “{doc['name']}”: run the pipeline to take it "
+                  "back to a complex.", type="positive")
+        page.activate(doc["id"])
+
     # ---- painting ---------------------------------------------------------- #
     def placeholder(self, target=None) -> None:
         """Empty state: never a blank column without a message."""
@@ -245,6 +258,20 @@ class ResultsView:
                     ).classes("w-full fig-frame fig-fill")
                     ui.label("Drag to rotate; scroll to zoom.") \
                         .classes("text-xs italic text-grey-5")
+
+            # A direct complex comes with its equivalent Kripke model (G_B):
+            # one click opens it as an editable document, so the equivalence
+            # can be walked in both directions inside the workspace.
+            if getattr(out, "kripke_state", None):
+                with ui.card().classes(CARD).props(FLAT):
+                    with ui.row().classes("w-full items-center gap-3 no-wrap"):
+                        ui.icon("swap_horiz").style(f"color:{POSTER['lime']}")
+                        ui.label("The equivalent Kripke model (Fig. 3) can be opened as a "
+                                 "model of its own and sent back through the pipeline.") \
+                            .classes("text-sm text-grey-4 grow")
+                        ui.button("Open as Kripke model", icon="open_in_new",
+                                  on_click=lambda st=out.kripke_state: self.open_kripke(st)) \
+                            .props("outline dense")
 
             # Text diagrams (visualize): the dependency-free view, collapsed
             # by default so it does not compete with the figures.

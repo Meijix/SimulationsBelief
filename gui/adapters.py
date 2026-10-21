@@ -1000,7 +1000,47 @@ def run_simplicial(
                   output_dir=str(OUTPUTS), valuation=rel.valuation or None, **kw)),
     ))
     result.text_diagrams.append(("Equivalent relational model", visualize(rel.frame)))
+    result.kripke_state = state_from_relational(rel, knowledge_only=model.is_knowledge_only)
     return result
+
+
+def state_from_relational(rel, knowledge_only: bool = False) -> dict:
+    """The editor state of the Kripke model ``to_relational`` returns (GitHub #8).
+
+    This closes the loop of the categorical equivalence in the GUI: a complex
+    typed by hand becomes a relational document (kind ``knowledge`` when every
+    ``S_a`` is the whole complex, ``kb`` otherwise) that the pipeline can take
+    back through proper -> simplicial. World names are the facet names turned
+    into strings (an action result names facets by ``(world, event)`` pairs);
+    the knowledge classes and believed sets are read off the frame exactly as
+    the example library reads its models, and the lifted valuation becomes
+    the per-atom world lists. Axiom D is the frame's own verdict (KD45 iff no
+    perspective was isolated).
+    """
+    frame = rel.frame
+    agents = sorted(frame.agents, key=str)
+    # A world name must be a unique string for the editor; str() of a pair is
+    # fine, and a clash (two facets whose names print alike) gets a suffix.
+    names: Dict = {}
+    taken: set = set()
+    for w in sorted(frame.worlds, key=str):
+        name = str(w)
+        while name in taken:
+            name += "'"
+        names[w], taken = name, taken | {name}
+    worlds = [names[w] for w in sorted(frame.worlds, key=str)]
+    kind = "knowledge" if knowledge_only else "kb"
+    per_agent = {}
+    for a in agents:
+        rows = editor_rows(frame, a, sorted(frame.worlds, key=str), kind)
+        per_agent[a] = [{"cls": [names[w] for w in r["cls"]], "bel": [names[w] for w in r["bel"]]}
+                        for r in rows]
+    atoms = {str(atom): [names[w] for w in sorted(frame.worlds, key=str) if w in true]
+             for atom, true in (rel.valuation or {}).items()}
+    state = blank_state(kind)
+    state.update({"agents": agents, "worlds": worlds, "per_agent": per_agent,
+                  "atoms": atoms, "axiom_d": bool(frame.axiom_d)})
+    return state
 
 
 def simplicial_state_from_editor(
@@ -2073,6 +2113,11 @@ class PipelineResult:
     html_3d: Path | None = None
     # (caption, ASCII diagram) -- the zero-dependency view of each model.
     text_diagrams: List[Tuple[str, str]] = field(default_factory=list)
+    # For a direct complex: the editor state of its equivalent Kripke model
+    # (G_B, docs/12), so the results view can open it as a new document and
+    # the user can run the pipeline back from it (complex -> Kripke -> proper
+    # -> complex). None when the complex has no facets.
+    kripke_state: dict | None = None
     # One report per pipeline step, in order: what was completed, what is
     # missing, and what failed. The run stopped at the first step with
     # ``failed`` non-empty.

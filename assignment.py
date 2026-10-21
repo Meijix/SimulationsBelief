@@ -384,16 +384,49 @@ def assignment_from_model(
 
     Args:
         model: A simplicial belief model whose nodes carry knowledge classes.
-        valuation: ``atom -> set of worlds where it is true`` (the model's own
-            worlds, i.e. the values of ``model.world_of_facet``).
+        valuation: ``atom -> set of worlds where it is true``. The worlds are
+            the model's own (the values of ``model.world_of_facet``), or the
+            ORIGINAL worlds they simulate when the model came through
+            ``to_proper`` (``model.projection``): a valuation written for the
+            general model is then carried to every copy of each world, which
+            is how ``to_proper`` itself transports valuations. Any other name
+            is an error, not a silent "false everywhere".
 
     Returns:
         The induced assignment, storing only non-2 values (2 is the default).
+
+    Raises:
+        ValueError: If some atom names a world that is neither a world of the
+            model nor an original world behind one of them. Without this
+            check a valuation keyed by the wrong names made every perspective
+            "know ¬P", which looks like a result and is not one.
     """
+    worlds = set(model.world_of_facet.values())
+    originals = set(model.projection.values())
+    by_original: Dict[Hashable, Set] = {}
+    for facet, world in model.world_of_facet.items():
+        if facet in model.projection:
+            by_original.setdefault(model.projection[facet], set()).add(world)
+    resolved: Dict[Atom, Set] = {}
+    for atom, true_worlds in valuation.items():
+        given = set(true_worlds)
+        unknown = given - worlds
+        if unknown and unknown <= originals:
+            # Named by the general model's worlds: expand to their copies.
+            given = (given & worlds) | {w for o in unknown for w in by_original[o]}
+        elif unknown:
+            raise ValueError(
+                f"assignment_from_model: atom {atom!r} is said to be true at "
+                f"{sorted(map(str, unknown))}, which are not worlds of the model "
+                f"(worlds: {sorted(map(str, worlds))}"
+                + (f"; original worlds: {sorted(map(str, originals))}" if originals else "")
+                + ")."
+            )
+        resolved[atom] = given
     out: Assignment = {}
     for node in model.nodes:
-        for atom, true_worlds in valuation.items():
-            inside = node.cls & set(true_worlds)
+        for atom, true_worlds in resolved.items():
+            inside = node.cls & true_worlds
             if inside == node.cls:
                 out.setdefault(node, {})[atom] = TRUE
             elif not inside:
