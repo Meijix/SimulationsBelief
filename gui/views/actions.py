@@ -19,6 +19,7 @@ import copy
 import hashlib
 import html
 import json
+import logging
 from typing import TYPE_CHECKING
 
 from nicegui import run as io, ui
@@ -184,6 +185,11 @@ class ActionsView:
                 result = await io.io_bound(preview_action, spec, agents, key)
             except ValueError as exc:
                 result = str(exc)
+            except Exception as exc:  # noqa: BLE001 -- the live figure must never take the card down
+                result = f"Could not draw the action: {exc}"
+                logging.getLogger("nicegui").exception("action preview failed")
+            if result is None:            # io_bound: cancelled or shutting down
+                return
             if len(self._cache) >= 32:
                 self._cache.pop(next(iter(self._cache)))
             self._cache[key] = result

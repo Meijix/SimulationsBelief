@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import copy
 import html
+import logging
 from typing import TYPE_CHECKING
 
 from nicegui import run as io, ui
@@ -124,6 +125,11 @@ class PreviewView:
                 result = await io.io_bound(preview_state, st, f"{doc_id}_{key}")
             except ValueError as exc:
                 result = str(exc)
+            except Exception as exc:  # noqa: BLE001 -- the preview must never take the card down
+                result = f"Could not draw the model: {exc}"
+                logging.getLogger("nicegui").exception("model preview failed")
+            if result is None:            # io_bound: cancelled or shutting down
+                return
             if len(self._cache) >= 64:          # bounded: oldest entry out
                 self._cache.pop(next(iter(self._cache)))
             self._cache[key] = result
