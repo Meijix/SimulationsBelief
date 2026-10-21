@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
-from adapters import agent_color_map, maximal_facets
+from adapters import agent_color_map, maximal_facets, new_facet
 from theme import CARD, FLAT, card_title, take
 
 if TYPE_CHECKING:
@@ -51,19 +51,9 @@ class SimplicialEditorView:
 
     # ---- facets ------------------------------------------------------------ #
     def add_facet(self) -> None:
-        state = self.page.state
-        taken = {f["name"] for f in state["facets"]}
-        n = len(state["facets"]) + 1
-        while f"F{n}" in taken:
-            n += 1
-        state["facets"].append({
-            "name": f"F{n}",
-            # Starts with the first vertex of each agent (or none) and in the
-            # belief subcomplex of everyone: the most common case.
-            "nodes": {a: (state["vertices"].get(a) or [None])[0]
-                      for a in state["agents"]},
-            "belief": list(state["agents"]),
-        })
+        # A fresh vertex combination each time (GitHub #23): a copy of the
+        # previous facet is the same facet, so it must not be the default.
+        self.page.state["facets"].append(new_facet(self.page.state))
         self.page.repaint_all()
 
     def remove_facet(self, index: int) -> None:

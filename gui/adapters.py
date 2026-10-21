@@ -542,6 +542,7 @@ def build_simplicial(
     axiom_d: bool = True,
     validate: bool = True,
     knowledge_only: bool = False,
+    notes: List[str] | None = None,
 ) -> Tuple[SimplicialBeliefModel, Dict[str, Node], Dict[str, frozenset]]:
     """The simplicial model exactly as the editor declares it.
 
@@ -551,15 +552,24 @@ def build_simplicial(
     ``violations()`` reports it as a UCF failure, like any other condition.
     ALL declared vertices enter the model, whether or not they lie in a facet:
     one with no facet is an isolated perspective (legal under K45, a violation
-    under Axiom D), not an input error.
+    under Axiom D), not an input error. No facet at all is fine too (GitHub
+    #24): the complex is then 0-dimensional, every vertex drawn on its own.
+
+    Two facets with the same vertices ARE the same facet (a facet is its
+    vertex set), so the second is merged into the first -- its name is dropped
+    and its belief marks are kept -- instead of being refused (GitHub #23: the
+    editor's "add facet" used to produce exactly that). ``notes``, if given,
+    receives one line per merge so the GUI can say what happened.
 
     Returns:
-        ``(model, vertices by name, facets by name)``.
+        ``(model, vertices by name, facets by name)``; a merged facet's name
+        maps to the vertex set it shares with the one that was kept.
 
     Raises:
         ValueError: whatever makes the drawing inexpressible -- a repeated
-            vertex, a facet with no vertices, two facets with the same
-            vertices -- and, with ``validate=True``, the model's own violations.
+            vertex, two facets with one name -- and, with ``validate=True``,
+            the model's own violations. A facet with no vertices at all is
+            left out and noted, like a duplicate.
     """
     by_name: Dict[str, Node] = {}
     for a in agents:
@@ -567,8 +577,6 @@ def build_simplicial(
             if v in by_name:
                 raise ValueError(f"vertex '{v}' is declared twice")
             by_name[v] = Node(a, frozenset({v}))
-    if not facets:
-        raise ValueError("declare at least one facet")
     facet_of: Dict[str, frozenset] = {}
     name_of: Dict[frozenset, str] = {}
     for f in facets:
@@ -580,16 +588,27 @@ def build_simplicial(
             if (v := f.get("nodes", {}).get(a)) in by_name and by_name[v].agent == a
         )
         if not members:
-            raise ValueError(f"facet '{name}' has no vertices")
-        if members in name_of:
-            raise ValueError(
-                f"facets '{name_of[members]}' and '{name}' have the same "
-                "vertices: they are the same facet"
-            )
+            # Every slot empty: the facet the editor just added before the
+            # user filled it in. Not part of the model yet, not an error.
+            facet_of[name] = members
+            if notes is not None:
+                notes.append(f"facet '{name}' has no vertices yet: not drawn until it has some")
+            continue
         facet_of[name] = members
+        if members in name_of:
+            if notes is not None:
+                notes.append(
+                    f"facets '{name_of[members]}' and '{name}' have the same vertices: "
+                    f"they are one facet, drawn once as '{name_of[members]}'"
+                )
+            continue
         name_of[members] = name
+    # The model's facets are the distinct non-empty vertex sets (``name_of``);
+    # ``facet_of`` also maps merged and empty names, for the callers that look
+    # a declared facet up by name.
     belief = {
-        a: {facet_of[f["name"]] for f in facets if a in f.get("belief", [])}
+        a: {facet_of[f["name"]] for f in facets
+            if a in f.get("belief", []) and facet_of[f["name"]]}
         for a in agents
     }
     if knowledge_only:
@@ -597,9 +616,9 @@ def build_simplicial(
         # simplicial analogue of a knowledge-only S5 frame, "believe what you
         # know"). The per-facet ``belief`` lists are ignored, not erased, so
         # switching the editor back to knowledge+belief restores them.
-        belief = {a: set(facet_of.values()) for a in agents}
+        belief = {a: set(name_of) for a in agents}
     model = SimplicialBeliefModel(
-        agents, by_name.values(), facet_of.values(), belief, world_of_facet=name_of,
+        agents, by_name.values(), name_of.keys(), belief, world_of_facet=name_of,
         validate=validate, axiom_d=axiom_d,
         node_names={n: v for v, n in by_name.items()},
     )
@@ -657,6 +676,11 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
     problems = model.violations()
     name = {n: v for v, n in by_name.items()}
     notes = []
+    if not model.facets:
+        notes.append(
+            "no facets yet: a 0-dimensional complex, every vertex is a world of "
+            "its own agent alone (add facets to glue perspectives into worlds)"
+        )
     loose = sorted(name[n] for n in model.isolated_nodes())
     if loose:
         notes.append(
@@ -716,10 +740,12 @@ def preview_simplicial(
     not part of the model, see :func:`_consistent_part`) and the returned list
     says so, next to the structural violations.
     """
+    merged: List[str] = []
     model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d, validate=False,
-                                         knowledge_only=knowledge_only)
+                                         knowledge_only=knowledge_only, notes=merged)
     assignment = simplicial_assignment(by_name, vatoms)
     model, dropped = _consistent_part(model, assignment, by_name)
+    dropped = merged + dropped
     path = Path(show(model, _fname("gui_preview", tag), "Complex as entered",
                      output_dir=str(OUTPUTS), assignment=assignment or None,
                      engine="auto" if _geometric_ok(model) else "dot"))
@@ -751,6 +777,33 @@ def evaluate_simplicial_formula(
         )
     return [(f["name"], holds_simplicial(model, assignment, facet_of[f["name"]], formula))
             for f in facets if facet_of[f["name"]] in model.facets]
+
+
+def new_facet(state: dict) -> dict:
+    """The facet the editor's "add facet" button appends (GitHub #23).
+
+    It starts from the first vertex combination (in declaration order) that no
+    existing facet uses, so two clicks never produce the same facet twice: a
+    facet IS its vertex set, and a copy of the previous one was being merged
+    away -- which looked like the button doing nothing, or worse. When every
+    combination is taken (or an agent has no vertex) the new facet starts
+    empty for that agent. It is in everyone's belief subcomplex, the common case.
+    """
+    from itertools import product
+
+    agents = list(state["agents"])
+    taken_names = {f["name"] for f in state["facets"]}
+    n = len(state["facets"]) + 1
+    while f"F{n}" in taken_names:
+        n += 1
+    used = {tuple(f.get("nodes", {}).get(a) for a in agents) for f in state["facets"]}
+    nodes = {a: None for a in agents}
+    choices = [state["vertices"].get(a) or [None] for a in agents]
+    for combo in product(*choices):
+        if combo not in used:
+            nodes = dict(zip(agents, combo))
+            break
+    return {"name": f"F{n}", "nodes": nodes, "belief": list(agents)}
 
 
 def maximal_facets(
@@ -832,9 +885,11 @@ def run_simplicial(
     result = PipelineResult()
     step = StepReport("1 · Simplicial complex (defined directly)")
     result.steps.append(step)
+    merged: List[str] = []
     try:
         model, by_name, _ = build_simplicial(agents, vertices, facets, axiom_d,
-                                             validate=False, knowledge_only=knowledge_only)
+                                             validate=False, knowledge_only=knowledge_only,
+                                             notes=merged)
         assignment = simplicial_assignment(by_name, vatoms)
     except ValueError as exc:
         step.failed.append(str(exc))
@@ -842,9 +897,9 @@ def run_simplicial(
         return result
     # Inconsistent facets are removed, not refused (GitHub #21): the model is
     # the maximal consistent complex, and the removal is reported as something
-    # the theory completed for the user.
+    # the theory completed for the user. Duplicate facets are merged the same way.
     model, dropped = _consistent_part(model, assignment, by_name)
-    step.completed += dropped
+    step.completed += merged + dropped
     problems, notes = _simplicial_problems(model, assignment, by_name, vertices)
     step.missing += notes
     if problems:
@@ -908,6 +963,11 @@ def run_simplicial(
     # of S_a; KD45 or K45 read off the geometry. Vertices in no facet have
     # no world and are left out, with a note.
     back = StepReport("2 · Equivalent relational model (complex → Kripke)")
+    if not model.facets:
+        back.missing.append("no facets, so no worlds: the Kripke model is empty "
+                            "(each vertex alone has no world to stand in)")
+        result.steps.append(back)
+        return result
     try:
         rel = to_relational(model, assignment, ignore_isolated=True)
     except ValueError as exc:
@@ -1455,8 +1515,9 @@ def _fname(base: str, tag: str) -> str:
 def state_problem(state: dict) -> Optional[str]:
     """What the state lacks before anything can be drawn; ``None`` if nothing."""
     if state["kind"] == "simplicial":
-        if not (state["agents"] and state["facets"]):
-            return "Add agents, their vertices and at least one facet."
+        if not (state["agents"] and any(state["vertices"].get(a) for a in state["agents"])):
+            return ("Add agents and their vertices. Facets are optional: a vertex in "
+                    "no facet is drawn on its own.")
     elif not (state["agents"] and state["worlds"]):
         return "Add at least one agent and one world."
     return None
