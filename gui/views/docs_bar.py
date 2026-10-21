@@ -143,13 +143,16 @@ class DocsBarView:
         except (OSError, ValueError) as exc:
             ui.notify(str(exc), type="warning")
             return
+        # Notify BEFORE repainting the bar: the dialog (and the button whose
+        # click we are handling) hangs from the bar and is deleted with it,
+        # after which NiceGUI has no slot to attach the notification to.
+        ui.notify(f"{len(opened)} model(s) opened from {path.name}", type="info")
         if dlg is not None:
             dlg.close()
         if ws.comparing:
             page.compare.exit()
         page.load_into_editor(page.current())
         self.paint()
-        ui.notify(f"{len(opened)} model(s) opened from {path.name}", type="info")
 
     def open_dialog(self) -> None:
         ws = self.page.ws
