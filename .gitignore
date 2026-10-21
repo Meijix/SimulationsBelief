@@ -24,3 +24,8 @@ tests/
 
 # --- macOS ---
 .DS_Store
+
+# --- Packaging (pip install -e .) ---
+*.egg-info/
+build/
+dist/

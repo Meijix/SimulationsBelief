@@ -109,7 +109,15 @@ from nicegui import Client, app, ui
 
 # Flat imports on purpose: when running ``python gui/app.py`` this folder is
 # sys.path[0], and adapters takes care of putting the repo root on the path.
-from adapters import OUTPUTS, blank_state
+# When the GUI is started through the installed command (``gui.app:main``),
+# this folder is not on the path yet, so it is added here first.
+import sys
+
+_HERE = str(Path(__file__).resolve().parent)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
+
+from adapters import OUTPUTS, blank_state  # noqa: E402
 from theme import apply_theme
 from views.actions import ActionsView
 from views.atoms import AtomsView
@@ -291,8 +299,19 @@ def index() -> None:
     page.load_example("tesis")   # also paints the bar, the preview and the empty state
 
 
-# reload=False: NiceGUI's auto-reload re-imports the module in a subprocess, a
-# surprising behavior for a simple local tool. The __mp_main__ guard is the
-# NiceGUI convention (multiprocess uvicorn).
+def main() -> None:
+    """Start the server (the ``simulationsbelief-gui`` command and ``python gui/app.py``).
+
+    reload=False: NiceGUI's auto-reload re-imports the module in a subprocess,
+    a surprising behavior for a simple local tool. The port can be changed
+    with the environment variable ``SIMULATIONSBELIEF_PORT`` (default 8080).
+    """
+    import os
+
+    port = int(os.environ.get("SIMULATIONSBELIEF_PORT", "8080"))
+    ui.run(title="The geometry of a false belief", reload=False, dark=True, port=port)
+
+
+# The __mp_main__ guard is the NiceGUI convention (multiprocess uvicorn).
 if __name__ in {"__main__", "__mp_main__"}:
-    ui.run(title="The geometry of a false belief", reload=False, dark=True)
+    main()

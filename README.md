@@ -65,8 +65,9 @@ and convergence).
 
 - the repository root holds the core modules (`relational_frame.py`,
   `properness.py`, `knowledge_belief.py`, `simplicial.py`, `semantics.py`,
-  `assignment.py`, `hasse.py`, `visualization.py`, `simplicial_actions.py`)
-  and `regenerate_outputs.py`;
+  `assignment.py`, `hasse.py`, `visualization.py`, `simplicial_actions.py`),
+  `regenerate_outputs.py` and the packaging (`pyproject.toml`, which installs
+  the modules, the `gui` package and the `simulationsbelief-gui` command);
 - `examples/` — the demo scripts (`thesis_example.py`, `example_val.py`,
   `examples*.py`, `examplesimplicial1.py`, the three `Example for Poster N.py`,
   `Natural Disaster Example.py`, `action_knowledge_example.py`); each puts the
@@ -84,7 +85,8 @@ and convergence).
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -e .            # the project itself (pyproject.toml); or: pip install -r requirements.txt
+.venv/bin/pip install -e ".[test]"    # ...plus pytest and hypothesis
 ```
 
 Image rendering (`visualization.show()`) needs the Graphviz system binary:
@@ -164,6 +166,7 @@ traceback.
 
 ```bash
 .venv/bin/python gui/app.py     # opens http://localhost:8080
+simulationsbelief-gui           # the same, once installed with pip install -e . (port: SIMULATIONSBELIEF_PORT)
 ```
 
 The GUI only *calls* the core: the `gui/adapters/` package is the single bridge

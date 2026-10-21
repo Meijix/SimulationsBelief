@@ -1,0 +1,46 @@
+# Packaging for the project: `pip install -e .` makes the core modules and the
+# GUI importable from anywhere and installs the `simulationsbelief-gui` command.
+# The core modules stay flat in the repository root on purpose (the scripts and
+# docs refer to them by file name); they are listed as py-modules.
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simulationsbelief"
+version = "0.1.0"
+description = "Simulations of relational and simplicial models for knowledge and belief, their translations, and simplicial actions (Sink's thesis)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Natalia Hernández (Meijix)" }]
+dependencies = [
+    "matplotlib>=3.8",
+    "plotly>=5.0",
+    "nicegui>=3.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "hypothesis>=6"]
+# Graphviz (the `dot` binary) is a separate system install: brew install graphviz
+
+[project.scripts]
+simulationsbelief-gui = "gui.app:main"
+
+[tool.setuptools]
+py-modules = [
+    "relational_frame",
+    "properness",
+    "knowledge_belief",
+    "simplicial",
+    "semantics",
+    "assignment",
+    "hasse",
+    "visualization",
+    "simplicial_actions",
+    "regenerate_outputs",
+]
+packages = ["gui", "gui.adapters", "gui.views"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
