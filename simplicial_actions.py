@@ -1,6 +1,24 @@
+"""Simplicial actions and the knowledge product M[A] (Sink's thesis, Def. 4.5).
+
+Preconditions come in two forms, both per action node:
+
+    * LITERALS (``pre``: ``{node: {atom: 0|1}}``), the ``L_A`` of the thesis
+      (p. 50), compared three-valuedly with what the input perspective
+      OBSERVES (``compatible``);
+    * FORMULAS (``pre_formula``: ``{node: φ}``), as in the general action
+      models of DEL and of Goubault, Ledent & Rajsbaum, where φ may be modal
+      (``K_a``, ``B_a``). A formula is evaluated at the INPUT FACETS
+      (``assignment.holds``), the only place where modalities mean something:
+      a facet ``(X, Y)`` exists only if ``X ⊨ pre(π_a(Y))`` for every agent,
+      and an input node ``x`` pairs with ``y`` only if ``pre(y)`` is possible
+      for it (some facet through ``x`` satisfies it; mode 2 demands every
+      facet, "x knows it").
+
+Postconditions are literals (``post``).
+"""
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Hashable, Iterable, List, NamedTuple, Set
+from typing import Dict, FrozenSet, Hashable, Iterable, List, NamedTuple, Set, Tuple
 
 from assignment import (
     FALSE,
@@ -9,6 +27,7 @@ from assignment import (
     Assignment,
     assignment_violations,
     facet_inconsistencies,
+    holds,
     is_consistent_facet,
     node_value,
     require_consistent,
@@ -16,6 +35,7 @@ from assignment import (
 from simplicial import Facet, Node, SimplicialBeliefModel, label_facet, label_node
 
 Agent = Hashable
+Formula = tuple   # assignment.holds syntax: ("atom", P), ("K", a, f), ("imp", f, g)...
 MODES = (1, 2, 3)
 DEFAULT_MODE = 3
 
@@ -66,12 +86,16 @@ class SimplicialAction:
         post: Assignment | None = None,
         event_of_facet: Dict[Facet, Hashable] | None = None,
         validate: bool = True,
+        pre_formula: Dict[Node, Formula] | None = None,
     ) -> None:
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
         self.pre: Assignment = {n: dict(v) for n, v in (pre or {}).items()}
         self.post: Assignment = {n: dict(v) for n, v in (post or {}).items()}
+        # Per node, a formula the input world must satisfy for the event to
+        # happen there (see the module docstring); evaluated at facets.
+        self.pre_formula: Dict[Node, Formula] = dict(pre_formula or {})
         self.event_of_facet: Dict[Facet, Hashable] = dict(event_of_facet or {})
         if validate:
             problems = self.violations()
@@ -89,11 +113,13 @@ class SimplicialAction:
         pre: Dict[Hashable, Dict[Hashable, int]] | None = None,
         post: Dict[Hashable, Dict[Hashable, int]] | None = None,
         isolated: Dict[Agent, Iterable[Hashable]] | None = None,
+        pre_formula: Dict[Hashable, Formula] | None = None,
     ) -> "SimplicialAction":
         # Input format:
-        #   events   = {"k": {"a": "as", "b": "b not r", "c": "c"}, ...}
-        #   pre      = {"as": {"Pa": 1}}
-        #   isolated = {"a": ["a?"]}  
+        #   events      = {"k": {"a": "as", "b": "b not r", "c": "c"}, ...}
+        #   pre         = {"as": {"Pa": 1}}
+        #   isolated    = {"a": ["a?"]}
+        #   pre_formula = {"as": ("K", "a", ("atom", "Pa"))}   a formula per node name
         # names to Nodes and call the constructor 
         agents = set(agents)
         by_name: Dict[Hashable, Node] = {}  # node name -> its Node
@@ -117,13 +143,14 @@ class SimplicialAction:
                 if by_name.setdefault(nm, n) != n:
                     raise ValueError(f"Node name {nm!r} is used by more than one agent.")
 
-        def resolve(table, what):
-            # key {name: {atom: value}} table as {Node: {atom: value}}.
-            out: Assignment = {}
-            for nm, atoms in (table or {}).items():
+        def resolve(table, what, copy=dict):
+            # name-keyed table -> Node-keyed table; ``copy`` shapes the value
+            # (a dict of literals, or one formula kept as it is).
+            out = {}
+            for nm, value in (table or {}).items():
                 if nm not in by_name:
                     raise ValueError(f"{what} names unknown action node {nm!r}.")
-                out[by_name[nm]] = dict(atoms)
+                out[by_name[nm]] = copy(value)
             return out
 
         # the keys of event_of_facet are the facets
@@ -134,6 +161,7 @@ class SimplicialAction:
             pre=resolve(pre, "pre"),
             post=resolve(post, "post"),
             event_of_facet=event_of_facet,
+            pre_formula=resolve(pre_formula, "pre_formula", copy=lambda f: f) if pre_formula else None,
         )
 
     def violations(self) -> List[str]:
@@ -167,6 +195,10 @@ class SimplicialAction:
             for n in table:
                 if n not in self.nodes:
                     problems.append(f"{what} mentions {label_node(n)}, which is not in N_A.")
+        for n, phi in self.pre_formula.items():
+            if n not in self.nodes:
+                problems.append(f"pre_formula mentions {label_node(n)}, which is not in N_A.")
+            problems += [f"pre_formula of {label_node(n)}: {m}" for m in formula_problems(phi)]
         return problems
 
     def is_valid(self) -> bool:
@@ -176,6 +208,8 @@ class SimplicialAction:
         def show(n: Node) -> str:
             s = node_name(n)
             pre = _literals(self.pre.get(n, {}))
+            if n in self.pre_formula:
+                pre.append(formula_text(self.pre_formula[n]))
             post = _literals(self.post.get(n, {}))
             if pre:
                 s += "(" + ", ".join(pre) + ")"
@@ -211,6 +245,68 @@ def _literals(values: Dict[Hashable, int]) -> List[str]:
         elif v == FALSE:
             out.append(f"not {atom}")
     return out
+
+
+CONNECTIVES = {"atom": 2, "bot": 1, "not": 2, "and": 3, "or": 3, "imp": 3, "K": 3, "B": 3}
+
+
+def formula_problems(phi) -> List[str]:
+    """Why ``phi`` is not a formula in ``assignment.holds`` syntax (empty = it is)."""
+    if not isinstance(phi, tuple) or not phi or phi[0] not in CONNECTIVES:
+        return [f"{phi!r} is not a formula tuple (tags: {sorted(CONNECTIVES)})"]
+    if len(phi) != CONNECTIVES[phi[0]]:
+        return [f"{phi!r} has {len(phi) - 1} argument(s), expected {CONNECTIVES[phi[0]] - 1}"]
+    children = phi[1:] if phi[0] in ("not", "and", "or", "imp") else phi[2:]
+    return [m for child in children for m in formula_problems(child)]
+
+
+def formula_text(phi) -> str:
+    """Readable form: ``K_a (P ∧ ¬Q)``."""
+    tag = phi[0]
+    if tag == "atom":
+        return str(phi[1])
+    if tag == "bot":
+        return "⊥"
+    if tag == "not":
+        return "¬" + formula_text(phi[1])
+    if tag in ("K", "B"):
+        return f"{tag}_{phi[1]} {formula_text(phi[2])}"
+    op = {"and": "∧", "or": "∨", "imp": "→"}[tag]
+    return f"({formula_text(phi[1])} {op} {formula_text(phi[2])})"
+
+
+class _Sat:
+    """``X ⊨ φ`` on the input, memoised: formulas are asked many times per facet."""
+
+    def __init__(self, model: SimplicialBeliefModel, assignment: Assignment) -> None:
+        self.model, self.assignment = model, assignment
+        self.cache: Dict[Tuple[Facet, Formula], bool] = {}
+        self.facets_of: Dict[Node, List[Facet]] = {}
+        for F in model.facets:
+            for n in F:
+                self.facets_of.setdefault(n, []).append(F)
+
+    def __call__(self, X: Facet, phi: Formula) -> bool:
+        key = (X, phi)
+        if key not in self.cache:
+            # Consistency was established once by require_consistent.
+            self.cache[key] = holds(self.model, self.assignment, X, phi, check_consistency=False)
+        return self.cache[key]
+
+    def possible(self, x: Node, phi: Formula, mode: int) -> bool:
+        """Node-level reading of a formula precondition.
+
+        Mode 2: ``x`` KNOWS ``phi`` (it holds at every world through ``x``).
+        Otherwise: ``phi`` is POSSIBLE for ``x`` (some world through ``x``
+        satisfies it), the counterpart of the literal "no clash" test. An
+        input node in no world can satisfy neither.
+        """
+        worlds = self.facets_of.get(x, [])
+        if not worlds:
+            return False
+        if mode == 2:
+            return all(self(X, phi) for X in worlds)
+        return any(self(X, phi) for X in worlds)
 
 
 def compatible(
@@ -285,6 +381,7 @@ def update_model(
             f"{sorted(action.agents, key=str)}."
         )
     require_consistent(model, assignment)
+    sat = _Sat(model, assignment)   # formula preconditions, evaluated at input facets
     # fixed agent order 
     agents = sorted(model.agents, key=str)
 
@@ -296,7 +393,9 @@ def update_model(
     product: Dict[Pair, Node] = {}
     for x in model.nodes:
         for y in action.nodes:
-            if compatible(x, y, assignment, action.pre, mode):
+            if compatible(x, y, assignment, action.pre, mode) and (
+                y not in action.pre_formula or sat.possible(x, action.pre_formula[y], mode)
+            ):
                 # the output node keeps x's agent
                 n = Node(x.agent, frozenset({Pair(x, y)}))
                 product[Pair(x, y)] = n
@@ -313,6 +412,9 @@ def update_model(
     projection: Dict[Facet, Hashable] = {}
     for X in model.facets:
         for Y in action.facets:
+            # the event's formula preconditions must hold at the input world
+            if not all(sat(X, action.pre_formula[y]) for y in Y if y in action.pre_formula):
+                continue
             # one Pair per agent, in the fixed agent order
             pairs = [Pair(model.pi(a, X), _pi(a, Y)) for a in agents]
             # any pair rejected by compatible() kills the whole candidate

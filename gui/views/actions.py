@@ -115,6 +115,19 @@ class ActionsView:
             spec.get(table, {}).pop(name, None)
         self.paint()
 
+    def set_pre_formula(self, spec: dict, node: str, text: str) -> None:
+        table = spec.setdefault("pre_formula", {})
+        if text.strip():
+            table[node] = text.strip()
+        else:
+            table.pop(node, None)
+        self.refresh_preview(spec)
+
+    def model_atoms(self) -> list:
+        """The active model's atom names, so action formulas may mention them."""
+        state = self.page.state
+        return list(state.get("vatoms") or state.get("atoms") or {})
+
     # ---- apply ------------------------------------------------------------- #
     def apply(self) -> None:
         """Apply the selected action to the ACTIVE model; the result opens as a document."""
@@ -123,7 +136,7 @@ class ActionsView:
         if spec is None:
             ui.notify("Define (or load) an action first.", type="warning")
             return
-        problems = action_problems(spec, page.state["agents"])
+        problems = action_problems(spec, page.state["agents"], self.model_atoms())
         if problems:
             ui.notify("The action is not complete: " + problems[0], type="warning")
             return
@@ -307,14 +320,29 @@ class ActionsView:
                             ui.button(icon="delete",
                                       on_click=lambda _, n=atom: self.remove_atom(spec, n)) \
                                 .props("flat dense color=grey")
+            # ---- modal preconditions: one formula per action node ----------- #
+            # Same syntax as the formula evaluator (K_a, B_a, ~, &, |, ->);
+            # required at the input world (see simplicial_actions' docstring).
+            with ui.expansion("modal preconditions (optional): a formula per action node") \
+                    .classes("w-full text-xs"):
+                ui.label("Evaluator syntax: K_a P, B_b ~P, P & Q, P -> Q. The event happens "
+                         "at an input world only if the formula holds there.") \
+                    .classes("text-xs text-grey-5")
+                for node in nodes:
+                    with ui.row().classes("w-full no-wrap items-center gap-2"):
+                        ui.label(node).classes("font-mono text-xs w-20")
+                        ui.input("precondition", value=(spec.get("pre_formula") or {}).get(node, ""),
+                                 on_change=lambda e, n=node: self.set_pre_formula(spec, n, e.value or "")) \
+                            .props("dense outlined").classes("grow") \
+                            .on("blur", lambda: self.paint())
             # ---- status + apply --------------------------------------------- #
-            problems = action_problems(spec, agents)
+            problems = action_problems(spec, agents, self.model_atoms())
             if problems:
                 ui.label("Missing: " + "; ".join(problems)).classes("text-xs") \
                     .style(f"color:{POSTER['yellow']}")
             else:
                 ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
-                        f"{html.escape(describe_action(spec, agents))}</pre>")
+                        f"{html.escape(describe_action(spec, agents, self.model_atoms()))}</pre>")
             # The action drawn as it stands, updated after every edit.
             self._fig_box = ui.column().classes("w-full gap-1")
             self._schedule_preview(copy.deepcopy(spec), list(agents))

@@ -328,18 +328,20 @@ def _holds(
         return any(node_value(assignment, n, formula[1]) == TRUE for n in facet)
     if tag == "bot":
         return False
+    # The second operands recurse through _holds too: the public ``holds``
+    # would re-run the whole-model consistency check at every connective.
     if tag == "imp":
-        return (not _holds(model, assignment, facet, formula[1])) or holds(
+        return (not _holds(model, assignment, facet, formula[1])) or _holds(
             model, assignment, facet, formula[2]
         )
     if tag == "not":
         return not _holds(model, assignment, facet, formula[1])
     if tag == "and":
-        return _holds(model, assignment, facet, formula[1]) and holds(
+        return _holds(model, assignment, facet, formula[1]) and _holds(
             model, assignment, facet, formula[2]
         )
     if tag == "or":
-        return _holds(model, assignment, facet, formula[1]) or holds(
+        return _holds(model, assignment, facet, formula[1]) or _holds(
             model, assignment, facet, formula[2]
         )
     if tag == "B":

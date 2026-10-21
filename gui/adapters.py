@@ -1245,6 +1245,7 @@ def list_saved() -> List[Path]:
 #    "isolated": {agent: [action-node names in no event]},
 #    "pre":      {atom: {"true": [node names], "false": [node names]}},  (as vatoms)
 #    "post":     {atom: {"true": [...], "false": [...]}},
+#    "pre_formula": {node name: "K_a P"},        modal preconditions, formula syntax
 #    "mode":     1 | 2 | 3,                      compatibility test, see ACTION_MODES
 #    "update":   "knowledge" | ...}              which product to run, see UPDATE_KINDS
 #
@@ -1331,8 +1332,24 @@ def _conditions(table: Dict[str, dict]) -> Dict[str, Dict[str, int]]:
     return out
 
 
-def action_problems(spec: dict, agents: List[str]) -> List[str]:
-    """What stops the spec from being an action (empty list = it builds)."""
+def spec_atoms(spec: dict) -> List[str]:
+    """Every atom the spec itself names (the literal tables)."""
+    return sorted(set(spec.get("pre") or {}) | set(spec.get("post") or {}))
+
+
+def _formula_table(spec: dict, agents: List[str], atoms: List[str]):
+    """Parse the spec's precondition formulas into ``assignment.holds`` tuples."""
+    known = sorted(set(atoms) | set(spec_atoms(spec)))
+    return {node: parse_formula(text, agents, known)
+            for node, text in (spec.get("pre_formula") or {}).items() if text and text.strip()}
+
+
+def action_problems(spec: dict, agents: List[str], atoms: List[str] | None = None) -> List[str]:
+    """What stops the spec from being an action (empty list = it builds).
+
+    ``atoms`` are the model's atoms, so a formula may mention them; the spec's
+    own atoms are always known.
+    """
     problems = []
     if not spec.get("events"):
         problems.append("the action has no events")
@@ -1349,10 +1366,14 @@ def action_problems(spec: dict, agents: List[str]) -> List[str]:
                 problems.append(f"{table}: atom '{atom}' is both true and false at {both}")
     if spec.get("update", "knowledge") not in UPDATE_KINDS:
         problems.append(f"unknown update kind: {spec.get('update')!r}")
+    known = set(action_node_names(spec))
+    for node in (spec.get("pre_formula") or {}):
+        if node not in known:
+            problems.append(f"pre_formula: node '{node}' does not exist")
     if problems:
         return problems
     try:
-        build_action(spec, agents)
+        build_action(spec, agents, atoms)
     except ValueError as exc:
         problems.append(str(exc))
     return problems
@@ -1417,19 +1438,21 @@ def preview_action(spec: dict, agents: List[str], tag: str = "") -> Path:
                      output_dir=str(OUTPUTS), engine="auto" if _geometric_ok(model) else "dot"))
 
 
-def build_action(spec: dict, agents: List[str]) -> SimplicialAction:
+def build_action(spec: dict, agents: List[str], atoms: List[str] | None = None) -> SimplicialAction:
     """The :class:`SimplicialAction` a spec describes (the core validates it)."""
     events = {ev["name"]: {a: v for a, v in ev.get("nodes", {}).items() if v}
               for ev in spec.get("events", [])}
+    pre_formula = _formula_table(spec, agents, list(atoms or []))
     return SimplicialAction.from_events(
         agents, events, pre=_conditions(spec.get("pre")), post=_conditions(spec.get("post")),
         isolated={a: list(v) for a, v in (spec.get("isolated") or {}).items() if v},
+        pre_formula=pre_formula or None,
     )
 
 
-def describe_action(spec: dict, agents: List[str]) -> str:
+def describe_action(spec: dict, agents: List[str], atoms: List[str] | None = None) -> str:
     """The core's text rendering of the action (events, nodes, pre/post)."""
-    return build_action(spec, agents).describe()
+    return build_action(spec, agents, atoms).describe()
 
 
 def apply_action(state: dict, spec: dict, model_name: str = "model") -> dict:
@@ -1477,7 +1500,7 @@ def apply_action(state: dict, spec: dict, model_name: str = "model") -> dict:
     problems = model.violations()
     if problems:
         raise ValueError("the model is not valid:\n  - " + "\n  - ".join(problems))
-    action = build_action(spec, agents)
+    action = build_action(spec, agents, list(state.get("vatoms") or {}))
     mode = int(spec.get("mode", DEFAULT_MODE))
     if mode not in MODES:
         raise ValueError(f"unknown compatibility mode: {mode}")
