@@ -109,8 +109,23 @@
 		
 		I believe there are two audiences for simulations of D.E.L. as we are undertaking\bigskip\pause
 		
-		The first is computer scientists: Insofar as D.E.L. is a language for describing distributed protocols\cite{SimpDEL,KaSC,KaG,ActionDC,CPM,CPaAM}, there is reason to simulate D.E.L. in order to simulate said protocols. \bigskip
+		The first is computer scientists: Insofar as D.E.L. is a language for describing distributed protocols\cite{SimpDEL,KaSC,KaG,ActionDC,CPM,CPaAM}, there is reason to simulate D.E.L. in order to simulate said protocols.
 	\end{frame}
+
+\begin{frame}[fragile]
+	\frametitle{Why Computer Scientists}
+	\begin{center}
+		\includegraphics[scale=.08]{Action.png}
+	\end{center}
+	
+	Consider the ``alternating message passing protocol''\bigskip\pause
+	
+	There are two agents, and they take turns sending a message back and forth.\bigskip\pause
+	
+	At each turn, the message might fail.\bigskip\pause
+	
+	We can give a compact, geometric model of this story.
+\end{frame}
 
 		\begin{frame}[fragile]
 		\frametitle{Why Philosophers?}
@@ -169,9 +184,16 @@
 		Hence, simple combinatorial reasoning tells us there are four possible perspectives for each child.
 	\end{frame}
 
+		\begin{frame}[fragile]
+		\frametitle{Example: Muddy Children Part 1}
+		\begin{center}
+			\includegraphics[scale=.14]{MCVerts.png}
+		\end{center}
+	\end{frame}
+
 	\begin{frame}[fragile]
 		\frametitle{Uncertainty in Simplicial Semantics}
-		We now need to model the fact that each child is uncertain about whether or not they themselves are muddy.\bigskip\pause
+		We now need to model the fact that each child is uncertain about whether or not they are themselves muddy.\bigskip\pause
 		
 		Typically, uncertainty is modeled as an agent being unable to differentiate between distinct possibilities, or ``possible worlds''.\bigskip\pause
 		
@@ -206,11 +228,11 @@
 	
 	\begin{frame}[fragile]
 		\frametitle{Dynamics}
-		Imagine you, the parent, stands in the center of the circle of children, and announce that ``some of you have mud on your forehead''.\bigskip\pause
+		Imagine you, the parent, stands in the center of the circle of children, and announce that ``$a$ has mud on her forehead''.\bigskip\pause
 		
 		How should the children respond to this info?\bigskip\pause
 		
-		Intuitively, this announcement correspond to each child learning $M_a\vee M_b\vee M_c$, learning every other child learns this fact, and so on.\bigskip
+		Intuitively, this announcement correspond to each child learning $M_a$, learning every other child learns this fact, and so on.\bigskip\pause
 		
 		We represent that with ``update perspectives'' as follows, and call this an \textit{action}.
 	\end{frame}
@@ -268,7 +290,7 @@
 		\frametitle{False Beliefs}
 	So far, the children are perfect reasoners and have no misconceptions. What if that were not the case?\bigskip\pause
 	
-	Of all the sets of perspectives, some children may only consider some sets possible. Indeed, they not not consider the ``true'' set possible!\bigskip\pause
+	Of all the sets of perspectives, some children may only consider some sets possible. Indeed, they do not consider the ``true'' set possible!\bigskip\pause
 	
 	As such, some sets of perspectives will only ``belong'' or be ``assigned'' to a portion of all the agents. Agents only consider worlds ``belonging'' or ``assigned'' to them possible.\bigskip\pause
 	
@@ -277,7 +299,7 @@
 
 	\begin{frame}[fragile]
 		\frametitle{Actions with False Beliefs}
-		Now imagine $c$ doesn't observe that $a$ is whispering to $b$. $a$ and $b$ believe that $c$ is not observing them, either.\pause
+		Now imagine $c$ doesn't observe that $a$ is whispering to $b$. $a$ and $b$ believe that $c$ is not observing them, either. Further, assume $a$ definitely whispers the muddy status of $b$.\pause
 		
 	\begin{center}
 		\includegraphics[scale=.1]{Whisper False.png}
