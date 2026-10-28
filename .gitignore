@@ -29,3 +29,6 @@ tests/
 *.egg-info/
 build/
 dist/
+
+# --- Class presentation (beamer sources and figures, kept local) ---
+classpresentation/
