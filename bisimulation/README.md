@@ -1,15 +1,16 @@
 # `bisimulation/` — are two models the same model, for the logic?
 
-This folder answers one question and keeps its source material next to the
-answer: **does `to_proper` really return a model bisimilar to the one it was
-given?** That is the claim of Thm. 2.4 of Sink's thesis, and the whole reason
+This folder answers one question:
+ **does `to_proper` really return a model bisimilar to the one it was
+given?** 
+That is the claim of Thm. 2.4 of Sink's thesis, and the whole reason
 the proper model is worth building.
 
 | file | what it is |
 |---|---|
 | `bisimulation.py` | the implementation: Kanellakis-Smolka partition refinement, plus the checks built on it |
 | `kanellakisalgoritmo.pdf` | Aceto, Ingolfsdottir & Srba, *The Algorithmics of Bisimilarity*. §0.2 is the algorithm (Def. 0.2.1, Lemma 0.2.2, Def. 0.2.3, Figures 0.1–0.2, Def. 0.2.10, Thm. 0.2.6); §0.3.2 is the P-completeness result |
-| `example_bisimilarity.py` | four worked examples: a model, its proper twin, the verdict and the figures |
+| `example_bisimilarity.py` | seven worked examples (three of them knowledge only): a model, its proper twin, the verdict and the figures |
 | `__init__.py` | re-exports, so `import bisimulation` keeps working |
 
 ## The short version
@@ -39,7 +40,7 @@ python bisimulation/example_bisimilarity.py          # print and draw
 python bisimulation/example_bisimilarity.py --open   # ...and open the figures
 ```
 
-Four models, each making a different point, all put through the same pipeline
+Seven models, each making a different point, all put through the same pipeline
 (is it proper? → `to_proper` → verify → draw):
 
 1. **A coin nobody saw.** Two agents, two worlds, knowledge complete: as
@@ -54,6 +55,18 @@ Four models, each making a different point, all put through the same pipeline
    symmetry, so the checker refuses -- because one that only ever says yes
    would be worth nothing.
 
+Then three with **knowledge only** -- S5 frames with no belief relation, the
+models of thesis ch. 2:
+
+5. **The coin, named.** The frame of example 1 with an atom `H`: same four
+   copies, but now two classes, heads and tails.
+6. **Three agents, ignorance in part of the model.** Agent `a` tells `w0`
+   apart, `b` and `c` know nothing: properness fails on `{w1, w2}` only, yet
+   `to_proper` copies everything (9 worlds). `w1` and `w2` were already
+   bisimilar inside the general model, so both models have two classes.
+7. **A knowledge-only NO**: "`a` knows which world it is" against "`a` does
+   not"; the frames are bisimilar, `K_a P` tells the models apart.
+
 Figures land in `../outputs/` (git-ignored).
 
 ## Where the rest lives
@@ -63,7 +76,3 @@ Figures land in `../outputs/` (git-ignored).
   is `../docs/14-bisimilaridad-refinamiento-particiones.md` (in Spanish).
 * **The construction being verified** is `../properness.py`, explained in
   `../docs/02-proper-models.md`.
-* **The tests** are `../tests/test_bisimulation.py`: the chapter's own worked
-  examples (0.2.4 and 0.2.11, whose answers are published), the repo's golden
-  models, negative controls, and cross-validation against a naive fixpoint and
-  against the formula evaluator of `../semantics.py`.

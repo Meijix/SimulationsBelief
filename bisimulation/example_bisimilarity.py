@@ -5,7 +5,7 @@ WHAT THIS SHOWS. ``to_proper`` buys *properness* -- the condition the simplicial
 translation needs -- by making ``|W|`` copies of a model and skewing one agent's
 relations across them. The price must not include a change of meaning: the new
 model has to be **bisimilar** to the old one, which is the claim of Thm. 2.4 of
-Sink's thesis. This script walks four models through that claim and verifies it
+Sink's thesis. This script walks seven models through that claim and verifies it
 with ``bisimulation.py``, which recomputes the largest bisimulation from scratch
 instead of trusting the construction.
 
@@ -17,6 +17,14 @@ one on the right.
     2. Knowledge AND belief, with atoms: Sink's Figure 1, the thesis's own case.
     3. A model that is ALREADY proper, where ``to_proper`` copies nothing.
     4. A NO: two models that are not bisimilar, so the checker is seen to refuse.
+
+    Then three more with KNOWLEDGE ONLY -- S5 frames, no belief relation at all,
+    the models of thesis ch. 2 -- so the claim is seen on the plain case too:
+
+    5. The coin again, now with an atom: the copies split into two classes.
+    6. Three agents, ignorance in part of the model only: 3 worlds -> 9 copies,
+       and two of the three worlds were already duplicates for the logic.
+    7. A knowledge-only NO: "a knows P" against "a does not", told apart by K_a P.
 
 Usage:
     python bisimulation/example_bisimilarity.py           # print and draw
@@ -40,7 +48,7 @@ import sys
 
 import bisimulation as bis
 from knowledge_belief import KnowledgeBeliefFrame
-from properness import to_proper
+from properness import is_proper, to_proper
 from relational_frame import RelationalFrame
 from semantics import lift_valuation
 from visualization import show as _show
@@ -302,19 +310,155 @@ def example_4_not_bisimilar() -> None:
     print(indent("models actually say)."))
 
 
+# --------------------------------------------------------------------------- #
+# 5. Knowledge only, with an atom: the coin, seen by nobody, but named
+# --------------------------------------------------------------------------- #
+def example_5_knowledge_coin_with_atom() -> None:
+    banner("5. Knowledge only, with an atom -- the coin, named")
+    print("""
+    The model of example 1 again -- two agents, two worlds, both knowledge
+    relations complete -- but now the atom H says "it landed heads". There is
+    no belief relation anywhere: this is a plain S5 model, the kind of thesis
+    chapter 2, and the whole language is the atoms and K_a, K_b.
+
+    Properness is the same as before (it is a condition on the knowledge
+    relations, and they did not change), so to_proper again makes 4 worlds.
+    What changes is the verdict's second half: the atom tells heads from tails,
+    so the four copies must now split into TWO classes, and every copy of heads
+    must land with heads. The valuation of the proper model is the lift of H
+    along the projection, computed by the checker itself.""")
+
+    worlds = {"heads", "tails"}
+    # from_partial_s5 closes each seed under S5; one edge heads->tails per agent
+    # is enough to say "cannot tell them apart", the closure adds the rest.
+    general = RelationalFrame.from_partial_s5(
+        {"a", "b"}, worlds,
+        {"a": {("heads", "tails")}, "b": {("heads", "tails")}},
+    )
+    valuation = {"H": {"heads"}}
+
+    print(indent("the model, relation by relation (knowledge only):"))
+    print(indent(visualize(general, valuation=valuation), "      "))
+    check_and_draw(general, "bisim_ex5_coin_atom", valuation)
+
+    print(indent("Read the result: TWO classes, the copies of heads and the copies"))
+    print(indent("of tails. Compare example 1, where the same frame gave ONE class:"))
+    print(indent("the frame is identical, the atom is what the logic can now see."))
+
+
+# --------------------------------------------------------------------------- #
+# 6. Knowledge only, three agents: ignorance in part of the model only
+# --------------------------------------------------------------------------- #
+def example_6_knowledge_partial_ignorance() -> None:
+    banner("6. Knowledge only, three agents -- ignorance in part of the model")
+    print("""
+    Three agents, three worlds, knowledge only. Agent a can tell w0 from the
+    other two but not w1 from w2; agents b and c know nothing at all (complete
+    relations). Atom P holds at w0 only.
+
+    Properness fails, but only on one side of the model: at w0 agent a is
+    alone in her class, so the three agents jointly pin w0 down; at w1 and w2
+    nobody separates them, so the pair {w1, w2} is jointly accessible to all
+    three. to_proper does not patch that one spot -- it copies the WHOLE model,
+    |W|^2 = 9 worlds, and the check must confirm that all nine are faithful.
+
+    There is a second thing to see. Before any copying, w1 and w2 already say
+    the same thing to the logic: both have ¬P, and every agent reaches the same
+    worlds from either. They are bisimilar INSIDE the general model, so its
+    quotient has two worlds, not three -- and so has the proper model's.""")
+
+    worlds = {"w0", "w1", "w2"}
+    general = RelationalFrame.from_partial_s5(
+        {"a", "b", "c"}, worlds,
+        {"a": {("w1", "w2")},                                   # a: w0 | w1 w2
+         "b": {("w0", "w1"), ("w1", "w2")},                     # b: everything
+         "c": {("w0", "w1"), ("w1", "w2")}},                    # c: everything
+    )
+    valuation = {"P": {"w0"}}
+
+    print(indent("the model, relation by relation (knowledge only):"))
+    print(indent(visualize(general, valuation=valuation), "      "))
+    classes_before = bis.bisimilarity_classes(general, valuation)
+    print(indent(f"bisimilarity classes of the GENERAL model: {len(classes_before)}"))
+    for block in classes_before:
+        print(indent(f"  [{len(block):>2}] " + ", ".join(sorted(map(str, block))), "      "))
+    print()
+    check_and_draw(general, "bisim_ex6_partial", valuation)
+
+    print(indent("Read the result: 9 worlds, TWO classes -- the six copies of w1 and"))
+    print(indent("w2 together, the three copies of w0 apart. to_proper inflates by"))
+    print(indent("|W|^2 even where properness already held, and the logic sees the"))
+    print(indent("same two worlds before and after."))
+
+
+# --------------------------------------------------------------------------- #
+# 7. Knowledge only: what a NO looks like
+# --------------------------------------------------------------------------- #
+def example_7_knowledge_not_bisimilar() -> None:
+    banner("7. Knowledge only -- a NO, told apart by K_a P")
+    print("""
+    The knowledge-only twin of example 4. Two S5 models on the worlds w0, w1,
+    with P true at w0, and ONE difference:
+
+        left  : a knows which world it is    (a's relation is the identity)
+        right : a does not                   (a's relation is complete)
+
+    Agent b knows nothing on either side. Without atoms the two frames are
+    bisimilar: every world can answer every move of every other world, which
+    is all a frame can be asked. With P they come apart at once: on the left
+    K_a P holds at w0, on the right it does not.""")
+
+    worlds = {"w0", "w1"}
+    left = RelationalFrame.from_partial_s5(
+        {"a", "b"}, worlds, {"a": set(), "b": {("w0", "w1")}},   # a: identity
+    )
+    right = RelationalFrame.from_partial_s5(
+        {"a", "b"}, worlds, {"a": {("w0", "w1")}, "b": {("w0", "w1")}},
+    )
+    valuation = {"P": {"w0"}}
+
+    frames_only = bis.are_bisimilar(left, "w0", right, "w0")
+    with_atoms = bis.are_bisimilar(left, "w0", right, "w0", valuation, valuation)
+    print(indent(f"are_bisimilar(left, w0, right, w0)              -> {frames_only}"
+                 "   (frames alone)"))
+    print(indent(f"are_bisimilar(..., P={{w0}} on both sides)        -> {with_atoms}"
+                 "   (with atoms)"))
+    pairs = bis.bisimulation(left, right, valuation, valuation)
+    matched = sorted(w for w in worlds if (w, w) in pairs)
+    print()
+    print(indent(f"largest bisimulation between them: {len(pairs)} pair(s)"))
+    print(indent(f"worlds bisimilar to their namesake: {matched or 'none'}"))
+    print(indent(f"properness: left {'proper' if is_proper(left) else 'NOT proper'}, "
+                 f"right {'proper' if is_proper(right) else 'NOT proper'}"))
+
+    print()
+    draw(left, "bisim_ex7_left", "7 · left model (a knows P)", valuation)
+    draw(right, "bisim_ex7_right", "7 · right model (a does not know P)", valuation)
+
+    print()
+    print(indent("Read the result: one agent's knowledge is enough to separate two"))
+    print(indent("models that look alike. Note the left one is proper (a alone pins"))
+    print(indent("every world down) and the right one is not; to_proper would copy"))
+    print(indent("the right one, and the copies would still not know P."))
+
+
 def main() -> None:
     example_1_knowledge_only()
     example_2_figure_one()
     example_3_already_proper()
     example_4_not_bisimilar()
+    # knowledge only: S5 models with no belief relation (thesis ch. 2)
+    example_5_knowledge_coin_with_atom()
+    example_6_knowledge_partial_ignorance()
+    example_7_knowledge_not_bisimilar()
 
     banner("In one line")
     print("""
-    Four models, four verdicts, one procedure: build the proper twin with
+    Seven models, seven verdicts, one procedure: build the proper twin with
     to_proper, then recompute the largest bisimulation from scratch and check
-    that every copy sits in the class of the world it simulates. Three times it
-    holds (that is Thm. 2.4); the fourth shows what it looks like when it does
-    not.
+    that every copy sits in the class of the world it simulates. Five times it
+    holds (that is Thm. 2.4); examples 4 and 7 show what it looks like when it
+    does not -- once with belief, once with knowledge alone.
 
     The theory and the implementation are explained in
     docs/14-bisimilaridad-refinamiento-particiones.md.""")
