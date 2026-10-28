@@ -33,7 +33,7 @@ from .formulas import parse_formula
 #    "pre":      {atom: {"true": [node names], "false": [node names]}},  (as vatoms)
 #    "post":     {atom: {"true": [...], "false": [...]}},
 #    "pre_formula": {node name: "K_a P"},        modal preconditions, formula syntax
-#    "mode":     1 | 2 | 3,                      compatibility test, see ACTION_MODES
+#    "mode":     0 | 1 | 2,                      pairing test, thesis numbering (p. 51), see ACTION_MODES
 #    "update":   "knowledge" | ...}              which product to run, see UPDATE_KINDS
 #
 # WHAT IS WIRED AND WHAT IS PENDING. ``simplicial_actions.update_model``
@@ -49,11 +49,12 @@ from simplicial_actions import (DEFAULT_MODE, MODES, SimplicialAction, describe_
                                 to_relational_action, update_model)  # noqa: E402
 
 ACTION_MODES = {
-    # Labels follow simplicial_actions.compatible(): how an input vertex x and
-    # an action node y must agree on every atom to form the output node (x, y).
-    1: "1 · what the vertex observes must be in the precondition (x ⇒ pre)",
-    2: "2 · the precondition must be observed at the vertex (pre ⇒ x)",
-    3: "3 · enough that they do not contradict each other (default)",
+    # The three definitions of N[A] on p. 51 of the thesis, numbered as there:
+    # how an input vertex x and an action node y must agree on every atom to
+    # form the output node (x, y). Mode 2 is the clause of Def. 4.5.
+    0: "0 · what the vertex observes must be in the precondition (x ⇒ pre)",
+    1: "1 · the precondition must be observed at the vertex (pre ⇒ x)",
+    2: "2 · enough that they do not contradict each other (Def. 4.5, default)",
 }
 
 # update kind -> (label, function or None while pending). The function takes

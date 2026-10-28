@@ -27,6 +27,7 @@ from nicegui import run as io, ui
 from adapters import (
     ACTION_EXAMPLES,
     ACTION_MODES,
+    DEFAULT_MODE,
     UPDATE_KINDS,
     action_node_names,
     action_problems,
@@ -260,7 +261,7 @@ class ActionsView:
                          "(Taiba's action layer). The action can be defined and "
                          "saved; applying it will warn.") \
                     .classes("text-xs").style(f"color:{POSTER['yellow']}")
-            ui.select(ACTION_MODES, value=int(spec.get("mode", 3)),
+            ui.select(ACTION_MODES, value=int(spec.get("mode", DEFAULT_MODE)),
                       label="vertex / action-node compatibility",
                       on_change=lambda e: spec.__setitem__("mode", int(e.value))) \
                 .props("dense outlined options-dense").classes("w-full")

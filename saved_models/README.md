@@ -14,7 +14,7 @@ are recomputed in seconds and would go stale as the code evolves.
 
 ```json
 {
-  "format": "simulationsbelief-workspace/1",
+  "format": "simulationsbelief-workspace/2",
   "saved":  "2026-10-12T10:31:00",
   "models": [
     {
@@ -35,7 +35,7 @@ are recomputed in seconds and would go stale as the code evolves.
       "isolated": { "a": [], "b": [] },
       "pre":      { "C": {"true": [], "false": ["a_oye", "b_oye"]} },
       "post":     {},
-      "mode": 3, "update": "knowledge" }
+      "mode": 2, "update": "knowledge" }
   ]
 }
 ```
@@ -44,10 +44,11 @@ are recomputed in seconds and would go stale as the code evolves.
 |---|---|
 | `models[].state` | the editor state (`gui/adapters/base.py: blank_state`). Relational kinds use `worlds`, `per_agent` (knowledge classes and believed worlds) and `atoms`; a direct complex uses `vertices`, `facets`, `vatoms` and `complex_kind`. The switches (`axiom_d`, `silent_defunct`, `explicit`, `hasse_full`, `make_3d`) travel with the model. |
 | `models[].readonly` / `origin` | a **derived** model (the result of an action) is read-only and says where it came from; it is drawn, evaluated and compared like any other, and "duplicar como modelo nuevo" gives an editable copy. |
-| `actions[]` | the action specs of the *Actions* tab: events (one action node per agent), isolated action nodes, pre/post conditions as vertex atoms, the compatibility `mode` (1–3) and the `update` kind (`knowledge` today; `belief`, `belief_memory`, `revision` are listed but pending in the core). |
+| `actions[]` | the action specs of the *Actions* tab: events (one action node per agent), isolated action nodes, pre/post conditions as vertex atoms, the pairing `mode` (0–2, numbered as on p. 51 of the thesis; 2 is Def. 4.5 and the default) and the `update` kind (`knowledge` today; `belief`, `belief_memory`, `revision` are listed but pending in the core). |
 
 A file written by an older version still opens: every missing key takes its
-default from `blank_state` / `blank_action`.
+default from `blank_state` / `blank_action`, and a format-1 file (which numbered
+the modes 1–3) has its action modes shifted to 0–2 on load.
 
 ## Saving, opening, downloading (the models bar)
 
