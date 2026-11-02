@@ -2,7 +2,7 @@
 
     * ``update_model``            M[A]     knowledge (Def. 4.5): S_a = S[A] for everyone
     * ``belief_update_model``     M[A]_B   belief (Def. 4.6): each agent's S_a from its own S_a and S_{a,A}
-    * ``revision_update_model``   M[A]_BR  belief with revision (Def. 4.8)
+    * ``revision_update_model``   M[A]_BR  belief with revision (Def. 4.8), with or without memory (§3.5.2)
 
 All three share the nodes, the labels and the facets of ``S[A]``
 (``_knowledge_product``); they differ only in how each agent's belief
@@ -715,14 +715,19 @@ def _consistent_facets(groups: List[List[Node]], assignment: Assignment) -> List
 
 
 def _revision_candidates(
-    agent: Agent, prod: _Product, action: SimplicialAction, agents: List[Agent]
+    agent: Agent, prod: _Product, action: SimplicialAction, agents: List[Agent], memory: bool
 ) -> List[Facet]:
     """The facets agent ``agent`` may revise towards (``F_a(2^{N[A]_BR})``, p. 58).
 
-    Def. 4.8 as written: every consistent UCF facet of OUTPUT NODES whose
-    event is one of ``S_{a,A}``, so the agent may jump to a combination of
-    perspectives no input world had.
+    Without memory, Def. 4.8 as written: every consistent UCF facet of OUTPUT
+    NODES whose event is one of ``S_{a,A}``, so the agent may jump to a
+    combination of perspectives no input world had. With memory (thesis
+    §3.5.2 applied to actions): only the facets of ``S[A]``, the product's
+    own worlds, so the agent never revises towards a world the update ruled out.
     """
+    if memory:
+        return [F for F in prod.facets
+                if frozenset(pair_of(n).action for n in F) in action.belief_facets[agent]]
     by_action_node: Dict[Node, List[Node]] = {}
     for n in prod.product.values():
         by_action_node.setdefault(pair_of(n).action, []).append(n)
@@ -739,6 +744,7 @@ def revision_update_model(
     assignment: Assignment,
     action: SimplicialAction,
     mode: int = DEFAULT_MODE,
+    memory: bool = False,
 ) -> UpdateModel:
     """The product with revision ``M[A]_BR`` (thesis Def. 4.8).
 
@@ -751,8 +757,12 @@ def revision_update_model(
     this equals :func:`belief_update_model`. When ``a``'s own pair failed the
     preconditions there is no node to hold a belief: nothing to revise.
 
+    Args:
+        memory: ``False`` is Def. 4.8 as written; ``True`` restricts the
+            candidates to the worlds of ``S[A]`` (see ``_revision_candidates``).
+
     The output's ``S`` is ``S[A]`` plus any facet revision realised outside
-    it, so ``S_a ⊆ S`` keeps holding.
+    it (only possible without memory), so ``S_a ⊆ S`` keeps holding.
     """
     prod = _knowledge_product(model, assignment, action, mode)
     agents = sorted(model.agents, key=str)
@@ -761,7 +771,7 @@ def revision_update_model(
     belief: Dict[Agent, Set[Facet]] = {a: set() for a in agents}
     revisions: List[Imaging] = []
     for a in agents:
-        candidates = _revision_candidates(a, prod, action, agents)
+        candidates = _revision_candidates(a, prod, action, agents, memory)
         for X in model.belief_facets.get(a, ()):
             for Y in action.belief_facets[a]:
                 intended = _intended(X, Y, agents, action, model)
