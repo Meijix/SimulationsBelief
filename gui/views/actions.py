@@ -4,13 +4,13 @@ Workspace-level card: actions are edited here and APPLIED to the active
 model; each result opens as a read-only document (drawn, evaluated, saved
 and compared like any other). The editor mirrors the complex editor on
 purpose: an event IS a facet of action nodes (one per agent), pre/post ARE
-vertex atoms on those nodes, so whoever can declare a complex can declare an
-action. The interface is complete; the products themselves are the action
-layer's: today only the knowledge product exists
-(``simplicial_actions.update_model``, spec-b); the belief / memory / revision
-ones are offered but PENDING (Taiba, #6/#15) -- see ``adapters.UPDATE_KINDS``:
-the "update kind" select lists them, and ``apply_action`` refuses
-them with a message until their functions exist.
+vertex atoms on those nodes, and each event lists the agents whose
+``S_{a,A}`` contains it exactly as a facet lists its ``S_a``, so whoever can
+declare a complex can declare an action. The "update kind" select chooses
+the product (``adapters.UPDATE_KINDS``: knowledge M[A], belief M[A]_B,
+belief with revision M[A]_BR with or without memory), and what the product
+reports -- isolated vertices, collapsed perspectives, revisions -- shows on
+the result's read-only banner.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from adapters import (
     ACTION_EXAMPLES,
     ACTION_MODES,
     DEFAULT_MODE,
+    UPDATE_HELP,
     UPDATE_KINDS,
     action_node_names,
     action_problems,
@@ -35,6 +36,7 @@ from adapters import (
     apply_action,
     describe_action,
     describe_action_kripke,
+    event_belief,
     preview_action,
 )
 from theme import CARD, FLAT, POSTER, card_title, figure_img, take
@@ -84,7 +86,8 @@ class ActionsView:
         while f"e{n}" in taken:
             n += 1
         spec["events"].append({"name": f"e{n}",
-                               "nodes": {a: "" for a in self.page.state["agents"]}})
+                               "nodes": {a: "" for a in self.page.state["agents"]},
+                               "belief": list(self.page.state["agents"])})
         self.paint()
 
     def remove_event(self, spec: dict, index: int) -> None:
@@ -145,21 +148,19 @@ class ActionsView:
             return
         try:
             doc_spec = apply_action(page.live_state(), spec, model_name=page.current()["name"])
-        except NotImplementedError as exc:
-            # PENDING product (Taiba): the interface is ready, the function is not.
-            ui.notify(str(exc), type="warning", timeout=6000)
-            return
         except ValueError as exc:
             ui.notify(str(exc).splitlines()[0], type="negative", timeout=6000)
             return
         ws.store_active(page.live_state())
         doc = ws.new_doc(doc_spec["name"], doc_spec["state"], readonly=True,
                          origin=doc_spec["origin"])
+        notes = doc_spec["origin"].get("notes") or []
         # Notify BEFORE activating: activating repaints this card, and the
         # button whose click we are handling disappears with it (NiceGUI then
         # has no slot to attach the notification to).
         ui.notify(f"Result opened as “{doc['name']}” (read-only). "
-                  "Compare it with its input model from the bar.", type="positive")
+                  + (f"{len(notes)} note(s) from the product under its banner. " if notes else "")
+                  + "Compare it with its input model from the bar.", type="positive")
         page.activate(doc["id"])
 
     # ---- live drawing of the action, like the model preview ---------------- #
@@ -250,17 +251,14 @@ class ActionsView:
                 .on("blur", lambda: self.paint())
             def set_update(value: str) -> None:
                 spec["update"] = value
-                self.paint()      # the "pending" note below follows the choice
+                self.paint()      # the help line below follows the choice
 
             ui.select({k: v[0] for k, v in UPDATE_KINDS.items()},
                       value=spec.get("update", "knowledge"), label="update kind",
                       on_change=lambda e: set_update(e.value)) \
                 .props("dense outlined options-dense").classes("w-full")
-            if UPDATE_KINDS[spec.get("update", "knowledge")][1] is None:
-                ui.label("Pending: this product is not implemented in the core yet "
-                         "(Taiba's action layer). The action can be defined and "
-                         "saved; applying it will warn.") \
-                    .classes("text-xs").style(f"color:{POSTER['yellow']}")
+            ui.label(UPDATE_HELP.get(spec.get("update", "knowledge"), "")) \
+                .classes("text-xs text-grey-5")
             ui.select(ACTION_MODES, value=int(spec.get("mode", DEFAULT_MODE)),
                       label="vertex / action-node compatibility",
                       on_change=lambda e: spec.__setitem__("mode", int(e.value))) \
@@ -283,6 +281,15 @@ class ActionsView:
                             .on("blur", lambda: self.paint())
                     ui.button(icon="delete", on_click=lambda _, k=i: self.remove_event(spec, k)) \
                         .props("flat dense color=grey")
+                # Which agents consider the event possible (S_{a,A}), the way
+                # a facet of the complex editor lists its S_a. The belief and
+                # revision products read it; the knowledge product ignores it.
+                with ui.row().classes("w-full items-center gap-2 no-wrap pl-2"):
+                    ui.select(agents, multiple=True, value=event_belief(ev, agents),
+                              label="considered possible by (S_{a,A})",
+                              on_change=lambda e, v=ev: (v.__setitem__("belief", list(e.value)),
+                                                         self.refresh_preview(spec))) \
+                        .props("use-chips dense options-dense").classes("grow")
             ui.button("add event", icon="add", on_click=lambda: self.add_event(spec)) \
                 .props("flat dense")
             # ---- isolated action nodes (in no event) ------------------------ #
@@ -290,7 +297,7 @@ class ActionsView:
                     .classes("w-full text-xs"):
                 for agent in agents:
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
-                        box = ui.input(f"nuevo nodo de {agent}").props("dense outlined") \
+                        box = ui.input(f"new node for {agent}").props("dense outlined") \
                             .classes("grow")
                         ui.button(icon="add", on_click=lambda _, a=agent, w=box:
                                   self.add_isolated(spec, a, w)).props("round dense")

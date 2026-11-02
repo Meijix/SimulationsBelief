@@ -44,7 +44,7 @@ are recomputed in seconds and would go stale as the code evolves.
 |---|---|
 | `models[].state` | the editor state (`gui/adapters/base.py: blank_state`). Relational kinds use `worlds`, `per_agent` (knowledge classes and believed worlds) and `atoms`; a direct complex uses `vertices`, `facets`, `vatoms` and `complex_kind`. The switches (`axiom_d`, `silent_defunct`, `explicit`, `hasse_full`, `make_3d`) travel with the model. |
 | `models[].readonly` / `origin` | a **derived** model (the result of an action) is read-only and says where it came from; it is drawn, evaluated and compared like any other, and "duplicar como modelo nuevo" gives an editable copy. |
-| `actions[]` | the action specs of the *Actions* tab: events (one action node per agent), isolated action nodes, pre/post conditions as vertex atoms, the pairing `mode` (0–2, numbered as on p. 51 of the thesis; 2 is Def. 4.5 and the default) and the `update` kind (`knowledge` today; `belief`, `belief_memory`, `revision` are listed but pending in the core). |
+| `actions[]` | the action specs of the *Actions* tab: events (one action node per agent), isolated action nodes, pre/post conditions as vertex atoms, the pairing `mode` (0–2, numbered as on p. 51 of the thesis; 2 is Def. 4.5 and the default) and the `update` kind (`knowledge`, `belief`, `revision`, `revision_memory`: the four products of the Actions tab). Each event may carry a `belief` list, the agents whose `S_{a,A}` contains it (no list = every agent). |
 
 A file written by an older version still opens: every missing key takes its
 default from `blank_state` / `blank_action`, and a format-1 file (which numbered

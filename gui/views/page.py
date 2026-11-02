@@ -157,6 +157,10 @@ class Page:
                 ui.button("Duplicate as new model", icon="content_copy",
                           on_click=lambda: self.duplicate_active()) \
                     .props("outline dense")
+            # What the product reported (isolated vertices, collapsed
+            # perspectives, revisions): one line each, under the banner.
+            for note in (doc["origin"] or {}).get("notes") or []:
+                ui.label("· " + note).classes("text-xs text-grey-5 font-mono")
 
     def repaint_all(self) -> None:
         """Everything that is painted from ``state``: chips, editor, atoms, actions, preview."""
