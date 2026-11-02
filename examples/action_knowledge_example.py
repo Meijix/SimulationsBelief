@@ -85,12 +85,12 @@ print("thesis's 'tag' (p. 49): a postcondition that records what happened.")
 # --------------------------------------------------------------------------- #
 # Step 2. Output nodes: compatible (input node, action node) pairs
 # --------------------------------------------------------------------------- #
-banner("Step 2 · output nodes N[A] = compatible pairs (mode 3: no clash)")
+banner("Step 2 · output nodes N[A] = compatible pairs (mode 2 of p. 51: no clash)")
 for x in sorted(model.nodes, key=label_node):
     for y in sorted(action.nodes, key=label_node):
         if x.agent != y.agent:
             continue
-        ok = compatible(x, y, L, action.pre, 3)
+        ok = compatible(x, y, L, action.pre, 2)
         why = ""
         if not ok:
             why = "  ← clash: x observes " + lits(L.get(x, {})) + ", y requires " + lits(action.pre.get(y, {}))
@@ -98,12 +98,12 @@ for x in sorted(model.nodes, key=label_node):
 print("\nOnly a:{w1} × aS dies: the perspective where ¬Pa holds cannot send Pa.")
 
 # --------------------------------------------------------------------------- #
-# Step 3. Labels: post wins, then the input, then the precondition
+# Step 3. Labels: post wins, then the input, then the precondition where the input was silent
 # --------------------------------------------------------------------------- #
-banner("Step 3 · labels L[A](x, y) = post, else input, else pre")
+banner("Step 3 · labels L[A](x, y) = post, else pre where x is silent, else input (Def. 4.5)")
 for x in sorted(model.nodes, key=label_node):
     for y in sorted(action.nodes, key=label_node):
-        if x.agent == y.agent and compatible(x, y, L, action.pre, 3):
+        if x.agent == y.agent and compatible(x, y, L, action.pre, 2):
             print(f"  ⟨{node_name(x)},{node_name(y)}⟩  →  {lits(updated_values(x, y, L, action.pre, action.post))}")
 print("\nb:{w1} × bR gets Pa=1 from the postcondition although w1 has ¬Pa -- the")
 print("pair exists at node level; step 4 decides whether any world uses it.")
@@ -116,7 +116,7 @@ out = update_model(model, L, action)
 for X in sorted(model.facets, key=lambda F: model.world_of_facet[F]):
     for Y in sorted(action.facets, key=lambda F: action.event_of_facet[F]):
         pairs = [(model.pi(a, X), action.pi(a, Y)) for a in "abc"]
-        dead = [f"{label_node(x)}×{node_name(y)}" for x, y in pairs if not compatible(x, y, L, action.pre, 3)]
+        dead = [f"{label_node(x)}×{node_name(y)}" for x, y in pairs if not compatible(x, y, L, action.pre, 2)]
         print(f"  ({model.world_of_facet[X]}, {action.event_of_facet[Y][:1]})  "
               + ("✓" if not dead else "✗  dead pair: " + ", ".join(dead)))
 print("\n" + out.model.describe())

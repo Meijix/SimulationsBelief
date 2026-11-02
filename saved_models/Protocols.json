@@ -1,5 +1,5 @@
 {
- "format": "simulationsbelief-workspace/1",
+ "format": "simulationsbelief-workspace/2",
  "saved": "2026-10-19T22:34:05",
  "models": [
   {
@@ -433,7 +433,7 @@
      "false": []
     }
    },
-   "mode": 3,
+   "mode": 2,
    "update": "knowledge"
   },
   {
@@ -502,7 +502,7 @@
    },
    "pre": {},
    "post": {},
-   "mode": 3,
+   "mode": 2,
    "update": "knowledge"
   }
  ]

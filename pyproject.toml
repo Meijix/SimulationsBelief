@@ -13,7 +13,7 @@ description = "Simulations of relational and simplicial models for knowledge and
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Natalia Hernández (Meijix)" }]
+authors = [{ name = "Natalia Edith Mejía Bautista (Meijix), Philip Sink" }]
 dependencies = [
     "matplotlib>=3.8",
     "plotly>=5.0",
@@ -40,7 +40,7 @@ py-modules = [
     "simplicial_actions",
     "regenerate_outputs",
 ]
-packages = ["gui", "gui.adapters", "gui.views"]
+packages = ["bisimulation", "gui", "gui.adapters", "gui.views"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

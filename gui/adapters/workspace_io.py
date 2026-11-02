@@ -29,7 +29,10 @@ def _saved_dir() -> Path:
     import importlib
 
     return importlib.import_module(__package__).SAVED
-WORKSPACE_FORMAT = "simulationsbelief-workspace/1"
+# Format 2 (2026-10-27) numbers action modes as the thesis does (0, 1, 2); format 1
+# used 1, 2, 3 for the same three tests and is still read (modes are shifted).
+WORKSPACE_FORMAT = "simulationsbelief-workspace/2"
+OLD_FORMATS = ("simulationsbelief-workspace/1",)
 
 
 def workspace_payload(docs: List[dict], actions: List[dict] | None = None) -> dict:
@@ -80,8 +83,9 @@ def load_workspace_full(path: Path) -> Tuple[List[dict], List[dict]]:
     import json
 
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(data, dict) or data.get("format") != WORKSPACE_FORMAT:
+    if not isinstance(data, dict) or data.get("format") not in (WORKSPACE_FORMAT,) + OLD_FORMATS:
         raise ValueError(f"{path} is not a workspace saved by the GUI")
+    old_modes = data.get("format") == "simulationsbelief-workspace/1"
     docs = []
     for m in data.get("models", []):
         st = m.get("state") or {}
@@ -95,6 +99,8 @@ def load_workspace_full(path: Path) -> Tuple[List[dict], List[dict]]:
     for a in data.get("actions", []):
         spec = blank_action([])
         spec.update(a or {})
+        if old_modes and "mode" in (a or {}):
+            spec["mode"] = int(a["mode"]) - 1   # format 1 wrote 1/2/3 for the thesis's 0/1/2
         actions.append(spec)
     return docs, actions
 

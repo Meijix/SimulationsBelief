@@ -11,7 +11,7 @@ Preconditions come in two forms, both per action node:
       (``assignment.holds``), the only place where modalities mean something:
       a facet ``(X, Y)`` exists only if ``X ⊨ pre(π_a(Y))`` for every agent,
       and an input node ``x`` pairs with ``y`` only if ``pre(y)`` is possible
-      for it (some facet through ``x`` satisfies it; mode 2 demands every
+      for it (some facet through ``x`` satisfies it; mode 1 demands every
       facet, "x knows it").
 
 Postconditions are literals (``post``).
@@ -39,8 +39,11 @@ from simplicial import Facet, Node, SimplicialBeliefModel, label_facet, label_no
 
 Agent = Hashable
 Formula = tuple   # assignment.holds syntax: ("atom", P), ("K", a, f), ("imp", f, g)...
-MODES = (1, 2, 3)
-DEFAULT_MODE = 3
+# Node-pairing modes, numbered AS IN THE THESIS (p. 51): mode 2 is the clause of
+# Def. 4.5 ("no clash") and the default; 0 and 1 are the stricter one-directional
+# readings listed there.
+MODES = (0, 1, 2)
+DEFAULT_MODE = 2
 
 
 def action_node(agent: Agent, name: Hashable) -> Node:
@@ -321,7 +324,8 @@ class _Sat:
     def possible(self, x: Node, phi: Formula, mode: int) -> bool:
         """Node-level reading of a formula precondition.
 
-        Mode 2: ``x`` KNOWS ``phi`` (it holds at every world through ``x``).
+        Mode 1 (thesis numbering): ``x`` KNOWS ``phi`` (it holds at every
+        world through ``x``).
         Otherwise: ``phi`` is POSSIBLE for ``x`` (some world through ``x``
         satisfies it), the counterpart of the literal "no clash" test. An
         input node in no world can satisfy neither.
@@ -329,7 +333,7 @@ class _Sat:
         worlds = self.facets_of.get(x, [])
         if not worlds:
             return False
-        if mode == 2:
+        if mode == 1:
             return all(self(X, phi) for X in worlds)
         return any(self(X, phi) for X in worlds)
 
@@ -337,7 +341,8 @@ class _Sat:
 def compatible(
     x: Node, y: Node, assignment: Assignment, pre: Assignment, mode: int = DEFAULT_MODE
 ) -> bool:
-    # decide whether input node x and action node y become an output node
+    # decide whether input node x and action node y become an output node;
+    # the three modes are the three definitions of N[A] on p. 51 of the thesis
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}.")
     # check agent pairing 
@@ -350,11 +355,11 @@ def compatible(
         # node_value returns 2 when the atom is missing
         lx, ly = node_value(assignment, x, p), node_value(pre, y, p)
         # implication "A -> B" is written "(not A) or B"
-        if mode == 1:
+        if mode == 0:    # whatever x observes, the precondition states
             ok = (lx != TRUE or ly == TRUE) and (lx != FALSE or ly == FALSE)
-        elif mode == 2:
+        elif mode == 1:  # the precondition is observed by x
             ok = (ly != TRUE or lx == TRUE) and (ly != FALSE or lx == FALSE)
-        else:
+        else:            # mode 2, Def. 4.5: no clash
             ok = (lx != TRUE or ly != FALSE) and (lx != FALSE or ly != TRUE)
         if not ok:
             return False
@@ -364,21 +369,29 @@ def compatible(
 def updated_values(
     x: Node, y: Node, assignment: Assignment, pre: Assignment, post: Assignment
 ) -> Dict[Hashable, int]:
-    # build the {atom: value} dict of the output node (x, y)
+    """Label of the output node ``(x, y)``: the label clause of thesis Def. 4.5
+    (p. 50), applied exactly as written, atom by atom:
+
+        L[A](x, y)(P) = Post(y)(P)   if Post(y)(P) != 2   (the event overwrites it)
+                      = L_A(y)(P)    if L(x)(P) = 2       (x silent: the precondition is recorded)
+                      = L(x)(P)      otherwise            (the input is kept)
+
+    So a postcondition overrides the input even where the precondition is 2,
+    and an input node silent on ``P`` that passes an event requiring ``P``
+    comes out labelled with ``P`` (the middle case; discussed in GitHub #25).
+    Only 0/1 are stored; 2 stays implicit.
+    """
     out: Dict[Hashable, int] = {}
-    # only consider atoms mentioned 
     atoms = set(assignment.get(x, {})) | set(pre.get(y, {})) | set(post.get(y, {}))
     for p in atoms:
         v_post = node_value(post, y, p)
         v_in = node_value(assignment, x, p)
-        # greedy check 
-        if v_post != UNKNOWN:  # 1. the action's post value, if it sets one
+        if v_post != UNKNOWN:      # 1. the event's postcondition
             v = v_post
-        elif v_in == UNKNOWN:  # 2. x says nothing: take the action's pre value
+        elif v_in == UNKNOWN:      # 2. x silent: the precondition L_A(y)
             v = node_value(pre, y, p)
-        else:  # 3. otherwise keep x's value
+        else:                      # 3. otherwise x's own value
             v = v_in
-        # store only 0 or 1 
         if v != UNKNOWN:
             out[p] = v
     return out
