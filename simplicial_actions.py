@@ -1,5 +1,9 @@
 """Simplicial actions and the knowledge product M[A] (Sink's thesis, Def. 4.5).
 
+The product is computed in two parts: ``_knowledge_product`` builds what every
+product of thesis ch. 4 shares (nodes, labels and the facets of ``S[A]``) and
+``_finish`` assembles the output; ``update_model`` chooses ``S_a = S[A]``.
+
 Preconditions come in two forms, both per action node:
 
     * LITERALS (``pre``: ``{node: {atom: 0|1}}``), the ``L_A`` of the thesis
@@ -454,105 +458,196 @@ def updated_values(
     return out
 
 
-class UpdateModel(NamedTuple):
-    model: SimplicialBeliefModel
+# --------------------------------------------------------------------------- #
+# The common part of the products of thesis ch. 4: nodes, labels and the facets of S[A]
+# --------------------------------------------------------------------------- #
+def _product_nodes(
+    model: SimplicialBeliefModel, assignment: Assignment, action: SimplicialAction,
+    mode: int, sat: _Sat,
+) -> Tuple[Dict[Pair, Node], Assignment]:
+    """``N[A]`` and ``L[A]``: every compatible (input node, action node) pair
+    becomes an output node, labelled by ``updated_values``."""
+    product: Dict[Pair, Node] = {}      # Pair(x, y) -> the output Node built from it
+    new_assignment: Assignment = {}
+    for x in model.nodes:
+        for y in action.nodes:
+            if not compatible(x, y, assignment, action.pre, mode):
+                continue
+            if y in action.pre_formula and not sat.possible(x, action.pre_formula[y], mode):
+                continue
+            n = Node(x.agent, frozenset({Pair(x, y)}))     # the output node keeps x's agent
+            product[Pair(x, y)] = n
+            values = updated_values(x, y, assignment, action.pre, action.post)
+            if values:
+                new_assignment[n] = values
+    return product, new_assignment
+
+
+def _intended(X: Facet, Y: Facet, agents: List[Agent], action: SimplicialAction,
+              model: SimplicialBeliefModel) -> FrozenSet[Pair]:
+    """The pairs ``(π_a(X), π_a(Y))`` of an input facet and an event, one per agent."""
+    return frozenset(Pair(model.pi(a, X), action.pi(a, Y)) for a in agents)
+
+
+def _realise(pairs: FrozenSet[Pair], product: Dict[Pair, Node],
+             assignment: Assignment) -> Facet | None:
+    """The output facet made of these pairs, or None if a pair died or the labels clash."""
+    if not all(p in product for p in pairs):
+        return None
+    F = frozenset(product[p] for p in pairs)
+    # A postcondition can put P=1 on one node next to P=0 on another, which
+    # node pairing cannot see; the facet must be consistent under the new labels.
+    return F if is_consistent_facet(F, assignment) else None
+
+
+class _Product(NamedTuple):
+    """What the three products share: output nodes, labels, ``S[A]`` and names."""
+
+    product: Dict[Pair, Node]
     assignment: Assignment
-    product_nodes: FrozenSet[Node]  # every output node (same set as model.nodes)
-    isolated: FrozenSet[Node]  # output nodes contained in no facet
+    facets: Set[Facet]                      # S[A]: the consistent products of S and S_A
+    world_of_facet: Dict[Facet, Hashable]
+    projection: Dict[Facet, Hashable]
+    admissible: Set[Tuple[Facet, Facet]]    # (X, Y) whose formula preconditions hold at X
 
 
-def update_model(
-    model: SimplicialBeliefModel,
-    assignment: Assignment,
-    action: SimplicialAction,
-    mode: int = DEFAULT_MODE,
-) -> UpdateModel:
-    # fail early on bad inputs 
-    # different agent sets can't be paired up
-    # axiom.d = False
+def _knowledge_product(
+    model: SimplicialBeliefModel, assignment: Assignment, action: SimplicialAction, mode: int
+) -> _Product:
+    """Nodes, labels and the facets of ``S[A]`` (thesis p. 51, ``F(S[A])``).
+
+    A facet ``(X, Y)`` of the output needs: the formula preconditions of
+    ``Y`` to hold at ``X`` (admissible), every pair ``(π_a(X), π_a(Y))`` to
+    be an output node, and the new labels to be consistent on the facet.
+    """
     if model.agents != action.agents:
         raise ValueError(
             f"Model agents {sorted(model.agents, key=str)} differ from action agents "
             f"{sorted(action.agents, key=str)}."
         )
     require_consistent(model, assignment)
-    sat = _Sat(model, assignment)   # formula preconditions, evaluated at input facets
-    # fixed agent order 
-    agents = sorted(model.agents, key=str)
-
-    # step 1: output nodes and their values
-    # try every (input node, action node) combination, so a nested loop over model.nodes x action.nodes
-    # complexity = sum over agents' (no.of input nodes of a) * (no. of action nodes of a)
-    new_assignment: Assignment = {}
-    # Pair(x, y) -> the output Node built from it
-    product: Dict[Pair, Node] = {}
-    for x in model.nodes:
-        for y in action.nodes:
-            if compatible(x, y, assignment, action.pre, mode) and (
-                y not in action.pre_formula or sat.possible(x, action.pre_formula[y], mode)
-            ):
-                # the output node keeps x's agent
-                n = Node(x.agent, frozenset({Pair(x, y)}))
-                product[Pair(x, y)] = n
-                values = updated_values(x, y, assignment, action.pre, action.post)
-                if values:
-                    new_assignment[n] = values
-
-    # step 2: output facets
-    # loop over (input facet X, action facet Y)
-    # for each agent there is only one candidate output node (X_node_ag, Y_node_ag)
-    # cost: len(model.facets) * len(action.facets) candidates
+    agents = sorted(model.agents, key=str)              # fixed agent order
+    sat = _Sat(model, assignment)                       # formulas, evaluated at input facets
+    product, new_assignment = _product_nodes(model, assignment, action, mode, sat)
+    admissible: Set[Tuple[Facet, Facet]] = set()
     facets: Set[Facet] = set()
     world_of_facet: Dict[Facet, Hashable] = {}
     projection: Dict[Facet, Hashable] = {}
     for X in model.facets:
         for Y in action.facets:
-            # the event's formula preconditions must hold at the input world
             if not all(sat(X, action.pre_formula[y]) for y in Y if y in action.pre_formula):
                 continue
             if Y in action.pre_event and not sat(X, action.pre_event[Y]):
                 continue
-            # one Pair per agent, in the fixed agent order
-            pairs = [Pair(model.pi(a, X), _pi(a, Y)) for a in agents]
-            # any pair rejected by compatible() kills the whole candidate
-            if not all(p in product for p in pairs):
-                continue
-            F = frozenset(product[p] for p in pairs)
-            # check for an atom that is 1 at one node of F and 0 at another, using new vals
-            if not is_consistent_facet(F, new_assignment):
+            admissible.add((X, Y))
+            F = _realise(_intended(X, Y, agents, action, model), product, new_assignment)
+            if F is None:
                 continue
             facets.add(F)
-            # name the output facet by where it came from like ("w2", "m") 
+            # name the output facet by where it came from, like ("w2", "m")
             world_of_facet[F] = (
                 facet_name(X, model.world_of_facet),
                 facet_name(Y, action.event_of_facet),
             )
-            # to reuse world information from to_proper or to_simplicial 
-            if X in model.projection:
+            if X in model.projection:                   # keep the original world's name
                 projection[F] = model.projection[X]
+    return _Product(product, new_assignment, facets, world_of_facet, projection, admissible)
 
-    # Step 3: result 
-    product_nodes = frozenset(product.values())
-    # isolated = output nodes minus every node used by some facet
-    isolated = product_nodes - {n for F in facets for n in F}
+
+# --------------------------------------------------------------------------- #
+# Results
+# --------------------------------------------------------------------------- #
+class Imaging(NamedTuple):
+    """How one intended facet of ``S_a`` was revised (``R_a(X)``, thesis p. 58).
+
+    Attributes:
+        agent: whose belief subcomplex is being built.
+        intended: the facet the agent WOULD believe: the pairs of a facet of
+            the input ``S_a`` with an event of ``S_{a,A}``.
+        realised: the facets ``R_a(X)``: the realisable facets that keep the
+            agent's own output node and share the most pairs with ``intended``.
+            Empty when none keeps that node (the perspective collapses); more
+            than one is a tie, and all of them are believed.
+        kept: True when ``intended`` itself was realisable (no revision).
+        candidates: every facet that competed, with its overlap, largest first.
+    """
+
+    agent: Agent
+    intended: FrozenSet[Pair]
+    realised: Tuple[Facet, ...]
+    kept: bool
+    candidates: Tuple[Tuple[Facet, int], ...]
+
+
+class UpdateModel(NamedTuple):
+    """The result of a product; ``model`` and ``assignment`` are the new ``M[A]``.
+
+    Attributes:
+        model: the output complex, declared K45 (an update may leave isolated
+            or collapsed perspectives, which are reported, not refused).
+        assignment: the new vertex labels ``L[A]``.
+        product_nodes: every output node (``model.nodes``).
+        isolated: output nodes in no facet of ``S`` at all.
+        collapsed: output nodes that lie in some world but in no facet of their
+            agent's ``S_a``: the agent's belief is DEFUNCT there (``B_a ⊥``).
+            Always empty for the knowledge product; what revision repairs.
+        revisions: for ``revision_update_model`` only, one :class:`Imaging`
+            per intended facet that could not be kept as it was.
+    """
+
+    model: SimplicialBeliefModel
+    assignment: Assignment
+    product_nodes: FrozenSet[Node]
+    isolated: FrozenSet[Node]
+    collapsed: FrozenSet[Node] = frozenset()
+    revisions: Tuple[Imaging, ...] = ()
+
+
+def _finish(model: SimplicialBeliefModel, prod: _Product, facets: Set[Facet],
+            belief_facets: Dict[Agent, Set[Facet]], world_of_facet: Dict[Facet, Hashable],
+            revisions: Tuple[Imaging, ...] = ()) -> UpdateModel:
+    """Assemble the output model and report the two kinds of lost perspectives."""
+    product_nodes = frozenset(prod.product.values())
+    in_S = {n for F in facets for n in F}
+    isolated = product_nodes - in_S
+    collapsed = frozenset(
+        n for n in in_S if not any(n in F for F in belief_facets[n.agent])
+    )
     out = SimplicialBeliefModel(
         agents=model.agents,
-        nodes=product_nodes,  # all output nodes, isolated ones included
+        nodes=product_nodes,            # isolated ones included
         facets=facets,
-        # knowledge-only output
-        belief_facets={a: facets for a in model.agents},
+        belief_facets=belief_facets,
         world_of_facet=world_of_facet,
-        projection=projection,
-        # if it's true then isolated nodes are a problem
-        # now we only check facet structure to allow isolated nodes 
+        projection={F: w for F, w in prod.projection.items() if F in facets},
+        # K45 is declared, not inferred: the output must be accepted and
+        # REPORTED even when some perspective is left without a world.
         axiom_d=False,
     )
-    return UpdateModel(
-        model=out,
-        assignment=new_assignment,
-        product_nodes=product_nodes,
-        isolated=isolated,
-    )
+    return UpdateModel(out, prod.assignment, product_nodes, isolated, collapsed, revisions)
+
+
+# --------------------------------------------------------------------------- #
+# Product 1: M[A], knowledge (Def. 4.5)
+# --------------------------------------------------------------------------- #
+def update_model(
+    model: SimplicialBeliefModel,
+    assignment: Assignment,
+    action: SimplicialAction,
+    mode: int = DEFAULT_MODE,
+) -> UpdateModel:
+    """The knowledge product ``M[A]`` (thesis Def. 4.5): ``S_a = S[A]`` for everyone.
+
+    The input's ``S_a`` and the action's ``S_{a,A}`` are not read: this is
+    the product when belief coincides with knowledge.
+
+    Raises:
+        ValueError: different agent sets, an inconsistent input facet, an
+            invalid mode, or a facet missing some agent's node.
+    """
+    prod = _knowledge_product(model, assignment, action, mode)
+    return _finish(model, prod, prod.facets, {a: set(prod.facets) for a in model.agents},
+                   prod.world_of_facet)
 
 
 def _pi(agent: Agent, facet: Facet) -> Node:
