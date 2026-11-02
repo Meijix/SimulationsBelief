@@ -83,6 +83,21 @@ def facet_name(facet: Facet, names: Dict[Facet, Hashable]) -> Hashable:
 
 # (shallow) copying 
 class SimplicialAction:
+    """A simplicial action (thesis Def. 4.5 and 4.6).
+
+    Attributes:
+        agents: the agent set (colours).
+        nodes: the action nodes ``N_A`` (an agent's perspective on an event).
+        facets: the events ``S_A``: UCF facets of action nodes.
+        belief_facets: ``agent -> set of events``, the per-agent subcomplex
+            ``S_{a,A}`` of Def. 4.6: the events ``a`` considers possible. An
+            agent left out considers EVERY event possible, which is the shape
+            of a knowledge action (Def. 4.5 has no ``S_{a,A}`` at all).
+        pre, post: literal pre- and postconditions per node (``L_A`` and ``Post``).
+        pre_formula, pre_event: formula preconditions per node and per event.
+        event_of_facet: ``facet -> event name``, for readable output.
+    """
+
     def __init__(
         self,
         agents: Iterable[Agent],
@@ -94,10 +109,18 @@ class SimplicialAction:
         validate: bool = True,
         pre_formula: Dict[Node, Formula] | None = None,
         pre_event: Dict[Facet, Formula] | None = None,
+        belief_facets: Dict[Agent, Iterable[Facet]] | None = None,
     ) -> None:
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
+        # S_{a,A} per agent. Silence means "every event": the same convention
+        # as a silent belief relation on the relational side (believe what
+        # you know), so an action built without it is a knowledge action.
+        given = {a: set(fs) for a, fs in (belief_facets or {}).items()}
+        self.belief_facets: Dict[Agent, Set[Facet]] = {
+            a: given.get(a, set(self.facets)) for a in self.agents
+        }
         self.pre: Assignment = {n: dict(v) for n, v in (pre or {}).items()}
         self.post: Assignment = {n: dict(v) for n, v in (post or {}).items()}
         # Per node, a formula the input world must satisfy for the event to
@@ -127,6 +150,7 @@ class SimplicialAction:
         isolated: Dict[Agent, Iterable[Hashable]] | None = None,
         pre_formula: Dict[Hashable, Formula] | None = None,
         pre_event: Dict[Hashable, Formula] | None = None,
+        belief: Dict[Agent, Iterable[Hashable]] | None = None,
     ) -> "SimplicialAction":
         # Input format:
         #   events      = {"k": {"a": "as", "b": "b not r", "c": "c"}, ...}
@@ -134,6 +158,8 @@ class SimplicialAction:
         #   isolated    = {"a": ["a?"]}
         #   pre_formula = {"as": ("K", "a", ("atom", "Pa"))}   a formula per node name
         #   pre_event   = {"k": ("K", "a", ("atom", "Pa"))}    a formula per EVENT name
+        #   belief      = {"b": ["k", "m"]}   per agent, the events of S_{b,A} by name;
+        #                                     an agent left out considers every event possible
         # names to Nodes and call the constructor 
         agents = set(agents)
         by_name: Dict[Hashable, Node] = {}  # node name -> its Node
@@ -168,6 +194,15 @@ class SimplicialAction:
                 out[by_name[nm]] = copy(value)
             return out
 
+        # S_{a,A}: event names -> facets, per agent
+        belief_facets: Dict[Agent, Set[Facet]] = {}
+        for a, names in (belief or {}).items():
+            belief_facets[a] = set()
+            for ev in names:
+                if ev not in facet_of_event:
+                    raise ValueError(f"S_{{{a},A}} names unknown event {ev!r}.")
+                belief_facets[a].add(facet_of_event[ev])
+
         # the keys of event_of_facet are the facets
         return cls(
             agents,
@@ -179,7 +214,13 @@ class SimplicialAction:
             pre_formula=resolve(pre_formula, "pre_formula", copy=lambda f: f) if pre_formula else None,
             pre_event={facet_of_event[ev]: phi for ev, phi in (pre_event or {}).items()
                        if ev in facet_of_event} or None,
+            belief_facets=belief_facets or None,
         )
+
+    @property
+    def is_knowledge_action(self) -> bool:
+        """True iff every ``S_{a,A}`` is the whole event set (the shape of Def. 4.5)."""
+        return all(self.belief_facets[a] == self.facets for a in self.agents)
 
     def pi(self, agent: Agent, facet: Facet) -> Node:
         """``π_a(facet)``: the unique ``agent``-coloured node of an event (UCF)."""
@@ -210,6 +251,13 @@ class SimplicialAction:
                 problems.append(
                     f"Action facet {label_facet(facet)} is inconsistent on {atom!r}: "
                     f"{label_node(t)} requires it, {label_node(f)} requires its negation."
+                )
+        for a, fs in self.belief_facets.items():
+            if a not in self.agents:
+                problems.append(f"S_{{{a},A}} is declared for unknown agent {a!r}.")
+            for facet in sorted(fs - self.facets, key=label_facet):
+                problems.append(
+                    f"S_{{{a},A}} contains {label_facet(facet)}, which is not an event of S_A."
                 )
         for what, table in (("pre", self.pre), ("post", self.post)):
             problems += [f"{what}: {p}" for p in assignment_violations(table)]
@@ -242,13 +290,21 @@ class SimplicialAction:
                 s += "[" + ", ".join(post) + "]"
             return s
 
-        lines = [f"SimplicialAction: {len(self.facets)} events, {len(self.nodes)} nodes"]
+        head = f"SimplicialAction: {len(self.facets)} events, {len(self.nodes)} nodes"
+        if self.is_knowledge_action:
+            head += "  [knowledge action: S_{a,A} = S_A for every agent]"
+        lines = [head]
         for facet in sorted(self.facets, key=lambda F: str(facet_name(F, self.event_of_facet))):
             nodes = " ".join(show(n) for n in sorted(facet, key=lambda n: str(n.agent)))
             event = facet_name(facet, self.event_of_facet)
             if facet in self.pre_event:
                 event = f"{event}({formula_text(self.pre_event[facet])})"
-            lines.append(f"  event {event}: {nodes}")
+            line = f"  event {event}: {nodes}"
+            if not self.is_knowledge_action:
+                # who considers the event possible, like "[S_a S_b]" on a facet
+                who = [str(a) for a in sorted(self.agents, key=str) if facet in self.belief_facets[a]]
+                line += "  [" + ("S_{" + ",".join(who) + "}" if who else "only S_A") + "]"
+            lines.append(line)
         # nodes in no events
         in_events = {n for F in self.facets for n in F}
         loose = sorted(self.nodes - in_events, key=label_node)
@@ -257,8 +313,9 @@ class SimplicialAction:
         return "\n".join(lines)
 
     def __repr__(self) -> str:
+        kind = "knowledge, " if self.is_knowledge_action else ""
         return (
-            f"SimplicialAction(agents={len(self.agents)}, nodes={len(self.nodes)}, "
+            f"SimplicialAction({kind}agents={len(self.agents)}, nodes={len(self.nodes)}, "
             f"events={len(self.facets)})"
         )
 
