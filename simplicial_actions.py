@@ -2,8 +2,9 @@
 
     * ``update_model``            M[A]     knowledge (Def. 4.5): S_a = S[A] for everyone
     * ``belief_update_model``     M[A]_B   belief (Def. 4.6): each agent's S_a from its own S_a and S_{a,A}
+    * ``revision_update_model``   M[A]_BR  belief with revision (Def. 4.8)
 
-Both share the nodes, the labels and the facets of ``S[A]``
+All three share the nodes, the labels and the facets of ``S[A]``
 (``_knowledge_product``); they differ only in how each agent's belief
 subcomplex ``S_a`` of the output is chosen.
 
@@ -686,6 +687,132 @@ def belief_update_model(
                 if F is not None:
                     belief[a].add(F)
     return _finish(model, prod, prod.facets, belief, prod.world_of_facet)
+
+
+# --------------------------------------------------------------------------- #
+# Product 3: M[A]_BR, belief with revision (Def. 4.8)
+# --------------------------------------------------------------------------- #
+def _consistent_facets(groups: List[List[Node]], assignment: Assignment) -> List[Facet]:
+    """Every UCF facet with one node from each group whose labels do not clash.
+
+    Depth-first with pruning: a partial facet that already clashes is never
+    extended, so the enumeration stays small on the models the GUI handles.
+    """
+    out: List[Facet] = []
+
+    def grow(i: int, chosen: List[Node]) -> None:
+        if i == len(groups):
+            out.append(frozenset(chosen))
+            return
+        for n in groups[i]:
+            chosen.append(n)
+            if is_consistent_facet(frozenset(chosen), assignment):
+                grow(i + 1, chosen)
+            chosen.pop()
+
+    grow(0, [])
+    return out
+
+
+def _revision_candidates(
+    agent: Agent, prod: _Product, action: SimplicialAction, agents: List[Agent]
+) -> List[Facet]:
+    """The facets agent ``agent`` may revise towards (``F_a(2^{N[A]_BR})``, p. 58).
+
+    Def. 4.8 as written: every consistent UCF facet of OUTPUT NODES whose
+    event is one of ``S_{a,A}``, so the agent may jump to a combination of
+    perspectives no input world had.
+    """
+    by_action_node: Dict[Node, List[Node]] = {}
+    for n in prod.product.values():
+        by_action_node.setdefault(pair_of(n).action, []).append(n)
+    out: List[Facet] = []
+    for Y in action.belief_facets[agent]:
+        groups = [by_action_node.get(action.pi(b, Y), []) for b in agents]
+        if all(groups):
+            out.extend(_consistent_facets(groups, prod.assignment))
+    return out
+
+
+def revision_update_model(
+    model: SimplicialBeliefModel,
+    assignment: Assignment,
+    action: SimplicialAction,
+    mode: int = DEFAULT_MODE,
+) -> UpdateModel:
+    """The product with revision ``M[A]_BR`` (thesis Def. 4.8).
+
+    Nodes, labels and ``S[A]`` as in :func:`update_model`. For each agent
+    ``a`` and each INTENDED facet (a facet of the input ``S_a`` paired with
+    an event of ``S_{a,A}``), the output ``S_a`` gets ``R_a(X)``: the
+    realisable facets that keep ``a``'s own output node and share the most
+    pairs with the intended one (ties are all kept). An intended facet that
+    is itself realisable is kept as it is, so where no belief is contradicted
+    this equals :func:`belief_update_model`. When ``a``'s own pair failed the
+    preconditions there is no node to hold a belief: nothing to revise.
+
+    The output's ``S`` is ``S[A]`` plus any facet revision realised outside
+    it, so ``S_a ⊆ S`` keeps holding.
+    """
+    prod = _knowledge_product(model, assignment, action, mode)
+    agents = sorted(model.agents, key=str)
+    facets = set(prod.facets)
+    world_of_facet = dict(prod.world_of_facet)
+    belief: Dict[Agent, Set[Facet]] = {a: set() for a in agents}
+    revisions: List[Imaging] = []
+    for a in agents:
+        candidates = _revision_candidates(a, prod, action, agents)
+        for X in model.belief_facets.get(a, ()):
+            for Y in action.belief_facets[a]:
+                intended = _intended(X, Y, agents, action, model)
+                own = Pair(model.pi(a, X), action.pi(a, Y))
+                if own not in prod.product:
+                    continue        # a's own perspective failed the precondition: R_a(X) = ∅
+                mine = prod.product[own]
+                # rank the candidates through a's node by overlap with the
+                # intended facet; the name order makes ties deterministic
+                ranked = sorted(
+                    ((F, len(frozenset(pair_of(n) for n in F) & intended))
+                     for F in candidates if mine in F),
+                    key=lambda fo: (-fo[1], str(sorted(map(label_node, fo[0])))),
+                )
+                if not ranked:
+                    revisions.append(Imaging(a, intended, (), False, ()))
+                    continue
+                best = ranked[0][1]
+                winners = tuple(F for F, o in ranked if o == best)
+                kept = best == len(agents)          # the intended facet itself won
+                belief[a].update(winners)
+                for F in winners:
+                    if F not in facets:             # realised outside S[A]: add it to S
+                        facets.add(F)
+                        world_of_facet[F] = (
+                            facet_name(frozenset(pair_of(n).input for n in F),
+                                       model.world_of_facet),
+                            facet_name(Y, action.event_of_facet),
+                        )
+                if not kept:
+                    revisions.append(Imaging(a, intended, winners, False, tuple(ranked)))
+    return _finish(model, prod, facets, belief, world_of_facet, tuple(revisions))
+
+
+def describe_revisions(result: UpdateModel) -> str:
+    """One line per revision: what was intended, what is believed instead."""
+    names = result.model.world_of_facet
+
+    def pairs(ps: Iterable[Pair]) -> str:
+        return "{" + ",".join(str(p) for p in sorted(ps, key=lambda p: str(p.input.agent))) + "}"
+
+    lines = []
+    for r in result.revisions:
+        if not r.realised:
+            lines.append(f"  {r.agent}: {pairs(r.intended)} lost; no realisable facet keeps "
+                         f"its perspective, so it collapses")
+            continue
+        to = ", ".join(str(facet_name(F, names)) for F in r.realised)
+        tie = " (tie)" if len(r.realised) > 1 else ""
+        lines.append(f"  {r.agent}: {pairs(r.intended)} -> {to}{tie}")
+    return "\n".join(lines) if lines else "  no revision was needed"
 
 
 def _pi(agent: Agent, facet: Facet) -> Node:
