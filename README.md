@@ -42,25 +42,30 @@ poster figures (`poster/poster-code/make_figs_3agentes*.py`); `python poster/pos
 runs the three-agent disaster example. The relational-side operator `M[φ]` with imaging
 and iterated announcements with memory (doc 05 §2.3–2.5) are still *pending*.
 
-Part 3: Simulating Dynamic Update — **knowledge actions done, belief
-products pending**. `simplicial_actions.py` implements action models as
-chromatic simplicial complexes (events = facets of action nodes, one per
-agent) with three-valued literal pre- and postconditions on the nodes and,
-since 2026-10-20, **modal-formula preconditions** (`pre_formula`, in the
-syntax of `assignment.holds`, evaluated at the input facets: an event happens
-at a world only if the formula holds there), and event-level formulas
-(`pre_event`, the precondition of a Kripke action model). The product update
-`update_model(model, assignment, action, mode)` is the knowledge product `M[A]`
-of Sink's thesis (Def. 4.5), with three compatibility modes (no-clash by
-default, the thesis's definition); it reproduces the thesis's Alternating
-Message Passing Protocol (8 vertices after one step, 12 after two) and is
-walked step by step in `examples/action_knowledge_example.py`. The output is
-built with `axiom_d=False` (K45) because an update routinely leaves isolated
-perspectives, and it chains. The GUI's *Actions* tab defines actions (with a
-live drawing of the action as it is typed) and applies them to the active
-model. Still *pending*: the belief product `M[A]_B`, the product with
-revision `M[A]_BR` and protocols (iterating an action and tracking collapse
-and convergence).
+Part 3: Simulating Dynamic Update — **products done, protocols pending**.
+`simplicial_actions.py` implements action models as chromatic simplicial
+complexes (events = facets of action nodes, one per agent; per-agent event
+subcomplexes `S_{a,A}`) with three-valued literal pre- and postconditions on
+the nodes, **modal-formula preconditions** (`pre_formula`, in the syntax of
+`assignment.holds`, evaluated at the input facets) and event-level formulas
+(`pre_event`, the precondition of a Kripke action model), and the three
+products of Sink's thesis ch. 4: `update_model` (knowledge, `M[A]`, Def. 4.5),
+`belief_update_model` (belief, `M[A]_B`, Def. 4.6: each agent's `S_a` from its
+own `S_a` and `S_{a,A}`, collapsed perspectives reported) and
+`revision_update_model` (belief with revision, `M[A]_BR`, Def. 4.8: lost
+belief facets are imaged onto the nearest realisable ones, with or without
+memory, thesis §3.5.2). Node pairing has the three modes of thesis p. 51,
+numbered as there (mode 2, Def. 4.5, by default). The knowledge product
+reproduces the thesis's Alternating Message Passing Protocol (8 vertices after
+one step, 12 after two). Outputs are built with `axiom_d=False` (K45) because
+an update routinely leaves isolated or collapsed perspectives, and they chain.
+The GUI's *Actions* tab defines actions (with a live drawing of the action as
+it is typed, and per event the agents that consider it possible) and applies
+any of the four update kinds to the active model; what the product reports
+shows under the result's banner. `examples/action_knowledge_example.py` and
+`examples/action_belief_example.py` walk the products step by step. Still
+*pending*: protocols (iterating an action and tracking collapse and
+convergence).
 
 ## Layout
 
@@ -179,7 +184,7 @@ The GUI only *calls* the core: the `gui/adapters/` package is the single bridge
 Tests live in `tests/`, kept local (git-ignored): one file per core module
 (`test_relational_frame`, `test_knowledge_belief`, `test_properness`,
 `test_simplicial`, `test_semantics`, `test_assignment`, `test_hasse`,
-`test_simplicial_actions` for the belief-actions branch, `test_actions_kripke`
+`test_simplicial_actions` for the action products, `test_actions_kripke`
 for the action translations and the product on both sides) plus `test_gui_adapters.py` and
 `test_workspace.py` for the GUI bridge (regression cover for the reported
 issues: digit atoms, K45 defunct belief from the GUI, the distinguished
