@@ -1,8 +1,11 @@
-"""Simplicial actions and the knowledge product M[A] (Sink's thesis, Def. 4.5).
+"""Simplicial actions and the three products of Sink's thesis, ch. 4.
 
-The product is computed in two parts: ``_knowledge_product`` builds what every
-product of thesis ch. 4 shares (nodes, labels and the facets of ``S[A]``) and
-``_finish`` assembles the output; ``update_model`` chooses ``S_a = S[A]``.
+    * ``update_model``            M[A]     knowledge (Def. 4.5): S_a = S[A] for everyone
+    * ``belief_update_model``     M[A]_B   belief (Def. 4.6): each agent's S_a from its own S_a and S_{a,A}
+
+Both share the nodes, the labels and the facets of ``S[A]``
+(``_knowledge_product``); they differ only in how each agent's belief
+subcomplex ``S_a`` of the output is chosen.
 
 Preconditions come in two forms, both per action node:
 
@@ -459,7 +462,7 @@ def updated_values(
 
 
 # --------------------------------------------------------------------------- #
-# The common part of the products of thesis ch. 4: nodes, labels and the facets of S[A]
+# The common part of the three products: nodes, labels and the facets of S[A]
 # --------------------------------------------------------------------------- #
 def _product_nodes(
     model: SimplicialBeliefModel, assignment: Assignment, action: SimplicialAction,
@@ -648,6 +651,41 @@ def update_model(
     prod = _knowledge_product(model, assignment, action, mode)
     return _finish(model, prod, prod.facets, {a: set(prod.facets) for a in model.agents},
                    prod.world_of_facet)
+
+
+# --------------------------------------------------------------------------- #
+# Product 2: M[A]_B, belief (Def. 4.6)
+# --------------------------------------------------------------------------- #
+def belief_update_model(
+    model: SimplicialBeliefModel,
+    assignment: Assignment,
+    action: SimplicialAction,
+    mode: int = DEFAULT_MODE,
+) -> UpdateModel:
+    """The belief product ``M[A]_B`` (thesis Def. 4.6).
+
+    Same nodes, labels and ``S[A]`` as :func:`update_model`; one clause
+    differs: each agent's output subcomplex is the product of ITS OWN pieces,
+
+        F(S_a[A]_B) = { consistent products of a facet of S_a with an event of S_{a,A} }.
+
+    An agent keeps believing a world after an event only if it believed the
+    world and considers the event possible. Nothing is repaired: an event
+    that contradicts a belief can leave the agent's node in no facet of
+    ``S_a`` (reported in ``collapsed``), which revision fixes.
+    """
+    prod = _knowledge_product(model, assignment, action, mode)
+    agents = sorted(model.agents, key=str)
+    belief: Dict[Agent, Set[Facet]] = {a: set() for a in agents}
+    for a in agents:
+        for X in model.belief_facets.get(a, ()):
+            for Y in action.belief_facets[a]:
+                if (X, Y) not in prod.admissible:
+                    continue
+                F = _realise(_intended(X, Y, agents, action, model), prod.product, prod.assignment)
+                if F is not None:
+                    belief[a].add(F)
+    return _finish(model, prod, prod.facets, belief, prod.world_of_facet)
 
 
 def _pi(agent: Agent, facet: Facet) -> Node:
