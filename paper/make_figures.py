@@ -141,3 +141,20 @@ print(hasse.show(hasse.face_lattice(after, include_empty=False, assignment=_bits
                  "HasseExample0.3", "Face lattice", output_dir=PAPER))
 print(hasse.show(hasse.face_lattice(after, include_empty=False, assignment=_bits),
                  "HasseExample0.2", "Face lattice", output_dir=PAPER, facets_and_vertices=True))
+
+# --------------------------------------------------------------------------- #
+# Code section, Figure "copy and skew": two agents, three worlds. a confuses
+# w1 and w2; b confuses everything. Not proper (w1, w2 confused by both), so
+# to_proper makes three copies and skews a, the agent with fewer edges.
+# --------------------------------------------------------------------------- #
+from properness import to_proper, is_proper, cheapest_distinguished_agent  # noqa: E402
+
+skew_in = RelationalFrame.from_partial_s5(
+    ["a", "b"], ["w1", "w2", "w3"],
+    {"a": {("w1", "w2")}, "b": {("w1", "w2"), ("w2", "w3")}})
+assert not is_proper(skew_in)
+assert cheapest_distinguished_agent(skew_in.relations, agents=skew_in.agents) == "a"
+skew_out = to_proper(skew_in)
+assert is_proper(skew_out) and len(skew_out.worlds) == 9
+print(show(skew_in, "skew_general", "Before to_proper", output_dir=OUT))
+print(show(skew_out, "skew_proper", "After to_proper", output_dir=OUT))
