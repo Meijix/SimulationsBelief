@@ -1,0 +1,220 @@
+{
+ "format": "simulationsbelief-workspace/2",
+ "saved": "2026-11-03T17:38:09",
+ "models": [
+  {
+   "name": "Input",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {
+     "a": [],
+     "b": [],
+     "c": []
+    },
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0",
+      "a1"
+     ],
+     "b": [
+      "b0",
+      "b1"
+     ],
+     "c": [
+      "c0",
+      "c1"
+     ]
+    },
+    "facets": [
+     {
+      "name": "F1",
+      "nodes": {
+       "a": "a0",
+       "b": "b0",
+       "c": "c0"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "F2",
+      "nodes": {
+       "a": "a1",
+       "b": "b1",
+       "c": "c0"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "F3",
+      "nodes": {
+       "a": "a1",
+       "b": "b1",
+       "c": "c1"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Pa": {
+      "true": [
+       "a1"
+      ],
+      "false": [
+       "a0"
+      ]
+     },
+     "Pb": {
+      "true": [
+       "b1"
+      ],
+      "false": [
+       "b0"
+      ]
+     },
+     "Pc": {
+      "true": [
+       "c1"
+      ],
+      "false": [
+       "c0"
+      ]
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  }
+ ],
+ "actions": [
+  {
+   "name": "Public Announcement",
+   "events": [
+    {
+     "name": "e1",
+     "nodes": {
+      "a": "a",
+      "b": "b",
+      "c": "c"
+     },
+     "belief": [
+      "a",
+      "b",
+      "c"
+     ]
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": [],
+    "c": []
+   },
+   "pre": {
+    "Pa": {
+     "true": [
+      "a",
+      "b",
+      "c"
+     ],
+     "false": []
+    }
+   },
+   "post": {
+    "Pa": {
+     "true": [],
+     "false": []
+    }
+   },
+   "mode": 2,
+   "update": "revision"
+  },
+  {
+   "name": "a says to b and c is unaware.",
+   "events": [
+    {
+     "name": "Nothing",
+     "nodes": {
+      "a": "aN",
+      "b": "bN",
+      "c": "c"
+     },
+     "belief": [
+      "a",
+      "b",
+      "c"
+     ]
+    },
+    {
+     "name": "Success",
+     "nodes": {
+      "a": "aS",
+      "b": "bS",
+      "c": "c"
+     },
+     "belief": [
+      "a",
+      "b"
+     ]
+    },
+    {
+     "name": "Failure",
+     "nodes": {
+      "a": "aS",
+      "b": "bN",
+      "c": "c"
+     },
+     "belief": [
+      "a"
+     ]
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": [],
+    "c": []
+   },
+   "pre": {
+    "Pa": {
+     "true": [
+      "aS"
+     ],
+     "false": []
+    }
+   },
+   "post": {
+    "Pa": {
+     "true": [
+      "bS"
+     ],
+     "false": []
+    }
+   },
+   "mode": 2,
+   "update": "revision"
+  }
+ ]
+}
