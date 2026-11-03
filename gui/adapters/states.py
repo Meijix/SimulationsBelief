@@ -52,6 +52,7 @@ def preview_state(state: dict, tag: str = "") -> Tuple[Path, List[str]]:
         return preview_simplicial(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
             state["axiom_d"], tag, knowledge_only=_knowledge_only(state),
+            font_scale=float(state.get("font_scale", 1.0)),
         )
     return preview_figure(
         state["agents"], state["worlds"], state["per_agent"], state["atoms"],
@@ -84,11 +85,14 @@ def run_state(state: dict, tag: str = "") -> "PipelineResult":
     # back to the default view.
     hasse_full = bool(state.get("hasse_full", False))
     make_3d = bool(state.get("make_3d", True))
+    # Label size of the complex figures; old documents have no key (1.0).
+    font_scale = float(state.get("font_scale", 1.0))
     if state["kind"] == "simplicial":
         return run_simplicial(
             state["agents"], state["vertices"], state["facets"], state["vatoms"],
             state["axiom_d"], tag, hasse_full=hasse_full,
             knowledge_only=_knowledge_only(state), make_3d=make_3d,
+            font_scale=font_scale,
         )
     knowledge, belief = seeds_from_editor(
         state["agents"], state["worlds"], state["per_agent"], state["kind"]
@@ -97,4 +101,5 @@ def run_state(state: dict, tag: str = "") -> "PipelineResult":
         state["agents"], state["worlds"], knowledge, belief, state["axiom_d"],
         state["atoms"], not state["silent_defunct"], state["explicit"],
         state["kind"], tag, hasse_full=hasse_full, make_3d=make_3d,
+        font_scale=font_scale,
     )

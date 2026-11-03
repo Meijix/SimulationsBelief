@@ -108,6 +108,7 @@ def show(
     logic: str | None = None,
     engine: str = "auto",
     revision=None,
+    font_scale: float = 1.0,
 ) -> str:
     """Draw any model to a file and return the path. The one function to call.
 
@@ -174,6 +175,12 @@ def show(
             marked with its size, and an arrow goes to the winner. Showing the
             LOSING candidates too is the point -- the rule maximises the shared
             face, and a maximum cannot be read off a single highlighted facet.
+        font_scale: Simplicial models only (2-D and 3-D routes). Multiplies the
+            size of every label of the drawing: agent letters, vertex names,
+            literals, facet names and the legend (the markers grow with them so
+            the letter still fits). 1.0 is the size of the paper figures; the
+            GUI exposes it as "label size" because a complex that is read on a
+            projector or a phone wants bigger text than one in a PDF page.
 
     Returns:
         The path to the generated file.
@@ -207,10 +214,11 @@ def show(
             path = _write_and_run_dot(dot_source, name, image_format, output_dir)
         elif dim == 3:
             path = _show_simplicial_3d(model, name, output_dir, caption,
-                                       assignment=assignment)
+                                       assignment=assignment, font_scale=font_scale)
         else:
             path = _show_simplicial(model, name, output_dir, caption, image_format,
-                                    assignment=assignment, revision=revision)
+                                    assignment=assignment, revision=revision,
+                                    font_scale=font_scale)
     else:
         if assignment is not None:
             raise TypeError(
@@ -1266,8 +1274,12 @@ def _strip_layout(chain):
 
 
 def _show_simplicial(model, name, output_dir, title, image_format,
-                     assignment=None, revision=None) -> str:
+                     assignment=None, revision=None, font_scale=1.0) -> str:
     """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
+
+    ``font_scale`` multiplies every label size (and the marker area, so the
+    agent letter keeps fitting); the offsets of the texts around a node scale
+    with it so they do not overlap the bigger marker.
 
     Each facet (a possible world) is drawn as a filled polygon over its nodes -- an
     edge for 2 agents, a triangle for 3, and the convex node polygon for more. The
@@ -1397,7 +1409,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             ax.annotate(
                 fname, (cx, cy), xytext=lift, textcoords="offset points",
                 ha="center", va="bottom" if len(pts) == 2 else "center",
-                fontsize=10, color="#9aa6b5" if dead else "#222222", zorder=5,
+                fontsize=10 * font_scale, color="#9aa6b5" if dead else "#222222", zorder=5,
                 bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
                           edgecolor="#aab2bf" if dead else col,
                           linewidth=0.8, alpha=0.9),
@@ -1455,7 +1467,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             ax.annotate(
                 f"|Y \u2229 X| = {overlap}", (mx, my), xytext=(0, 13),
                 textcoords="offset points", ha="center", va="bottom",
-                fontsize=7.5, color=col, fontweight="bold" if won else "normal",
+                fontsize=7.5 * font_scale, color=col, fontweight="bold" if won else "normal",
                 zorder=6,
                 bbox=dict(boxstyle="round,pad=0.22", facecolor="white",
                           edgecolor=col, linewidth=0.8, alpha=0.95),
@@ -1479,17 +1491,18 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     # Nodes, coloured and labelled by agent.
     for node in model.nodes:
         x, y = pos[node]
-        ax.scatter([x], [y], s=340, color=colors[node.agent],
+        ax.scatter([x], [y], s=340 * font_scale ** 2, color=colors[node.agent],
                    edgecolor="#222", linewidth=1.0, zorder=3)
         ax.annotate(f"{node.agent}", (x, y), color="white", ha="center", va="center",
-                    fontsize=10, fontweight="bold", zorder=4)
+                    fontsize=10 * font_scale, fontweight="bold", zorder=4)
         # A directly-defined complex names its vertices: show the name just
         # above the marker (the marker itself keeps the agent's letter, which
         # is the colouring). Translated models have no names and stay as-is.
         vname = (getattr(model, "node_names", None) or {}).get(node)
         if vname:
-            ax.annotate(str(vname), (x, y), xytext=(0, 14), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=10, color="#222222", zorder=4)
+            ax.annotate(str(vname), (x, y), xytext=(0, 14 * font_scale),
+                        textcoords="offset points", ha="center", va="bottom",
+                        fontsize=10 * font_scale, color="#222222", zorder=4)
         if assignment is not None:
             # The observed literals sit just below the marker (offset in POINTS,
             # not data units, so the gap survives any zoom/layout scale). Nodes
@@ -1498,8 +1511,8 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             if literals:
                 ax.annotate(
                     "(" + ", ".join(literals) + ")", (x, y),
-                    xytext=(0, -19), textcoords="offset points",
-                    ha="center", va="top", fontsize=9.5, color="#222222", zorder=4,
+                    xytext=(0, -19 * font_scale), textcoords="offset points",
+                    ha="center", va="top", fontsize=9.5 * font_scale, color="#222222", zorder=4,
                 )
 
     # Legend: agents + belief signatures.
@@ -1520,7 +1533,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     # the same distance from the drawing whatever the drawing's shape.
     ncol = min(len(handles), 4)
     fig.legend(handles=handles, loc="lower center",
-               bbox_to_anchor=(0.5, legend_y0 / height), ncol=ncol, fontsize=9,
+               bbox_to_anchor=(0.5, legend_y0 / height), ncol=ncol, fontsize=9 * font_scale,
                frameon=False)
     fig.text(0.5, caption_y / height, title, ha="center", va="bottom", fontsize=12)
     ax.set_axis_off()
@@ -1600,7 +1613,8 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
     return _park_isolated({v: tuple(p) for v, p in pos.items()}, edges)
 
 
-def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
+def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
+                        font_scale=1.0) -> str:
     """Draw a simplicial belief model as an INTERACTIVE 3-D Plotly figure (HTML).
 
     Facets are drawn as solid simplices, coloured by which agents' **belief
@@ -1675,7 +1689,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None) -> str:
         traces.append(go.Scatter3d(
             x=[c[0] for c in cents], y=[c[1] for c in cents], z=[c[2] for c in cents],
             mode="text", text=[n for _, n in named], textposition="middle center",
-            textfont=dict(size=13, color="#222222"),
+            textfont=dict(size=13 * font_scale, color="#222222"),
             name="facetas", hoverinfo="skip", showlegend=False,
         ))
 

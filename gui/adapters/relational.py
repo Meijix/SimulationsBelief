@@ -530,6 +530,7 @@ def run_pipeline_from_seeds(
     tag: str = "",
     hasse_full: bool = False,
     make_3d: bool = True,
+    font_scale: float = 1.0,
 ) -> PipelineResult:
     """Run the full thesis pipeline (general -> proper -> simplicial) once.
 
@@ -569,6 +570,8 @@ def run_pipeline_from_seeds(
             Axiom D alone only PERMITS defunct belief; this is what produces it.
         hasse_full: draw every face in Fig. 4 instead of the default
             vertices-and-facets view (GitHub #7).
+        font_scale: label size of the simplicial figures (Fig. 3 and the 3-D
+            page), 1.0 being the size of the paper figures.
     """
     if not agents or not worlds:
         raise ValueError("at least one agent and one world are needed")
@@ -716,14 +719,14 @@ def run_pipeline_from_seeds(
         "is a point joined to its vertices: with 5 or more agents there is no faithful geometric drawing)",
         Path(show(sm, _fname("gui_fig3_simplicial", tag), "Simplicial model",
                   output_dir=str(OUTPUTS), valuation=lifted,
-                  engine="auto" if geometric else "dot")),
+                  engine="auto" if geometric else "dot", font_scale=font_scale)),
     ))
     # The heavy output (see run_simplicial); also skipped for 5+ agents, whose
     # facets have no faithful 3-D drawing.
     if make_3d and geometric:
         result.html_3d = Path(show(sm, _fname("gui_fig3_3d", tag), "Simplicial model · 3D",
                                    dim=3, output_dir=str(OUTPUTS),
-                                   valuation=lifted))
+                                   valuation=lifted, font_scale=font_scale))
     result.text_diagrams.append(("Simplicial model", str(sm)))
 
     # -- Fig. 4: the face lattice (Hasse diagram) of the complex. -------------

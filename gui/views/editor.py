@@ -19,6 +19,22 @@ from nicegui import ui
 from adapters import KINDS, agent_color_map, simplicial_state_from_editor
 from theme import CARD, FLAT, card_title, take
 
+# Label sizes offered for the complex figures: the factor is what
+# ``visualization.show(font_scale=...)`` receives, the text is what the user
+# reads. 1.0 is the size of the paper figures.
+LABEL_SIZES = {0.8: "small (0.8)", 1.0: "normal (1.0, paper)", 1.25: "large (1.25)",
+               1.5: "extra large (1.5)", 2.0: "huge (2.0)"}
+
+
+def _nearest_label_size(value) -> float:
+    """The offered size closest to a stored factor (a hand-edited workspace
+    may carry any number; the select can only show its own options)."""
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return min(LABEL_SIZES, key=lambda k: abs(k - value))
+
 if TYPE_CHECKING:
     from views.page import Page
 
@@ -33,7 +49,7 @@ class EditorView:
         self.agent_input = self.agent_chips = None
         self.worlds_box = self.world_input = self.world_chips = None
         self.axiom_d_in = self.silent_defunct_in = None
-        self.explicit_in = self.hasse_full_in = self.make_3d_in = None
+        self.explicit_in = self.hasse_full_in = self.make_3d_in = self.font_scale_in = None
 
     # ------------------------------------------------------------------ #
     # Build
@@ -148,6 +164,16 @@ class EditorView:
                     value=True, on_change=lambda _: self.make_3d_changed(),
                 ).tooltip("Off, the run does not write the 3D page (~3 MB): "
                           "only the SVG figures.")
+                # Label size of the complex figures (preview, Fig. 3 and the
+                # 3-D page). The paper figures are drawn at 1.0; a class on a
+                # projector or a crowded complex wants other sizes. Stored in
+                # the document, so a saved model reopens with its own size.
+                self.font_scale_in = ui.select(
+                    LABEL_SIZES, value=1.0, label="Label size in the complex figures",
+                    on_change=lambda _: self.font_scale_changed(),
+                ).classes("w-72").props("dense options-dense").tooltip(
+                    "Agent letters, vertex names, literals and facet names of "
+                    "the simplicial drawings. 1.0 is the size used in the paper.")
 
         # ---- Per-agent relation editor (or the direct-complex editor) ------ #
         self.editor_box = ui.column().classes("w-full gap-4")
@@ -162,6 +188,7 @@ class EditorView:
         state["explicit"] = self.explicit_in.value
         state["hasse_full"] = self.hasse_full_in.value
         state["make_3d"] = self.make_3d_in.value
+        state["font_scale"] = float(self.font_scale_in.value or 1.0)
 
     def show_document(self, state: dict, name: str) -> None:
         """Set the kind, the switches and the name from a document's state."""
@@ -171,6 +198,7 @@ class EditorView:
         self.explicit_in.value = state["explicit"]
         self.hasse_full_in.value = state.get("hasse_full", False)
         self.make_3d_in.value = state.get("make_3d", True)
+        self.font_scale_in.value = _nearest_label_size(state.get("font_scale", 1.0))
         self.name_in.value = name
 
     def sync_switches(self) -> None:
@@ -191,6 +219,7 @@ class EditorView:
         # Belief only never reaches the complex, so there is no lattice to choose.
         self.hasse_full_in.set_enabled(kind != "belief")
         self.make_3d_in.set_enabled(kind != "belief")
+        self.font_scale_in.set_enabled(kind != "belief")
         self.worlds_box.set_visibility(kind != "simplicial")
         self.page.atoms.set_help(kind)
         self.page.formulas.set_help(kind)
@@ -268,6 +297,19 @@ class EditorView:
             await page.results.run()
         else:
             page.state["make_3d"] = self.make_3d_in.value
+
+    async def font_scale_changed(self) -> None:
+        """Label size: the complex preview is redrawn at once (a direct
+        complex shows it before any run) and, if there were results already,
+        the pipeline reruns so that Fig. 3 and the 3-D page follow."""
+        page = self.page
+        if self.font_scale_in.value == page.state.get("font_scale", 1.0):
+            return   # assignment while loading a document, not a click
+        page.state["font_scale"] = float(self.font_scale_in.value or 1.0)
+        if page.state["kind"] == "simplicial":
+            page.preview.update()
+        if page.current()["outcome"] is not None:
+            await page.results.run()
 
     # ------------------------------------------------------------------ #
     # Agents and worlds

@@ -161,6 +161,7 @@ def blank_state(kind: str = "kb") -> dict:
         "explicit": False,                 # draw loops and both directions
         "hasse_full": False,               # full lattice, not only vertices+facets
         "make_3d": True,                   # write the interactive 3-D page (the heavy output)
+        "font_scale": 1.0,                 # label size of the complex figures (1.0 = paper size)
     }
 
 

@@ -225,9 +225,11 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
 def preview_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
-    knowledge_only: bool = False,
+    knowledge_only: bool = False, font_scale: float = 1.0,
 ) -> Tuple[Path, List[str]]:
     """Preview of the complex AS DECLARED, without requiring validity.
+
+    ``font_scale`` is the label size of the figure (``visualization.show``).
 
     "As declared" up to consistency: an inconsistent facet is not drawn (it is
     not part of the model, see :func:`_consistent_part`) and the returned list
@@ -241,7 +243,8 @@ def preview_simplicial(
     dropped = merged + dropped
     path = Path(show(model, _fname("gui_preview", tag), "Complex as entered",
                      output_dir=str(OUTPUTS), assignment=assignment or None,
-                     engine="auto" if _geometric_ok(model) else "dot"))
+                     engine="auto" if _geometric_ok(model) else "dot",
+                     font_scale=font_scale))
     problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
     notes = [] if _geometric_ok(model) else [_dimension_note(model)]
     return path, dropped + problems + notes
@@ -351,8 +354,11 @@ def run_simplicial(
     agents: List[str], vertices: Dict[str, List[str]], facets: List[dict],
     vatoms: Dict[str, dict], axiom_d: bool = True, tag: str = "",
     hasse_full: bool = False, knowledge_only: bool = False, make_3d: bool = True,
+    font_scale: float = 1.0,
 ) -> "PipelineResult":
     """The "pipeline" of a direct complex: validate and draw, nothing to translate.
+
+    ``font_scale`` is the label size of the complex figures (2-D and 3-D).
 
     ``hasse_full`` picks the lattice figure: by default only vertices and
     facets (issue #7); ``True`` draws every face. ``knowledge_only`` reads the
@@ -417,14 +423,15 @@ def run_simplicial(
         "a point joined to its vertices: with 5 or more agents there is no faithful geometric drawing)",
         Path(show(model, _fname("gui_fig3_simplicial", tag), "Simplicial complex",
                   output_dir=str(OUTPUTS), assignment=asg,
-                  engine="auto" if geometric else "dot")),
+                  engine="auto" if geometric else "dot", font_scale=font_scale)),
     ))
     # The interactive 3-D page is the heavy output (~3 MB of embedded
     # Plotly per run); the GUI's "generar vista 3D" switch skips it, and so
     # does a complex of 5+ agents, which has no faithful 3-D drawing.
     if make_3d and geometric:
         result.html_3d = Path(show(model, _fname("gui_fig3_3d", tag), "Simplicial complex · 3D",
-                                   dim=3, output_dir=str(OUTPUTS), assignment=asg))
+                                   dim=3, output_dir=str(OUTPUTS), assignment=asg,
+                                   font_scale=font_scale))
     lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
     result.figures.append((
         _hasse_caption("Fig. 2", hasse_full),
