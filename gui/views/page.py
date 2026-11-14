@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import blank_state
-from theme import CARD, FLAT, POSTER
+from theme import CARD, FLAT, FIGURE_INK, quasar_colors
 from workspace import Workspace
 
 if TYPE_CHECKING:  # only for readers and type checkers; no import cycle at runtime
@@ -58,6 +58,47 @@ class Page:
         self.compare: CompareView
         self.editor_row = None      # the editor + results row (hidden while comparing)
         self.readonly_box = None    # the "this model is read-only" notice
+        # The page's theme: "dark" or "light". ``ink`` is what the figures
+        # are drawn with (visualization.ink), ``dark`` the ui.dark_mode
+        # element that flips Quasar's body class (set by app.index).
+        self.theme = "dark"
+        self.dark = None
+
+    @property
+    def ink(self) -> str:
+        return FIGURE_INK[self.theme]
+
+    async def set_theme(self, name: str) -> None:
+        """Switch the whole page between dark and light, in place.
+
+        The chrome follows on its own (CSS variables hang from Quasar's body
+        class; ``quasar_colors`` resets Quasar's own palette). The FIGURES
+        do not: they are files drawn in one ink, so the preview caches are
+        dropped and redrawn, the active model is run again if it had
+        results, and the other documents are marked dirty so the comparison
+        recomputes them in the new ink when it is opened.
+        """
+        if name == self.theme or name not in FIGURE_INK:
+            return
+        self.theme = name
+        try:
+            from nicegui import app
+            app.storage.general["theme"] = name
+        except Exception:  # noqa: BLE001 -- remembering the choice is a nicety
+            pass
+        if self.dark is not None:
+            self.dark.set_value(name == "dark")
+        quasar_colors(name)
+        self.header.paint_theme()
+        for doc in self.ws.docs:
+            if doc["outcome"] is not None:
+                doc["dirty"] = True
+        self.preview.clear_cache()
+        self.actions.clear_cache()
+        self.preview.update()
+        self.actions.paint()
+        if self.current()["outcome"] is not None:
+            await self.results.run()
 
     # ------------------------------------------------------------------ #
     # The active document and its live state
@@ -147,20 +188,20 @@ class Page:
             return
         with self.readonly_box, ui.card().classes(CARD).props(FLAT):
             with ui.row().classes("w-full items-center gap-3 no-wrap"):
-                ui.icon("lock").style(f"color:{POSTER['yellow']}")
+                ui.icon("lock").style("color:var(--p-warn)")
                 source = (doc["origin"] or {}).get("label")
                 ui.label(
                     ("Result of " + source + ". " if source else "")
                     + "This model is read-only: to change it, "
                       "duplicate it as a new model."
-                ).classes("text-sm text-grey-4 grow")
+                ).classes("text-sm muted grow")
                 ui.button("Duplicate as new model", icon="content_copy",
                           on_click=lambda: self.duplicate_active()) \
                     .props("outline dense")
             # What the product reported (isolated vertices, collapsed
             # perspectives, revisions): one line each, under the banner.
             for note in (doc["origin"] or {}).get("notes") or []:
-                ui.label("· " + note).classes("text-xs text-grey-5 font-mono")
+                ui.label("· " + note).classes("text-xs muted font-mono")
 
     def repaint_all(self) -> None:
         """Everything that is painted from ``state``: chips, editor, atoms, actions, preview."""

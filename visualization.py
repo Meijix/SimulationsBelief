@@ -24,11 +24,13 @@ checking, never at runtime, so there is no circular dependency.
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 import shutil
 import subprocess
 import tempfile
+import threading
 import warnings
 from typing import TYPE_CHECKING, Dict, List, Set
 
@@ -58,6 +60,90 @@ MISSING_COLOR = "#D00000"
 # disjoint from PALETTE: a facet's fill (a belief signature) must never be
 # mistaken for a node's colour (an agent) in the same drawing.
 BELIEF_PALETTE = ("#7B4FA3", "#D98A00", "#2E8B57", "#B23A48", "#3A6EA5", "#8C6D1F")
+
+# --------------------------------------------------------------------------- #
+# Ink themes. Everything in a figure that is NOT data -- text, node fills and
+# outlines, the pad behind a label, the faint 1-skeleton, the "missing" red --
+# comes from one of these dictionaries, so the same drawing can be printed on
+# a white page (``light``, the default and what the paper uses) or laid on a
+# dark page (``dark``, what the GUI uses over its navy background). Agent and
+# belief colours are data and do not change between the two.
+#
+# The theme is looked up at DRAW time through :func:`ink`, per thread: the
+# GUI renders in worker threads and wraps each render in
+# ``with ink_theme("dark"):`` (see ``gui/adapters/base.py``), which cannot
+# leak into a render running in another thread, nor into the CLI scripts and
+# the tests, which never set it. :func:`set_ink_theme` changes the process
+# default for scripts that want every figure dark.
+# --------------------------------------------------------------------------- #
+INK_THEMES = {
+    "light": {
+        "page": "white",          # the page (3-D HTML; the others go transparent)
+        "text": "#222222",        # labels, captions, legend
+        "text_soft": "#333333",   # agent names in the dead-end line, notes
+        "muted": "#777777",       # "legal in K45" marks, the dimension axis
+        "faint": "#999999",       # the 1-skeleton, lattice edges
+        "node_fill": "#f4f6f8",   # worlds (and lattice boxes without a colour)
+        "node_edge": "#333333",
+        "dead_fill": "#FDE7E7",   # a dead-end world under Axiom D
+        "missing": MISSING_COLOR, # what the closures will add; the error red
+        "neutral": "#dddddd",     # facets in no belief subcomplex
+        "pad": "white",           # the pad behind a facet name / revision mark
+        "gone": "#aab2bf",        # eliminated facets, their hatching and label
+        "lose": "#9aa6b5",        # losing candidates of a revision
+        "win": "#c0432b",         # the winner of a revision
+        "marker_edge": "#222222", # outline of the agent markers
+    },
+    "dark": {
+        "page": "#05081A",
+        "text": "#E7EAF6",
+        "text_soft": "#C9CFE6",
+        "muted": "#9BA4CB",
+        "faint": "#6F789C",
+        "node_fill": "#1A2246",
+        "node_edge": "#C9CFE6",
+        "dead_fill": "#4A1F2B",
+        "missing": "#FF7E9A",
+        "neutral": "#3A4266",
+        "pad": "#0B1128",
+        "gone": "#6F789C",
+        "lose": "#9BA4CB",
+        "win": "#FF7E9A",
+        "marker_edge": "#E7EAF6",
+    },
+}
+_INK_DEFAULT = ["light"]
+_ink_local = threading.local()
+
+
+def ink() -> Dict[str, str]:
+    """The ink theme of the current render (thread override, else the default)."""
+    return INK_THEMES[getattr(_ink_local, "name", None) or _INK_DEFAULT[0]]
+
+
+def set_ink_theme(name: str) -> None:
+    """Set the process-wide default ink theme (``"light"`` or ``"dark"``)."""
+    if name not in INK_THEMES:
+        raise ValueError(f"unknown ink theme {name!r}; one of {sorted(INK_THEMES)}")
+    _INK_DEFAULT[0] = name
+
+
+@contextlib.contextmanager
+def ink_theme(name: str):
+    """Draw with ``name`` as the ink theme inside the block, in this thread only."""
+    if name not in INK_THEMES:
+        raise ValueError(f"unknown ink theme {name!r}; one of {sorted(INK_THEMES)}")
+    previous = getattr(_ink_local, "name", None)
+    _ink_local.name = name
+    try:
+        yield
+    finally:
+        _ink_local.name = previous
+
+
+def _missing() -> str:
+    """The "missing / error" colour of the current ink theme."""
+    return ink()["missing"]
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +195,7 @@ def show(
     engine: str = "auto",
     revision=None,
     font_scale: float = 1.0,
+    transparent: bool = False,
 ) -> str:
     """Draw any model to a file and return the path. The one function to call.
 
@@ -181,6 +268,9 @@ def show(
             the letter still fits). 1.0 is the size of the paper figures; the
             GUI exposes it as "label size" because a complex that is read on a
             projector or a phone wants bigger text than one in a PDF page.
+        transparent: Render with no background (Graphviz and matplotlib routes),
+            so the figure sits on whatever the page is; the GUI uses it over
+            its cream paper. The 3-D HTML page keeps its own background.
 
     Returns:
         The path to the generated file.
@@ -211,14 +301,15 @@ def show(
             # leaves a .dot beside the .png -- an editable source, like every
             # other figure in this repo -- at the cost of the filled simplices.
             dot_source = _dot_simplicial(model, caption, valuation, assignment)
-            path = _write_and_run_dot(dot_source, name, image_format, output_dir)
+            path = _write_and_run_dot(dot_source, name, image_format, output_dir,
+                                      transparent=transparent)
         elif dim == 3:
             path = _show_simplicial_3d(model, name, output_dir, caption,
                                        assignment=assignment, font_scale=font_scale)
         else:
             path = _show_simplicial(model, name, output_dir, caption, image_format,
                                     assignment=assignment, revision=revision,
-                                    font_scale=font_scale)
+                                    font_scale=font_scale, transparent=transparent)
     else:
         if assignment is not None:
             raise TypeError(
@@ -234,7 +325,8 @@ def show(
             valuation=valuation,
             logic=logic,
         )
-        path = _write_and_run_dot(dot_source, name, image_format, output_dir)
+        path = _write_and_run_dot(dot_source, name, image_format, output_dir,
+                                  transparent=transparent)
     if open:
         _open_file(path)
     return path
@@ -349,9 +441,10 @@ def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=
 
     lines = [
         "graph SimplicialComplex {",          # undirected: a facet has no direction
-        '  graph [bgcolor="white", fontname="Helvetica", labelloc="b"]',
+        f'  graph [bgcolor="{ink()["page"]}", fontname="Helvetica", labelloc="b", '
+        f'fontcolor="{ink()["text"]}"]',
         '  node  [fontname="Helvetica", fontsize=11]',
-        '  edge  [penwidth=6]',                 # an edge IS a facet: thick, like a fill
+        f'  edge  [penwidth=6, fontcolor="{ink()["text"]}"]',   # an edge IS a facet: thick, like a fill
         "  layout=neato",                      # geometric, like the matplotlib view
         "  overlap=false",                     # neato may stack nodes otherwise
         "  splines=true",                      # route edges around nodes, not through
@@ -561,9 +654,9 @@ def _world_label_attr(valuation, world, dead_for=(), colors=None,
     rows = [_html_escape(world)]
     if literals:
         rows.append(f'<FONT POINT-SIZE="10">({_html_escape(", ".join(literals))})</FONT>')
-    mark = MISSING_COLOR if error else "#777777"
+    mark = _missing() if error else ink()["muted"]
     names = ", ".join(
-        f'<FONT COLOR="{(colors or {}).get(a, "#333333")}"><B>{_html_escape(a)}</B></FONT>'
+        f'<FONT COLOR="{(colors or {}).get(a, ink()["text_soft"])}"><B>{_html_escape(a)}</B></FONT>'
         for a in dead_for
     )
     rows.append(f'<FONT COLOR="{mark}">&#9711;</FONT> {names}')
@@ -586,9 +679,9 @@ def _dead_ends_by_world(frame) -> Dict:
 def _dead_end_cell(flagged: bool) -> str:
     """Legend cell explaining the ``⊘ a, b`` line: red under D, grey under K45."""
     if flagged:
-        return _note_cell("&#9711; a, b = dead end for those agents (Axiom D)", MISSING_COLOR)
+        return _note_cell("&#9711; a, b = dead end for those agents (Axiom D)", _missing())
     return _note_cell("&#9711; a, b = those agents believe nothing there (legal in K45)",
-                      "#777777")
+                      ink()["muted"])
 
 
 def _html_escape(value) -> str:
@@ -608,10 +701,10 @@ def _dot_header() -> List[str]:
     return [
         "digraph Model {",
         "    rankdir=LR;",
-        '    fontname="Helvetica"; overlap=false; nodesep=0.4; ranksep=0.6;',
-        '    node [shape=circle, style=filled, fillcolor="#f4f6f8",'
-        ' color="#333333", fontname="Helvetica", width=0.5];',
-        '    edge [penwidth=1.6, arrowsize=0.8, fontname="Helvetica"];',
+        f'    fontname="Helvetica"; fontcolor="{ink()["text"]}"; overlap=false; nodesep=0.4; ranksep=0.6;',
+        f'    node [shape=circle, style=filled, fillcolor="{ink()["node_fill"]}",'
+        f' color="{ink()["node_edge"]}", fontcolor="{ink()["text"]}", fontname="Helvetica", width=0.5];',
+        f'    edge [penwidth=1.6, arrowsize=0.8, fontname="Helvetica", fontcolor="{ink()["text"]}"];',
     ]
 
 
@@ -656,8 +749,9 @@ def _agent_cell(agent, color: str) -> str:
     )
 
 
-def _note_cell(text: str, color: str = "#333333") -> str:
+def _note_cell(text: str, color: str | None = None) -> str:
     """Legend cell: a short piece of explanatory text."""
+    color = ink()["text_soft"] if color is None else color
     return f'<TD><FONT COLOR="{color}" POINT-SIZE="11">{text}</FONT></TD>'
 
 
@@ -731,7 +825,7 @@ def _dot_frame(
         if label:
             attrs.append(label)
         if flag_dead and w in dead_for:
-            attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
+            attrs += [f'fillcolor="{ink()["dead_fill"]}"', f'color="{_missing()}"',
                       'style="filled,dashed"', "penwidth=2"]
         lines.append(
             f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
@@ -776,18 +870,18 @@ def _dot_frame(
                     drawn_missing.add(key)
                     lines.append(
                         f'    {_dot_id(source)} -> {_dot_id(target)} '
-                        f'[style=dashed, dir=none, color="{MISSING_COLOR}"];'
+                        f'[style=dashed, dir=none, color="{_missing()}"];'
                     )
                     continue
                 lines.append(
                     f'    {_dot_id(source)} -> {_dot_id(target)} '
-                    f'[style=dashed, color="{MISSING_COLOR}"];'
+                    f'[style=dashed, color="{_missing()}"];'
                 )
 
     cells = [_agent_cell(a, colors[a]) for a in sorted(frame.agents, key=str)]
     if cells:
         if highlight_missing and any(missing.values()):
-            cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
+            cells.append(_note_cell("&#9548;&#9548; missing edge", _missing()))
         if dead_for:
             cells.append(_dead_end_cell(flag_dead))
     lines += _dot_footer(caption, cells)
@@ -853,7 +947,7 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
         if label:
             attrs.append(label)
         if flag_dead and w in dead_for:
-            attrs += [f'fillcolor="#FDE7E7"', f'color="{MISSING_COLOR}"',
+            attrs += [f'fillcolor="{ink()["dead_fill"]}"', f'color="{_missing()}"',
                       'style="filled,dashed"', "penwidth=2"]
         lines.append(
             f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
@@ -888,7 +982,7 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
             if highlight_missing and (s, t) not in kb.knowledge.relations[a]:
                 outside_knowledge = True
                 lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{MISSING_COLOR}", '
+                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{_missing()}", '
                     'penwidth=2.6, arrowsize=1.0];'
                 )
             else:
@@ -912,12 +1006,12 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
                 drawn_m.add(key)
                 lines.append(
                     f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, dir=none, '
-                    f'color="{MISSING_COLOR}", penwidth=0.7];'
+                    f'color="{_missing()}", penwidth=0.7];'
                 )
             else:
                 lines.append(
                     f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
-                    f'color="{MISSING_COLOR}", penwidth=0.7];'
+                    f'color="{_missing()}", penwidth=0.7];'
                 )
         for (s, t) in _sorted_edges(missing_b.get(a, ())):
             if omit_self_loops and s == t:
@@ -925,7 +1019,7 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
             any_missing = True
             lines.append(
                 f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
-                f'color="{MISSING_COLOR}", penwidth=2.6, arrowsize=1.0];'
+                f'color="{_missing()}", penwidth=2.6, arrowsize=1.0];'
             )
 
     cells = [_agent_cell(a, colors[a]) for a in sorted(kb.agents, key=str)]
@@ -933,17 +1027,22 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
         cells.append(_note_cell("&#9472; knowledge (thin)"))
         cells.append(_note_cell("&#10142; belief (bold)"))
         if any_missing:
-            cells.append(_note_cell("&#9548;&#9548; missing edge", MISSING_COLOR))
+            cells.append(_note_cell("&#9548;&#9548; missing edge", _missing()))
         if outside_knowledge:
-            cells.append(_note_cell("&#10142; belief outside knowledge", MISSING_COLOR))
+            cells.append(_note_cell("&#10142; belief outside knowledge", _missing()))
         if dead_for:
             cells.append(_dead_end_cell(flag_dead))
     lines += _dot_footer(caption, cells)
     return "\n".join(lines)
 
 
-def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir: str) -> str:
+def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir: str,
+                       transparent: bool = False) -> str:
     """Write DOT to ``<output_dir>/<name>.dot`` and render it with Graphviz ``dot``.
+
+    ``transparent`` drops the white page of the drawing: the source's own
+    ``bgcolor="white"`` (the simplicial route sets one) is rewritten, and the
+    default is overridden on the command line for sources that set none.
 
     Raises:
         RuntimeError: If the ``dot`` binary is not found on ``PATH``.
@@ -958,10 +1057,15 @@ def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir
     base = os.path.join(output_dir, os.path.basename(name))
     dot_path = f"{base}.dot"
     image_path = f"{base}.{image_format}"
+    if transparent:
+        dot_source = dot_source.replace('bgcolor="white"', 'bgcolor="transparent"')
     with open(dot_path, "w", encoding="utf-8") as fh:
         fh.write(dot_source)
-    # -T selects the output format; -o the destination file.
-    subprocess.run(["dot", f"-T{image_format}", dot_path, "-o", image_path], check=True)
+    # -T selects the output format; -o the destination file; -G a graph default.
+    cmd = ["dot", f"-T{image_format}", dot_path, "-o", image_path]
+    if transparent:
+        cmd.insert(1, "-Gbgcolor=transparent")
+    subprocess.run(cmd, check=True)
     return image_path
 
 
@@ -1050,7 +1154,7 @@ def _node_key(node):
 def _signature_colors(model, agents) -> Dict[tuple, str]:
     """Map each belief signature to a fill colour (the empty one stays neutral grey)."""
     signatures = {_belief_signature(model, f, agents) for f in model.facets}
-    colors = {(): "#dddddd"}
+    colors = {(): ink()["neutral"]}
     # Sorted (singletons first, then alphabetically) so the palette is handed out
     # in the same order on every run and the legend reads in that order too.
     for i, sig in enumerate(sorted((s for s in signatures if s), key=lambda s: (len(s), s))):
@@ -1274,7 +1378,8 @@ def _strip_layout(chain):
 
 
 def _show_simplicial(model, name, output_dir, title, image_format,
-                     assignment=None, revision=None, font_scale=1.0) -> str:
+                     assignment=None, revision=None, font_scale=1.0,
+                     transparent=False) -> str:
     """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
 
     ``font_scale`` multiplies every label size (and the marker area, so the
@@ -1409,9 +1514,9 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             ax.annotate(
                 fname, (cx, cy), xytext=lift, textcoords="offset points",
                 ha="center", va="bottom" if len(pts) == 2 else "center",
-                fontsize=10 * font_scale, color="#9aa6b5" if dead else "#222222", zorder=5,
-                bbox=dict(boxstyle="round,pad=0.25", facecolor="white",
-                          edgecolor="#aab2bf" if dead else col,
+                fontsize=10 * font_scale, color=ink()["lose"] if dead else ink()["text"], zorder=5,
+                bbox=dict(boxstyle="round,pad=0.25", facecolor=ink()["pad"],
+                          edgecolor=ink()["gone"] if dead else col,
                           linewidth=0.8, alpha=0.9),
             )
 
@@ -1421,7 +1526,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     # obvious, so every candidate's shared face is drawn with its size: the
     # winner shares a whole edge, the loser touches at a single point, and the
     # maximum is legible without reading the formula.
-    GONE, WIN, LOSE = "#aab2bf", "#c0432b", "#9aa6b5"
+    GONE, WIN, LOSE = ink()["gone"], ink()["win"], ink()["lose"]
     if revision is not None:
         def _centroid(nodes):
             pts = [pos[n] for n in nodes if n in pos]
@@ -1437,7 +1542,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
             # White first to mute the belief colour, then hatching so the
             # "this is gone" still reads in one-ink printing and in greyscale.
-            ax.add_patch(Polygon(pts, closed=True, facecolor="white",
+            ax.add_patch(Polygon(pts, closed=True, facecolor=ink()["pad"],
                                  edgecolor="none", alpha=0.76, zorder=2.1))
             ax.add_patch(Polygon(pts, closed=True, facecolor="none",
                                  edgecolor=GONE, hatch="//////",
@@ -1469,7 +1574,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
                 textcoords="offset points", ha="center", va="bottom",
                 fontsize=7.5 * font_scale, color=col, fontweight="bold" if won else "normal",
                 zorder=6,
-                bbox=dict(boxstyle="round,pad=0.22", facecolor="white",
+                bbox=dict(boxstyle="round,pad=0.22", facecolor=ink()["pad"],
                           edgecolor=col, linewidth=0.8, alpha=0.95),
             )
 
@@ -1486,13 +1591,13 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     # The 1-skeleton, faintly.
     for (u, v) in edge_pairs:
         (x0, y0), (x1, y1) = pos[u], pos[v]
-        ax.plot([x0, x1], [y0, y1], color="#999999", linewidth=0.6, zorder=2)
+        ax.plot([x0, x1], [y0, y1], color=ink()["faint"], linewidth=0.6, zorder=2)
 
     # Nodes, coloured and labelled by agent.
     for node in model.nodes:
         x, y = pos[node]
         ax.scatter([x], [y], s=340 * font_scale ** 2, color=colors[node.agent],
-                   edgecolor="#222", linewidth=1.0, zorder=3)
+                   edgecolor=ink()["marker_edge"], linewidth=1.0, zorder=3)
         ax.annotate(f"{node.agent}", (x, y), color="white", ha="center", va="center",
                     fontsize=10 * font_scale, fontweight="bold", zorder=4)
         # A directly-defined complex names its vertices: show the name just
@@ -1502,7 +1607,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
         if vname:
             ax.annotate(str(vname), (x, y), xytext=(0, 14 * font_scale),
                         textcoords="offset points", ha="center", va="bottom",
-                        fontsize=10 * font_scale, color="#222222", zorder=4)
+                        fontsize=10 * font_scale, color=ink()["text"], zorder=4)
         if assignment is not None:
             # The observed literals sit just below the marker (offset in POINTS,
             # not data units, so the gap survives any zoom/layout scale). Nodes
@@ -1512,7 +1617,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
                 ax.annotate(
                     "(" + ", ".join(literals) + ")", (x, y),
                     xytext=(0, -19 * font_scale), textcoords="offset points",
-                    ha="center", va="top", fontsize=9.5 * font_scale, color="#222222", zorder=4,
+                    ha="center", va="top", fontsize=9.5 * font_scale, color=ink()["text"], zorder=4,
                 )
 
     # Legend: agents + belief signatures.
@@ -1522,7 +1627,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
         label = signature_label(model, sig, agents)
         handles.append(Patch(facecolor=col, alpha=0.5, label=label))
     if revision is not None:
-        handles.append(Patch(facecolor="white", edgecolor=GONE, hatch="///",
+        handles.append(Patch(facecolor=ink()["pad"], edgecolor=GONE, hatch="///",
                              label="eliminated"))
         handles.append(Line2D([0], [0], color=WIN, linewidth=4,
                               label=f"R_{revision.agent}(X): max shared face"))
@@ -1534,8 +1639,9 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     ncol = min(len(handles), 4)
     fig.legend(handles=handles, loc="lower center",
                bbox_to_anchor=(0.5, legend_y0 / height), ncol=ncol, fontsize=9 * font_scale,
-               frameon=False)
-    fig.text(0.5, caption_y / height, title, ha="center", va="bottom", fontsize=12)
+               frameon=False, labelcolor=ink()["text"])
+    fig.text(0.5, caption_y / height, title, ha="center", va="bottom", fontsize=12,
+             color=ink()["text"])
     ax.set_axis_off()
     ax.set_aspect("equal")
     # The axes take everything above the strip; bbox_inches="tight" (savefig)
@@ -1545,7 +1651,8 @@ def _show_simplicial(model, name, output_dir, title, image_format,
 
     os.makedirs(output_dir, exist_ok=True)
     image_path = os.path.join(output_dir, f"{os.path.basename(name)}.{image_format}")
-    fig.savefig(image_path, dpi=130, bbox_inches="tight", pad_inches=0.15)
+    fig.savefig(image_path, dpi=130, bbox_inches="tight", pad_inches=0.15,
+                transparent=transparent)
     plt.close(fig)
     return image_path
 
@@ -1689,7 +1796,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
         traces.append(go.Scatter3d(
             x=[c[0] for c in cents], y=[c[1] for c in cents], z=[c[2] for c in cents],
             mode="text", text=[n for _, n in named], textposition="middle center",
-            textfont=dict(size=13 * font_scale, color="#222222"),
+            textfont=dict(size=13 * font_scale, color=ink()["text"]),
             name="facetas", hoverinfo="skip", showlegend=False,
         ))
 
@@ -1701,7 +1808,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
         ey += [y0, y1, None]
         ez += [z0, z1, None]
     traces.append(go.Scatter3d(x=ex, y=ey, z=ez, mode="lines",
-                               line=dict(color="#999999", width=1),
+                               line=dict(color=ink()["faint"], width=1),
                                name="1-skeleton", hoverinfo="skip", showlegend=False))
 
     # Nodes, one trace per agent (coloured, labelled by agent, class on hover).
@@ -1730,7 +1837,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
         traces.append(go.Scatter3d(
             x=[pos[nd][0] for nd in ns], y=[pos[nd][1] for nd in ns], z=[pos[nd][2] for nd in ns],
             mode="markers+text",
-            marker=dict(size=6, color=colors[a], line=dict(color="#222", width=1)),
+            marker=dict(size=6, color=colors[a], line=dict(color=ink()["marker_edge"], width=1)),
             text=[_txt(nd) for nd in ns], textposition="top center",
             hovertext=[_hover(nd) for nd in ns], hoverinfo="text",
             name=f"agent {a}", legendgroup=f"agent {a}",
@@ -1740,10 +1847,22 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
     fig.update_layout(
         title=title, showlegend=True,
         # No axes: the coordinates are a layout artefact and carry no meaning.
-        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)),
+        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
+                   bgcolor=ink()["page"]),
         margin=dict(l=0, r=0, t=40, b=0),
+        # The page's ink: white page and dark text by default, the GUI's
+        # navy and light text under the dark theme (see ``ink``).
+        paper_bgcolor=ink()["page"], plot_bgcolor=ink()["page"],
+        font=dict(color=ink()["text"]), legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{os.path.basename(name)}.html")
     fig.write_html(path, include_plotlyjs=True)  # self-contained, works offline
+    # The browser paints the page's own margin: give it the same colour as
+    # the figure, so an embedded dark page has no white rim.
+    with open(path, encoding="utf-8") as fh:
+        html = fh.read()
+    html = html.replace("<head>", f'<head><style>html,body{{margin:0;background:{ink()["page"]}}}</style>', 1)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
     return path

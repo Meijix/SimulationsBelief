@@ -9,36 +9,49 @@ directly, with no API and no serialization), it runs in the browser (the 3D
 plotly figures are already HTML and are embedded as they are), and a single
 page is enough.
 
-VISUAL SYSTEM. Navy and lime, nothing decorative: the palette comes from the
-project poster ("La geometría de una creencia falsa… y por qué importa",
-Coloquio de Lenguajes, UNAM 2026), the drawings do not (2026-10-11: the star
-field, the rainbow rings and the seal were removed so that the only things
-on screen are data and controls).
+VISUAL SYSTEM. An instrument, not a dashboard (2026-11-13, "aurora"; it
+replaced the espresso-and-cyan desk, which in turn had replaced a
+navy-and-lime template). Navy page, flat navy panels with hairlines and
+square corners, one vibrant violet, three aurora hues for status.
 
-    * Background: plain near-black navy (``POSTER["page"]``). Surfaces
-      (cards, header) are a slightly lighter navy with a translucent white
-      border; there are NO grey shadows, the only "elevation" is the
-      lime-green halo of the preview (the live element).
-    * Typography: Inter for the interface, JetBrains Mono for formulas and
-      diagrams (Google Fonts). Three fixed levels: the card EYEBROW in muted
-      slate small caps with wide tracking (``_card_title``), content in
-      white/light grey, and text-xs grey notes.
-    * Color: ONE accent, the poster's LIME GREEN, for everything that is
-      action or good news -- the "Correr pipeline" button, the rule under
-      the header, the preview halo, "valid", what a closure completed. Two
-      status hues besides it (``POSTER``): amber = to be completed / stale,
-      rose = rejected / error. Anything that is a label rather than a
-      verdict (the logic, "propio", information) is slate. Each agent keeps
-      in its chips the SAME Okabe-Ito color as its edges in the figures
-      (``agent_color_map``): that is data, not chrome, and the thread between
-      editor and results does not change.
-    * Header: a wrapping flex row (CSS ``.poster-header``): title block on
-      the left, controls on the right; on narrow windows the tagline hides
-      first and then the controls drop below the title, never overlapping.
-    * Figures: each one on a light "sheet" (the Graphviz PNGs have a white
-      background) with an italic caption below, paper-figure style, limited
-      in height and expandable to full screen with one click (lightbox).
-    * Run metrics as stat tiles (big number + label), not as a text log.
+    * Background: navy (``POSTER["page"]``); panels are a lighter navy with
+      a hairline border; no shadows, no gradients, no glows, no animation.
+      The live preview is told apart by a thin violet rule on top.
+    * Figures are rendered TRANSPARENT and in the DARK ink theme
+      (``adapters.base.show`` wraps every render in
+      ``visualization.ink_theme("dark")``: light text, outlines and pads,
+      agent colours unchanged), so they sit straight on the navy panels,
+      one per row, a serif caption below ("Figure 2a. Proper model, ...")
+      and a hairline before the next. The 3-D Plotly page paints the same
+      navy. The CLI scripts and the paper keep the black-on-white ink.
+    * Typography: IBM Plex Sans for the interface, IBM Plex Mono for
+      formulas, diagrams, the run's numbers and the provenance lines, Source
+      Serif 4 for the title and the captions. Panel titles are short sentence-case labels in
+      muted ink; buttons and tabs are sentence case.
+    * Color: violet for the Run button, the active document's underline,
+      the active tab, the preview rule and the accent text (text buttons);
+      what sits on a violet fill is navy (``POSTER["on_accent"]``). Verdicts
+      are said in words with one small coloured dot (``theme.status``):
+      green = valid / done, amber = to be completed, rose = rejected. Agents
+      keep the same Okabe-Ito colours (a square swatch) in their chips as in
+      the figures: that is data, not chrome.
+    * Icons accompany words, never replace them: every tab, button and
+      document carries a small Material glyph next to its label (the kind
+      of a document, play for a run, the bin of a delete); the only
+      icon-only controls are the "+" of an add field and the cross that
+      closes a document. The run's numbers are a compact mono table, not
+      tiles.
+    * Header: a compact toolbar: the title in the serif, the theme toggle,
+      the example library and the Run button; a wrapping
+      flex row (CSS ``.poster-header``) so the controls drop below the title
+      on narrow windows. A footer line in mono names the authors and the
+      repository.
+    * Two themes, dark (the default) and light, switched from the header
+      without a reload: the chrome hangs from CSS variables under Quasar's
+      body class, and the figures are redrawn in the matching ink
+      (``Page.set_theme``). Figures that LEAVE the page -- the zip from the
+      Figures panel, the figures of a saved workspace -- are always printed
+      light on white as PNG (``adapters.print_light``).
 
 SEVERAL MODELS AT ONCE. The page is a workspace: the MODELS BAR (under the
 header) lists the open documents; one is active and is the one shown by the
@@ -221,8 +234,14 @@ _log.addHandler(_CrashLogHandler())
 # --------------------------------------------------------------------------- #
 @ui.page("/")
 def index() -> None:
-    apply_theme()
+    # The theme is remembered across sessions (app.storage.general is the
+    # server's own store, no secret needed; this is a single-user tool).
+    theme = app.storage.general.get("theme", "dark")
+    if theme not in ("dark", "light"):
+        theme = "dark"
     page = Page()
+    page.theme = theme
+    page.dark = apply_theme(theme)
     page.header = HeaderView(page)
     page.docs_bar = DocsBarView(page)
     page.editor = EditorView(page)
@@ -252,7 +271,7 @@ def index() -> None:
         ):
             with ui.tabs().classes("w-full").props(
                 "dense no-caps align=justify indicator-color=primary "
-                "active-color=primary"
+                "active-color=secondary"
             ) as left_tabs:
                 tab_model = ui.tab("modelo", label="Model", icon="tune")
                 tab_atoms = ui.tab("atomos", label="Atoms", icon="label")
@@ -293,10 +312,21 @@ def index() -> None:
     # ---- Comparison: 2 to 4 models side by side, full width ---------------- #
     page.compare.build()
 
+    # ---- Footer: provenance, like the status bar of a tool ------------------ #
+    footer()
+
     # First paint: the thesis example with its preview, and the empty state in
     # the results area.
     page.ws.active = page.ws.new_doc("Model 1", blank_state())["id"]
     page.load_example("tesis")   # also paints the bar, the preview and the empty state
+
+
+def footer() -> None:
+    """One mono line at the end of the page: the authors and the repository."""
+    with ui.element("div").classes("w-full px-4 py-2 mt-2 poster-footer"):
+        ui.label("Natalia Mejía and Philip Sink")
+        ui.link("SimulationsBelief", "https://github.com/Meijix/SimulationsBelief",
+                new_tab=True)
 
 
 def main() -> None:

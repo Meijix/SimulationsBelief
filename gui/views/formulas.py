@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import evaluate_state
-from theme import CARD, FLAT, FORMULA_HELP, card_title, chip
+from theme import CARD, FLAT, FORMULA_HELP, panel_head, chip
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -22,11 +22,11 @@ class FormulasView:
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT):
-            card_title("Evaluate formula")
+            panel_head("Evaluate formula")
             self.input = ui.input(
                 "formula", placeholder="B_a p & ~K_a p",
             ).props("dense outlined input-class=font-mono").classes("w-full")
-            self.help = ui.markdown(FORMULA_HELP["kb"]).classes("text-xs text-grey-5")
+            self.help = ui.markdown(FORMULA_HELP["kb"]).classes("text-xs muted")
             ui.button("Evaluate", icon="calculate", on_click=lambda: self.evaluate()) \
                 .props("outline dense")
             self.input.on("keydown.enter", lambda: self.evaluate())
@@ -47,7 +47,7 @@ class FormulasView:
         except ValueError as exc:
             with self.out:
                 ui.html(f"<pre style='white-space:pre-wrap' "
-                        f"class='text-pink-3 text-xs'>{exc}</pre>")
+                        f"class='bad-text text-xs'>{exc}</pre>")
             return
         holds = sum(1 for _, ok in rows if ok)
         with self.out:
@@ -59,4 +59,4 @@ class FormulasView:
                 f"Valid in the model (holds in every facet)." if simplicial and holds == len(rows)
                 else "Valid in the model (holds in every world)." if holds == len(rows)
                 else f"Holds in {holds} of {len(rows)} {unit}."
-            ).classes("text-xs text-grey-5")
+            ).classes("text-xs muted")

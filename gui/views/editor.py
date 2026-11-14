@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import KINDS, agent_color_map, simplicial_state_from_editor
-from theme import CARD, FLAT, card_title, take
+from theme import CARD, FLAT, panel_head, swatch, take
 
 # Label sizes offered for the complex figures: the factor is what
 # ``visualization.show(font_scale=...)`` receives, the text is what the user
@@ -58,7 +58,7 @@ class EditorView:
         page = self.page
         # ---- Identifiers ------------------------------------------------- #
         with ui.card().classes(CARD).props(FLAT) as self.ident_card:
-            card_title("Agents and worlds")
+            panel_head("Agents and worlds")
             # Document name: the one shown in the models bar and in the
             # comparison panels.
             self.name_in = ui.input("model name") \
@@ -76,7 +76,7 @@ class EditorView:
                 self.agent_input = ui.input("new agent") \
                     .props("dense outlined").classes("grow")
                 ui.button(icon="add", on_click=lambda: self.add_agent()) \
-                    .props("round dense")
+                    .props("flat dense").classes("add-btn")
             self.agent_chips = ui.row().classes("w-full gap-2")
             self.agent_input.on("keydown.enter", lambda: self.add_agent())
 
@@ -88,7 +88,7 @@ class EditorView:
                     self.world_input = ui.input("new world") \
                         .props("dense outlined").classes("grow")
                     ui.button(icon="add", on_click=lambda: self.add_world()) \
-                        .props("round dense")
+                        .props("flat dense").classes("add-btn")
                 self.world_chips = ui.row().classes("w-full gap-2")
                 self.world_input.on("keydown.enter", lambda: self.add_world())
 
@@ -329,7 +329,7 @@ class EditorView:
         with self.world_chips:
             for name in state["worlds"]:
                 ui.chip(name, removable=True, icon="public",
-                        color="rgba(255,255,255,.14)", text_color="white",
+                        color="var(--p-chip)", text_color="var(--p-ink)",
                         on_value_change=lambda e, n=name: self.remove_world(n))
 
     def add_agent(self) -> None:
@@ -410,20 +410,26 @@ class EditorView:
             self.page.simplicial.paint(self.editor_box)
             return
         colors = agent_color_map(state["agents"])
+        kind = state["kind"]
         self.editor_box.clear()
-        with self.editor_box:
+        with self.editor_box, ui.card().classes(CARD).props(FLAT):
+            # One panel for the whole relation, one SECTION per agent (a
+            # hairline between them), instead of a stack of cards: the
+            # agents are rows of one table, not separate documents.
+            panel_head({"kb": "Knowledge classes and beliefs",
+                        "knowledge": "Knowledge classes",
+                        "belief": "Belief relation"}[kind])
             for agent in state["agents"]:
                 rows = state["per_agent"].setdefault(agent, [])
-                with ui.card().classes(CARD).props(FLAT):
-                    # The color dot repeats the agent's color in the figures
-                    # -- same convention as its chips.
-                    with ui.row().classes("items-center gap-2"):
-                        ui.element("span").style(
-                            f"width:10px;height:10px;border-radius:9999px;"
-                            f"background:{colors[agent]}"
-                        )
-                        ui.label(f"Agent {agent}").classes("font-semibold")
-                    kind = state["kind"]
+                with ui.column().classes("section gap-1"):
+                    # The colour swatch repeats the agent's colour in the
+                    # figures -- same convention as its chips.
+                    with ui.row().classes("items-center gap-2 mb-1"):
+                        swatch(colors[agent])
+                        ui.label(f"Agent {agent}").classes("font-medium")
+                        ui.label(f"{len(rows)} " + ("row" if kind == "belief" else "class")
+                                 + ("" if len(rows) == 1 else ("s" if kind == "belief" else "es"))) \
+                            .classes("text-xs muted")
                     for i, row in enumerate(rows):
                         with ui.row().classes("w-full no-wrap items-center gap-2"):
                             # First column: the knowledge class, or in belief
@@ -453,13 +459,15 @@ class EditorView:
                                 on_click=lambda _, a=agent, k=i: self.remove_row(a, k),
                             ).props("flat dense color=grey")
                     ui.button(
-                        "add row" if kind == "belief" else "add class",
-                        icon="add", on_click=lambda _, a=agent: self.add_row(a),
-                    ).props("flat dense")
-                    ui.markdown({
-                        "kb": "Worlds outside every class remain singleton classes.",
-                        "knowledge": "Worlds outside every class remain singleton "
-                                     "classes (the agent tells them apart).",
-                        "belief": "Worlds without a row believe nothing: invalid under KD45, "
-                                  "defunct belief under K45.",
-                    }[kind]).classes("text-xs text-grey-5")
+                        "add row" if kind == "belief" else "add class", icon="add",
+                        on_click=lambda _, a=agent: self.add_row(a),
+                    ).props("flat dense", remove="color").classes("link-btn")
+            if not state["agents"]:
+                ui.label("Add the agents first.").classes("muted")
+            ui.markdown({
+                "kb": "Worlds outside every class remain singleton classes.",
+                "knowledge": "Worlds outside every class remain singleton "
+                             "classes (the agent tells them apart).",
+                "belief": "Worlds without a row believe nothing: invalid under KD45, "
+                          "defunct belief under K45.",
+            }[kind]).classes("text-xs muted mt-2")

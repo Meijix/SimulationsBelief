@@ -27,6 +27,7 @@ from .base import (
     _fname,
     _geometric_ok,
     _hasse_caption,
+    hasse_show,
     blank_state,
     show,
 )
@@ -355,8 +356,7 @@ def diagnose_general_frame(agents, worlds, seed, frame, kind: str) -> StepReport
         added = set(frame.relations[agent]) - set(seed.get(agent, set()))
         if added:
             step.completed.append(
-                f"{what} of {agent!r}: the {closure} closure added "
-                f"{len(added)} edge(s) — {_fmt_edges(added)}"
+                f"{what}, {agent}: {closure} closure added {len(added)} edge(s): {_fmt_edges(added)}"
             )
     for agent in sorted(agents, key=str):
         if kind == "knowledge":
@@ -364,16 +364,14 @@ def diagnose_general_frame(agents, worlds, seed, frame, kind: str) -> StepReport
                        if frame.successors(agent, w) == {w}]
             if singles:
                 step.missing.append(
-                    f"{agent!r} distinguishes {len(singles)} world(s) separately "
-                    f"({', '.join(map(str, singles))}): they were in no drawn "
-                    "class, so they became singleton classes"
+                    f"{agent}: {', '.join(map(str, singles))} in no class → singleton classes"
                 )
         else:
             dead = sorted(frame.dead_ends()[agent], key=str)
             if dead:
                 step.missing.append(
-                    f"{agent!r} believes nothing at {', '.join(map(str, dead))}: "
-                    "under K45 that is a defunct belief (Q = ∅), it believes everything, ⊥ included"
+                    f"{agent}: no belief at {', '.join(map(str, dead))} → defunct (Q = ∅, K45): "
+                    "believes everything, ⊥ included"
                 )
     return step
 
@@ -400,8 +398,7 @@ def diagnose_general(
         added_k = set(kb.knowledge.relations[agent]) - seeded_k
         if added_k:
             step.completed.append(
-                f"knowledge of {agent!r}: the S5 closure added "
-                f"{len(added_k)} edge(s) — {_fmt_edges(added_k)}"
+                f"knowledge, {agent}: S5 closure added {len(added_k)} edge(s): {_fmt_edges(added_k)}"
             )
         # Which knowledge classes had no belief drawn at all.
         seeded_b = set((belief_seed or {}).get(agent, set()))
@@ -411,13 +408,11 @@ def diagnose_general(
             worlds_txt = "{" + ", ".join(sorted(map(str, cls))) + "}"
             if believe_all_when_silent:
                 step.completed.append(
-                    f"belief of {agent!r} in {worlds_txt}: none was marked, "
-                    f"completed with Q = R (believes exactly what it knows)"
+                    f"belief, {agent}, class {worlds_txt}: none marked → Q = R"
                 )
             else:
                 step.completed.append(
-                    f"belief of {agent!r} in {worlds_txt}: none was marked "
-                    f"and the K45 opt-in is on, so it was left defunct (Q = ∅)"
+                    f"belief, {agent}, class {worlds_txt}: none marked → defunct, Q = ∅ (K45 opt-in)"
                 )
     # Worlds nobody put in a class become singleton classes -- easy to miss.
     for agent in sorted(agents, key=str):
@@ -427,9 +422,7 @@ def diagnose_general(
         ]
         if singles:
             step.missing.append(
-                f"{agent!r} distinguishes {len(singles)} world(s) separately "
-                f"({', '.join(map(str, singles))}): they were in no drawn "
-                f"class, so they became singleton classes"
+                f"{agent}: {', '.join(map(str, singles))} in no class → singleton classes"
             )
     return step
 
@@ -438,9 +431,7 @@ def diagnose_proper(kb, proper) -> StepReport:
     """Report whether copies were needed, and which agent was skewed and why."""
     step = StepReport("2 · Proper model (copies + skew)")
     if not proper.projection or len(proper.worlds) == len(kb.worlds):
-        step.completed.append(
-            "the model was already proper: nothing needed copying"
-        )
+        step.completed.append("was already proper: no copies")
         return step
     copies = len(proper.worlds) // max(len(kb.worlds), 1)
     # A KnowledgeBeliefFrame carries two relation families, a plain S5
@@ -451,12 +442,10 @@ def diagnose_proper(kb, proper) -> StepReport:
     )
     cheapest = cheapest_distinguished_agent(*families, agents=kb.agents)
     step.completed.append(
-        f"it was not proper: {copies} copies were created "
-        f"({len(kb.worlds)} → {len(proper.worlds)} worlds), bisimilar to the original"
+        f"not proper: {copies} copies, {len(kb.worlds)} → {len(proper.worlds)} worlds (bisimilar)"
     )
     step.completed.append(
-        f"distinguished agent {cheapest!r}: it has the fewest non-reflexive edges, "
-        f"so fewer edges cross between copies and the figure stays cleaner"
+        f"distinguished agent: {cheapest} (fewest non-reflexive edges)"
     )
     return step
 
@@ -465,13 +454,11 @@ def diagnose_simplicial(proper, sm, valuation) -> StepReport:
     """Report the translation's shape, and where a valuation is not representable."""
     step = StepReport("3 · Simplicial model (worlds → facets)")
     step.completed.append(
-        f"each world became a facet: {len(proper.worlds)} worlds → "
-        f"{len(sm.facets)} facets, {len(sm.nodes)} nodes"
+        f"{len(proper.worlds)} worlds → {len(sm.facets)} facets, {len(sm.nodes)} nodes"
     )
     if not valuation:
         step.missing.append(
-            "no atoms declared: the figures label neither worlds nor vertices, "
-            "and the formula evaluator is disabled"
+            "no atoms declared: no literals in the figures, formula evaluator off"
         )
         return step
     # NU: an atom true at a world that NO perspective observes is not
@@ -490,9 +477,8 @@ def diagnose_simplicial(proper, sm, valuation) -> StepReport:
     for atom, worlds in by_atom.items():
         shown = ", ".join(worlds[:8]) + (f" … (+{len(worlds) - 8})" if len(worlds) > 8 else "")
         step.missing.append(
-            f"atom {atom!r} is true at {len(worlds)} world(s) where no "
-            f"agent observes it ({shown}): the NU schema (P → ∨_a B_a P) fails there, "
-            f"so that truth is not representable in the vertex-based semantics"
+            f"NU fails for {atom} at {len(worlds)} world(s) ({shown}): true there, "
+            "observed by no agent; not representable in the vertex semantics"
         )
     return step
 
@@ -632,9 +618,8 @@ def run_pipeline_from_seeds(
     if kind == "belief":
         # No KD45 -> S5 conversion exists (examples3.py makes the point): a
         # pure-belief model has no proper form and no simplicial translation.
-        why = ("properness and the simplicial translation need S5 "
-               "knowledge; a belief-only model ends at step 1. To "
-               "translate it, switch to “knowledge and belief” and give the classes")
+        why = ("needs S5 knowledge: a belief-only model stops at step 1 "
+               "(to translate it, use “knowledge and belief” and give the classes)")
         for name in ("2 · Proper model (copies + skew)",
                      "3 · Simplicial model (worlds → facets)"):
             step = StepReport(name)
@@ -744,9 +729,9 @@ def run_pipeline_from_seeds(
     lattice = hasse.face_lattice(sm, include_empty=False, assignment=lifted)
     result.figures.append((
         _hasse_caption("Fig. 4", hasse_full),
-        Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
+        Path(hasse_show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
                         output_dir=str(OUTPUTS), rankdir="BT",
-                        facets_and_vertices=not hasse_full, image_format=FIGURE_FORMAT)),
+                        facets_and_vertices=not hasse_full)),
     ))
     result.text_diagrams.append(("Face lattice", hasse.visualize(lattice)))
 

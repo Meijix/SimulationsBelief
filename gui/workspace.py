@@ -199,22 +199,26 @@ class Workspace:
     # Persistence (GitHub #18)
     # ------------------------------------------------------------------ #
     def save(self, name: str, doc_ids: Optional[List[str]] = None,
-             include_actions: bool = True, include_figures: bool = False) -> Tuple[Path, int]:
+             include_actions: bool = True, include_figures: bool = False,
+             printed: Optional[Dict[str, tuple]] = None) -> Tuple[Path, int]:
         """Write the chosen documents (default: all) to ``saved_models/<name>.json``.
 
         ``include_figures`` also copies, for every chosen document that has a
         finished run, the figures of that run into ``saved_models/<name>/<model>/``
         -- one folder per model, so the inputs and the results of an action
-        never share one (see :meth:`export_figures`). Returns the JSON path
-        and how many figure files were copied.
+        never share one (see :meth:`export_figures`). ``printed`` maps a
+        document id to ``(result, tag)``: a result rendered for print (light
+        ink, PNG) that is copied INSTEAD of the on-screen run's figures.
+        Returns the JSON path and how many figure files were copied.
         """
         docs = [d for d in self.docs if doc_ids is None or d["id"] in doc_ids]
         path = save_workspace(docs, name, self.actions if include_actions else [])
-        copied = self.export_figures(path.with_suffix(""), docs) if include_figures else 0
+        copied = self.export_figures(path.with_suffix(""), docs, printed) if include_figures else 0
         return path, copied
 
     @staticmethod
-    def export_figures(root: Path, docs: List[dict]) -> int:
+    def export_figures(root: Path, docs: List[dict],
+                       printed: Optional[Dict[str, tuple]] = None) -> int:
         """Copy the last-run figures of ``docs`` under ``root/<model name>/``.
 
         The files in ``outputs/`` are named by SESSION document id
@@ -223,6 +227,8 @@ class Workspace:
         ``README.md`` per folder that maps each file to its caption. Models
         without a finished run contribute nothing; two models with the same
         name get the document id appended so they never share a folder.
+        With ``printed`` (``doc id -> (result, tag)``), that result's files
+        are copied for the document instead of its on-screen run's.
         Returns the number of files copied.
         """
         copied = 0
@@ -231,7 +237,9 @@ class Workspace:
             outcome = d.get("outcome")
             if not outcome or outcome.get("status") != "ok":
                 continue
-            out = outcome["out"]
+            out, tag = outcome["out"], d["id"]
+            if printed and d["id"] in printed:
+                out, tag = printed[d["id"]]
             folder_name = _slug(d["name"])
             if folder_name in taken:
                 folder_name = f"{folder_name}-{d['id']}"
@@ -251,7 +259,7 @@ class Workspace:
                 src = Path(src)
                 if not src.exists():
                     continue
-                target = folder / _stable_name(src.name, d["id"])
+                target = folder / _stable_name(src.name, tag)
                 shutil.copy2(src, target)
                 copied += 1
                 lines.append(f"| `{target.name}` | {caption} |")

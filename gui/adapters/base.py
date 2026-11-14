@@ -9,8 +9,10 @@ and ``python gui/app.py`` working from any directory.
 """
 from __future__ import annotations
 
+import contextlib
 import copy
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -24,22 +26,85 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from visualization import PALETTE, show as _show  # noqa: E402
+import hasse  # noqa: E402
+from visualization import PALETTE, ink_theme, show as _show  # noqa: E402
 
 
 # The GUI's figures are SVG: crisp at any zoom (retina, the lightbox), a
 # fraction of the PNG size, and sized by the browser from the file's own
 # width/height so the layout can tell tall figures from wide ones without
-# decoding pixels. The CLI scripts keep their PNG default; only this wrapper
-# changes it, and an explicit image_format still wins. (The 3-D figure is
-# HTML either way.)
+# decoding pixels. They are also TRANSPARENT and drawn in the DARK ink theme
+# (``FIGURE_INK``), so they sit straight on the GUI's navy page. The CLI
+# scripts keep their PNG, white-background, light-ink defaults; only these
+# wrappers change them, and explicit arguments still win. (The 3-D figure is
+# HTML either way; its page takes the theme's colour.)
 FIGURE_FORMAT = "svg"
+FIGURE_TRANSPARENT = True
+# The ink of the figures: "dark" draws text, worlds and pads for a dark page,
+# so the transparent figures sit on the GUI's navy without a plate (see
+# ``visualization.INK_THEMES``); "light" is the paper's black-on-white. The
+# page's theme decides which one (``Page.ink``).
+FIGURE_INK = "dark"
+
+# The figure style of the CURRENT render, per thread. The adapters call
+# ``show`` without format or ink; the view that starts a render sets them
+# around it (``styled`` / ``print_light`` run inside ``run.io_bound``, so
+# the thread-local travels with the render and two renders in different
+# inks never see each other's).
+_STYLE = threading.local()
+
+
+@contextlib.contextmanager
+def figure_style(ink: str | None = None, image_format: str | None = None,
+                 transparent: bool | None = None):
+    """Draw with these figure defaults inside the block, in this thread only."""
+    previous = (getattr(_STYLE, "ink", None), getattr(_STYLE, "image_format", None),
+                getattr(_STYLE, "transparent", None))
+    _STYLE.ink, _STYLE.image_format, _STYLE.transparent = ink, image_format, transparent
+    try:
+        yield
+    finally:
+        _STYLE.ink, _STYLE.image_format, _STYLE.transparent = previous
+
+
+def _style(attr: str, default):
+    value = getattr(_STYLE, attr, None)
+    return default if value is None else value
+
+
+def styled(ink: str, fn, *args, **kwargs):
+    """Run ``fn`` (a render) with its figures in ``ink``: the ``io_bound`` target."""
+    with figure_style(ink=ink):
+        return fn(*args, **kwargs)
+
+
+def print_light(fn, *args, **kwargs):
+    """Run ``fn`` printing its figures: light ink, white background, PNG.
+
+    What leaves the GUI (the zip of figures, the figures of a saved
+    workspace) is drawn this way whatever the page's theme, so it prints
+    and pastes into a paper like the CLI's own output.
+    """
+    with figure_style(ink="light", image_format="png", transparent=False):
+        return fn(*args, **kwargs)
+
+
+def _figure_kwargs(kwargs: dict) -> dict:
+    kwargs.setdefault("image_format", _style("image_format", FIGURE_FORMAT))
+    kwargs.setdefault("transparent", _style("transparent", FIGURE_TRANSPARENT))
+    return kwargs
 
 
 def show(*args, **kwargs):
-    """``visualization.show`` with the GUI's figure format as the default."""
-    kwargs.setdefault("image_format", FIGURE_FORMAT)
-    return _show(*args, **kwargs)
+    """``visualization.show`` with the GUI's figure defaults (see ``figure_style``)."""
+    with ink_theme(_style("ink", FIGURE_INK)):
+        return _show(*args, **_figure_kwargs(kwargs))
+
+
+def hasse_show(*args, **kwargs):
+    """``hasse.show`` with the same figure defaults as :func:`show`."""
+    with ink_theme(_style("ink", FIGURE_INK)):
+        return hasse.show(*args, **_figure_kwargs(kwargs))
 
 
 def agent_color_map(agents: List[str]) -> Dict[str, str]:
@@ -127,9 +192,8 @@ def _geometric_ok(model) -> bool:
 
 def _dimension_note(model) -> str:
     n = len(model.agents)
-    return (f"with {n} agents each facet is a {n - 1}-simplex, which does not fit in 3D: "
-            "the geometric drawing and the 3D view are omitted; the complex is shown as an "
-            "incidence diagram (each facet is a point joined to its vertices), "
+    return (f"{n} agents: each facet is a {n - 1}-simplex, no faithful drawing in 3D; "
+            "shown as incidence diagram (facet = point joined to its vertices), "
             "face lattice and text")
 
 

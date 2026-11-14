@@ -28,8 +28,8 @@ from typing import TYPE_CHECKING
 
 from nicegui import run as io, ui
 
-from adapters import preview_state, state_problem
-from theme import CARD, FLAT, POSTER, card_title, chip, figure_img, tint
+from adapters import preview_state, state_problem, styled
+from theme import CARD, FLAT, chip, figure_img, panel_head, status
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -60,16 +60,17 @@ class PreviewView:
         return hashlib.sha1(json.dumps(st, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
     def _card(self) -> None:
-        """Build the preview card once (the only card WITH elevation: lime halo)."""
+        """Build the preview card once (the only card with a rule in the accent)."""
         if self._body is not None:
             return
         with self.box, ui.card().classes(CARD + " poster-live").props(FLAT):
-            with ui.row().classes("w-full items-center gap-2"):
-                ui.element("span").classes("pulse-dot")
-                card_title("Preview · the model as entered")
-                ui.space()
+            with panel_head("Live preview · model as entered"):
                 self._badge = ui.row().classes("items-center")
             self._body = ui.column().classes("w-full gap-2")
+
+    def clear_cache(self) -> None:
+        """Forget the drawn previews (they were drawn in another ink)."""
+        self._cache.clear()
 
     def update(self) -> None:
         """Mark the model as edited and schedule a (debounced) re-render."""
@@ -94,7 +95,7 @@ class PreviewView:
         """Draw the model exactly as entered (no closures), off the event loop.
 
         The card header carries the pulsing "live" dot and a validity chip
-        (lime = already valid, amber = N conditions to be completed); the
+        (teal = already valid, ochre = N conditions to be completed); the
         figure shows exactly the drawn chips with what is missing dotted in
         red. A state inexpressible as seeds (overlapping classes) is shown
         as text.
@@ -111,18 +112,18 @@ class PreviewView:
             badge.clear()
             body.clear()
             with body:
-                ui.label(missing).classes("text-grey-5")
+                ui.label(missing).classes("muted")
             return
-        key = self._state_key(st)
+        key = self._state_key(st) + "_" + page.ink      # the figure's ink is part of the key
         if key not in self._cache:
             badge.clear()
             with badge:
-                ui.spinner(size="1.2em").style(f"color:{POSTER['lime']}")
+                ui.spinner(size="1.2em").style("color:var(--p-accent-ink)")
             try:
                 # Document id + state hash tag the file: two open models do
                 # not overwrite each other's preview, and two states of one
                 # model do not either (which is what makes the cache safe).
-                result = await io.io_bound(preview_state, st, f"{doc_id}_{key}")
+                result = await io.io_bound(styled, page.ink, preview_state, st, f"{doc_id}_{key}")
             except ValueError as exc:
                 result = str(exc)
             except Exception as exc:  # noqa: BLE001 -- the preview must never take the card down
@@ -148,15 +149,15 @@ class PreviewView:
         path, violations = result
         with badge:
             if violations:
-                chip(f"{len(violations)} to complete", "warn", icon="pending")
+                status(f"{len(violations)} to complete", "warn")
             else:
-                chip("valid", "ok", icon="check")
+                status("valid", "ok")
         with body:
             with ui.element("div").classes("w-full fig-frame"):
                 figure_img(path)
             if violations:
                 with ui.expansion("What the closures will complete") \
-                        .classes("w-full").style(f"color:{POSTER['yellow']}"):
+                        .classes("w-full").style("color:var(--p-warn)"):
                     for v in violations:
                         ui.label(v).classes("font-mono text-xs")
 
@@ -176,12 +177,9 @@ class PreviewView:
         if doc["outcome"] is None or not doc["dirty"]:
             return
         with self.stale_box, ui.row().classes(
-                "w-full items-center gap-3 px-4 py-2 rounded-xl no-wrap").style(
-                f"background:{tint(POSTER['yellow'], .10)};"
-                f"border:1px solid {tint(POSTER['yellow'], .45)}"):
-            ui.icon("history").style(f"color:{POSTER['yellow']}")
+                "w-full items-center gap-3 px-4 py-2 rounded no-wrap stale-strip"):
             ui.label("The figures below belong to an earlier version of the model.") \
-                .classes("text-sm grow").style(f"color:{POSTER['yellow']}")
+                .classes("text-sm grow")
             ui.button("Run again", icon="play_arrow",
                       on_click=lambda: page.results.run()) \
-                .props("outline dense").style(f"color:{POSTER['yellow']}")
+                .props("outline dense", remove="color")

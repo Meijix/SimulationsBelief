@@ -97,6 +97,7 @@ from visualization import (
     _open_file,
     _signature_colors,
     _write_and_run_dot,
+    ink,
     node_literals,
     signature_label,
 )
@@ -120,7 +121,7 @@ Face = FrozenSet[Vertex]
 EMPTY_FACE: Face = frozenset()
 
 # Neutral node style; the model-aware builder overrides these per face.
-FILL_DEFAULT = "#f4f6f8"
+FILL_DEFAULT = "#f4f6f8"   # light ink; the drawing reads visualization.ink()
 LINE_DEFAULT = "#555555"
 # Beyond this many faces the diagram is too dense to read, so we warn once.
 CROWDED = 300
@@ -586,14 +587,14 @@ def to_dot(
         # conventional reading of a Hasse diagram (bigger = higher). LR lays the
         # same ranks out as columns for lattices that are too wide to read flat.
         f"    rankdir={rankdir};",
-        '    fontname="Helvetica"; nodesep=0.30; ranksep=0.55; splines=true;',
+        f'    fontname="Helvetica"; fontcolor="{ink()["text"]}"; nodesep=0.30; ranksep=0.55; splines=true;',
         '    node [shape=box, style="rounded,filled", fontname="Helvetica",'
-        f' fontsize=10, margin="0.09,0.05", fillcolor="{FILL_DEFAULT}",'
-        f' color="{LINE_DEFAULT}", penwidth=1.1];',
+        f' fontsize=10, margin="0.09,0.05", fillcolor="{ink()["node_fill"]}",'
+        f' color="{ink()["node_edge"]}", fontcolor="{ink()["text"]}", penwidth=1.1];',
         # dir=none: in a Hasse diagram the order is read off the height, so an
         # arrowhead would be redundant clutter. The edges are still *directed* for
         # the layout engine -- that is what pins each face above its own faces.
-        '    edge [dir=none, color="#8a8a8a", penwidth=1.0];',
+        f'    edge [dir=none, color="{ink()["faint"]}", penwidth=1.0];',
     ]
 
     # The "dim k" axis labels are declared BEFORE the faces: dot orders the
@@ -608,7 +609,7 @@ def to_dot(
             axis_ids.append(axis)
             lines.append(
                 f'    {axis} [shape=plaintext, style="", label="dim {dim}",'
-                ' fontcolor="#888888", fontsize=10];'
+                f' fontcolor="{ink()["muted"]}", fontsize=10];'
             )
         if len(axis_ids) > 1:
             # Invisible chain keeps the labels lined up in a single column
@@ -674,7 +675,7 @@ def to_dot(
         # Tell the reader the middle rows were left out on purpose, so a
         # missing edge row is not mistaken for a missing edge.
         legend_cells.append(
-            '<TD><FONT COLOR="#555555" POINT-SIZE="11">vertices and facets only; '
+            f'<TD><FONT COLOR="{ink()["text_soft"]}" POINT-SIZE="11">vertices and facets only; '
             "a line = vertex lies in facet</FONT></TD>"
         )
     if legend_cells:
@@ -717,6 +718,7 @@ def show(
     dimension_axis: bool = True,
     legend: bool = True,
     assignment=None,
+    transparent: bool = False,
 ) -> str:
     """Draw the Hasse diagram to ``<output_dir>/<name>.<image_format>`` and return the path.
 
@@ -741,7 +743,8 @@ def show(
         legend=legend,
         assignment=assignment,
     )
-    path = _write_and_run_dot(source, name, image_format, output_dir)
+    path = _write_and_run_dot(source, name, image_format, output_dir,
+                              transparent=transparent)
     if open:
         _open_file(path)
     return path

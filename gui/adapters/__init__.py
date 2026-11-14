@@ -61,8 +61,11 @@ from .base import (  # noqa: F401
     _knowledge_only,
     agent_color_map,
     blank_state,
+    figure_style,
+    print_light,
     show,
     state_from_example,
+    styled,
 )
 from .examples import (  # noqa: F401
     EXAMPLES,

@@ -25,6 +25,7 @@ from .base import (
     _fname,
     _geometric_ok,
     _hasse_caption,
+    hasse_show,
     blank_state,
     show,
 )
@@ -106,14 +107,14 @@ def build_simplicial(
             # user filled it in. Not part of the model yet, not an error.
             facet_of[name] = members
             if notes is not None:
-                notes.append(f"facet '{name}' has no vertices yet: not drawn until it has some")
+                notes.append(f"facet {name}: no vertices yet, not drawn")
             continue
         facet_of[name] = members
         if members in name_of:
             if notes is not None:
                 notes.append(
-                    f"facets '{name_of[members]}' and '{name}' have the same vertices: "
-                    f"they are one facet, drawn once as '{name_of[members]}'"
+                    f"facets {name_of[members]} and {name}: same vertices, one facet, "
+                    f"drawn once as {name_of[members]}"
                 )
             continue
         name_of[members] = name
@@ -192,14 +193,12 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
     notes = []
     if not model.facets:
         notes.append(
-            "no facets yet: a 0-dimensional complex, every vertex is a world of "
-            "its own agent alone (add facets to glue perspectives into worlds)"
+            "no facets: 0-dimensional complex, each vertex a world of its own agent"
         )
     loose = sorted(name[n] for n in model.isolated_nodes())
     if loose:
         notes.append(
-            "vertices in no facet (isolated: no world passes through them; "
-            f"drawn loose): {', '.join(loose)}"
+            f"isolated vertices (in no facet, no world through them): {', '.join(loose)}"
         )
     if not model.axiom_d:
         # Under K45 an isolated perspective is not a violation, but it does
@@ -209,15 +208,14 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
             stuck = sorted(name[n] for n in model.isolated_perspectives()[a])
             if stuck:
                 notes.append(
-                    f"isolated perspectives of {a} (in no facet of S_{a}: "
-                    f"there {a} vacuously believes everything): {', '.join(stuck)}"
+                    f"isolated perspectives of {a} (in no facet of S_{a}; "
+                    f"B_{a} vacuous there): {', '.join(stuck)}"
                 )
     orphan = [model.world_of_facet[F] for F in model.facets
               if not any(F in fs for fs in model.belief_facets.values())]
     if orphan:
         notes.append(
-            "facets outside every belief subcomplex (nobody considers them "
-            f"possible): {', '.join(sorted(map(str, orphan)))}"
+            f"facets in no belief subcomplex: {', '.join(sorted(map(str, orphan)))}"
         )
     return problems, notes
 
@@ -392,8 +390,7 @@ def run_simplicial(
         if knowledge_only:
             step.completed.append(
                 f"well-formed knowledge complex: {len(model.facets)} facets, "
-                f"{len(model.nodes)} vertices; S_a = S for every agent (each one "
-                "believes exactly what it knows, B_a coincides with K_a)"
+                f"{len(model.nodes)} vertices; S_a = S (B_a coincides with K_a)"
             )
         else:
             sizes = ", ".join(f"S_{a} = {len(model.belief_facets[a])}"
@@ -435,9 +432,9 @@ def run_simplicial(
     lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
     result.figures.append((
         _hasse_caption("Fig. 2", hasse_full),
-        Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
+        Path(hasse_show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
                         output_dir=str(OUTPUTS), rankdir="BT",
-                        facets_and_vertices=not hasse_full, image_format=FIGURE_FORMAT)),
+                        facets_and_vertices=not hasse_full)),
     ))
     result.text_diagrams.append(("Simplicial complex", str(model)))
     result.text_diagrams.append(("Face lattice", hasse.visualize(lattice)))
@@ -447,8 +444,7 @@ def run_simplicial(
     # no world and are left out, with a note.
     back = StepReport("2 · Equivalent relational model (complex → Kripke)")
     if not model.facets:
-        back.missing.append("no facets, so no worlds: the Kripke model is empty "
-                            "(each vertex alone has no world to stand in)")
+        back.missing.append("no facets, so no worlds: the Kripke model is empty")
         result.steps.append(back)
         return result
     try:
@@ -461,15 +457,14 @@ def run_simplicial(
     loose = sorted(name.get(n, label_node(n)) for n in model.isolated_nodes())
     if loose:
         back.missing.append(
-            "vertices in no facet have no world in the Kripke model "
-            f"(they stay outside the equivalence, docs/12 §3.3): {', '.join(loose)}"
+            f"vertices in no facet, left out of the Kripke model (docs/12 §3.3): {', '.join(loose)}"
         )
     logic = "KD45" if rel.frame.axiom_d else "K45"
     back.completed.append(
-        f"complex → Kripke model (G_B): {len(rel.frame.worlds)} worlds, one per "
-        "facet; R_a = sharing a's vertex, Q_a = facets of S_a with that vertex; "
+        f"G_B: {len(rel.frame.worlds)} worlds (one per facet); R_a = shared vertex of a, "
+        "Q_a = facets of S_a; "
         + ("pure knowledge (Q_a = R_a)" if model.is_knowledge_only else
-           f"{logic} belief (D ⟺ no isolated perspectives)")
+           f"{logic} (D ⟺ no isolated perspectives)")
     )
     result.steps.append(back)
     if model.is_knowledge_only:

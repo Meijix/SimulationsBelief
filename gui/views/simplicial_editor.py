@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import agent_color_map, maximal_facets, new_facet
-from theme import CARD, FLAT, card_title, take
+from theme import CARD, FLAT, panel_head, swatch, take
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -117,19 +117,16 @@ class SimplicialEditorView:
         container.clear()
         with container:
             with ui.card().classes(CARD).props(FLAT):
-                card_title("Vertices (each agent's perspectives)")
+                panel_head("Vertices (each agent's perspectives)")
                 for agent in state["agents"]:
                     names = state["vertices"].setdefault(agent, [])
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
-                        ui.element("span").style(
-                            f"width:10px;height:10px;border-radius:9999px;"
-                            f"flex:none;background:{colors[agent]}"
-                        )
+                        swatch(colors[agent])
                         v_in = ui.input(f"new vertex for {agent}") \
                             .props("dense outlined").classes("grow")
                         ui.button(icon="add",
                                   on_click=lambda _, a=agent, w=v_in: self.add_vertex(a, w)) \
-                            .props("round dense")
+                            .props("flat dense").classes("add-btn")
                         v_in.on("keydown.enter",
                                 lambda _, a=agent, w=v_in: self.add_vertex(a, w))
                     with ui.row().classes("w-full gap-2"):
@@ -139,9 +136,9 @@ class SimplicialEditorView:
                                     on_value_change=lambda e, a=agent, n=v:
                                         self.remove_vertex(a, n))
                 if not state["agents"]:
-                    ui.label("Add the agents first.").classes("text-grey-5")
+                    ui.label("Add the agents first.").classes("muted")
             with ui.card().classes(CARD).props(FLAT):
-                card_title("Facets (one vertex per agent)")
+                panel_head("Facets (one vertex per agent)")
                 # Which of the two readings of the complex is being declared.
                 # Mirrors the model-kind selector of the relational editor,
                 # minus "belief only" (see set_complex_kind for why).
@@ -159,7 +156,7 @@ class SimplicialEditorView:
                     if knowledge_only else
                     "Each facet also says which agents believe it possible "
                     "(which subcomplexes S_a it is in)."
-                ).classes("text-xs text-grey-5")
+                ).classes("text-xs muted")
                 for i, facet in enumerate(state["facets"]):
                     with ui.column().classes("w-full gap-0 pb-2") \
                             .style("border-bottom:1px solid var(--p-line)"):
@@ -200,7 +197,7 @@ class SimplicialEditorView:
                     # UCF facet the vertices can form. Offered as an action,
                     # not applied silently, because a declared complex is
                     # often meant to be a proper subcomplex of M(N, V, L).
-                    ui.button("complete to the maximal complex", icon="auto_awesome",
+                    ui.button("complete to the maximal complex", icon="playlist_add",
                               on_click=lambda: self.fill_maximal()) \
                         .props("flat dense")
                     if any(f.get("auto") for f in state["facets"]):
@@ -218,4 +215,4 @@ class SimplicialEditorView:
                     "(M(N, V, L)) and “remove the added facets” takes them away "
                     "again. Under Axiom D, every vertex must be in some facet "
                     "of its agent's belief subcomplex."
-                ).classes("text-xs text-grey-5")
+                ).classes("text-xs muted")

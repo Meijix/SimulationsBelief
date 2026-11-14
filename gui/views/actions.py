@@ -38,8 +38,9 @@ from adapters import (
     describe_action_kripke,
     event_belief,
     preview_action,
+    styled,
 )
-from theme import CARD, FLAT, POSTER, card_title, figure_img, take
+from theme import CARD, FLAT, panel_head, figure_img, take
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -55,7 +56,7 @@ class ActionsView:
 
     def build(self) -> None:
         with ui.card().classes(CARD).props(FLAT):
-            card_title("Simplicial actions")
+            panel_head("Simplicial actions")
             self.box = ui.column().classes("w-full gap-2")
 
     # ---- the list of actions ----------------------------------------------- #
@@ -173,6 +174,10 @@ class ActionsView:
         with self._fig_box:
             ui.timer(0.25, lambda: self._render_preview(seq, spec, agents), once=True)
 
+    def clear_cache(self) -> None:
+        """Forget the drawn actions (they were drawn in another ink)."""
+        self._cache.clear()
+
     def refresh_preview(self, spec: dict) -> None:
         """Redraw after an edit that keeps the card as it is (a select, a name)."""
         if self._fig_box is not None:
@@ -181,11 +186,11 @@ class ActionsView:
     async def _render_preview(self, seq: int, spec: dict, agents: list) -> None:
         if seq != self._seq or self._fig_box is None:
             return
-        key = hashlib.sha1(json.dumps([spec, agents], sort_keys=True,
+        key = hashlib.sha1(json.dumps([spec, agents, self.page.ink], sort_keys=True,
                                       default=str).encode()).hexdigest()[:12]
         if key not in self._cache:
             try:
-                result = await io.io_bound(preview_action, spec, agents, key)
+                result = await io.io_bound(styled, self.page.ink, preview_action, spec, agents, key)
             except ValueError as exc:
                 result = str(exc)
             except Exception as exc:  # noqa: BLE001 -- the live figure must never take the card down
@@ -203,7 +208,7 @@ class ActionsView:
         with self._fig_box:
             ui.label("Action as defined").classes("eyebrow mt-1")
             if isinstance(result, str):
-                ui.label(result).classes("text-xs text-grey-5")
+                ui.label(result).classes("text-xs muted")
             else:
                 # Small in the editor column: a click opens it full screen.
                 with ui.element("div").classes("w-full fig-frame cursor-pointer") \
@@ -217,32 +222,33 @@ class ActionsView:
         agents = self.page.state["agents"]
         self.box.clear()
         with self.box:
-            # The list: one chip per action, the selected one in lime.
+            # The list: one chip per action, the selected one in the accent.
             with ui.row().classes("w-full items-center gap-2"):
                 for i, a in enumerate(ws.actions):
                     sel = i == ws.action
                     ui.chip(a.get("name") or f"action {i + 1}", icon="bolt", removable=True,
-                            color=POSTER["lime"] if sel else "rgba(255,255,255,.14)",
-                            text_color=POSTER["surface"] if sel else "white",
+                            color="var(--p-accent)" if sel else "var(--p-chip)",
+                            text_color="var(--p-on-accent)" if sel else "var(--p-ink)",
                             on_click=lambda _, k=i: self.select_action(k),
                             on_value_change=lambda e, k=i: self.remove_action(k))
-                ui.button(icon="add", on_click=lambda: self.add_action()) \
-                    .props("round dense flat").tooltip("New action")
-            ui.select({k: v["label"] for k, v in ACTION_EXAMPLES.items()}, value=None,
-                      label="load example action",
-                      on_change=lambda e: e.value and self.load_example(e.value)) \
-                .props("dense outlined options-dense").classes("w-full")
+            with ui.row().classes("w-full no-wrap items-center gap-2"):
+                ui.select({k: v["label"] for k, v in ACTION_EXAMPLES.items()}, value=None,
+                          label="load example action",
+                          on_change=lambda e: e.value and self.load_example(e.value)) \
+                    .props("dense outlined options-dense").classes("grow")
+                ui.button("New action", icon="add", on_click=lambda: self.add_action()) \
+                    .props("flat dense", remove="color").classes("link-btn")
             spec = ws.selected_action()
             if spec is None:
                 ui.label("An action is a complex of EVENTS: in each event, one action "
                          "node per agent; each node may require atoms "
                          "(precondition) and set them (postcondition). It is applied to "
                          "the active model and the result opens as a new model."
-                         ).classes("text-xs text-grey-5")
+                         ).classes("text-xs muted")
                 return
             if not agents:
                 ui.label("Add agents to the active model: events carry one node "
-                         "per agent.").classes("text-xs text-grey-5")
+                         "per agent.").classes("text-xs muted")
                 return
             # ---- name, update kind, compatibility mode ---------------------- #
             ui.input("action name", value=spec.get("name", ""),
@@ -258,7 +264,7 @@ class ActionsView:
                       on_change=lambda e: set_update(e.value)) \
                 .props("dense outlined options-dense").classes("w-full")
             ui.label(UPDATE_HELP.get(spec.get("update", "knowledge"), "")) \
-                .classes("text-xs text-grey-5")
+                .classes("text-xs muted")
             ui.select(ACTION_MODES, value=int(spec.get("mode", DEFAULT_MODE)),
                       label="vertex / action-node compatibility",
                       on_change=lambda e: spec.__setitem__("mode", int(e.value))) \
@@ -300,7 +306,7 @@ class ActionsView:
                         box = ui.input(f"new node for {agent}").props("dense outlined") \
                             .classes("grow")
                         ui.button(icon="add", on_click=lambda _, a=agent, w=box:
-                                  self.add_isolated(spec, a, w)).props("round dense")
+                                  self.add_isolated(spec, a, w)).props("flat dense").classes("add-btn")
                     with ui.row().classes("w-full gap-2"):
                         for name in spec.get("isolated", {}).get(agent, []):
                             ui.chip(name, removable=True, color=colors[agent],
@@ -315,7 +321,7 @@ class ActionsView:
                 atom_box = ui.input("atom (e.g. one of the model's)").props("dense outlined") \
                     .classes("grow")
                 ui.button(icon="add", on_click=lambda: self.add_atom(spec, atom_box)) \
-                    .props("round dense")
+                    .props("flat dense").classes("add-btn")
                 atom_box.on("keydown.enter", lambda: self.add_atom(spec, atom_box))
             atoms = sorted(set(spec.get("pre", {})) | set(spec.get("post", {})))
             for atom in atoms:
@@ -342,7 +348,7 @@ class ActionsView:
                     .classes("w-full text-xs"):
                 ui.label("Evaluator syntax: K_a P, B_b ~P, P & Q, P -> Q. The event happens "
                          "at an input world only if the formula holds there.") \
-                    .classes("text-xs text-grey-5")
+                    .classes("text-xs muted")
                 for node in nodes:
                     with ui.row().classes("w-full no-wrap items-center gap-2"):
                         ui.label(node).classes("font-mono text-xs w-20")
@@ -354,7 +360,7 @@ class ActionsView:
             problems = action_problems(spec, agents, self.model_atoms())
             if problems:
                 ui.label("Missing: " + "; ".join(problems)).classes("text-xs") \
-                    .style(f"color:{POSTER['yellow']}")
+                    .style("color:var(--p-warn)")
             else:
                 ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
                         f"{html.escape(describe_action(spec, agents, self.model_atoms()))}</pre>")
@@ -376,4 +382,4 @@ class ActionsView:
                           on_click=lambda: self.apply()) \
                     .props("unelevated dense color=primary text-color=dark")
                 ui.label("The result opens as a read-only model; "
-                         "compare it with its input.").classes("text-xs text-grey-5")
+                         "compare it with its input.").classes("text-xs muted")
