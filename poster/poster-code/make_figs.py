@@ -14,7 +14,7 @@ because belief revision was not implemented in the tool when it was made.
 
     python poster/poster-code/make_figs.py
 
-Requires Graphviz (``dot``) on the PATH and the dependencies in requirements.txt.
+Requires Graphviz (``dot``) on the PATH and the dependencies of pyproject.toml (pip install -e .).
 """
 import os
 import sys

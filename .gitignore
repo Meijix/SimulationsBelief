@@ -29,6 +29,13 @@ tests/
 *.egg-info/
 build/
 dist/
+*.spec
 
 # --- Class presentation (beamer sources and figures, kept local) ---
 classpresentation/
+
+# --- Caches and GUI storage ---
+__pycache__/
+.pytest_cache/
+.hypothesis/
+.nicegui/

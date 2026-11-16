@@ -12,9 +12,10 @@ especificadas, y aparecen en el cartel como trabajo futuro. Desde entonces la
 **regla de revisión** del memo de la NASA está implementada en
 `poster-code/revision.py` (es la que calcula `d3_revision.png`, ver «Variantes
 con tres agentes»), y
-`simplicial_actions.py` tiene el producto con modelos de acción en su versión
-de conocimiento (la salida pone `S_a = S`); la creencia y la revisión dentro
-del producto siguen pendientes.
+`simplicial_actions.py` tiene los tres productos con modelos de acción de la
+tesis (conocimiento `M[A]`, creencia `M[A]_B` y creencia con revisión
+`M[A]_BR`, con o sin memoria); los protocolos (iterar una acción) siguen
+pendientes.
 
 ## Figuras
 
@@ -145,7 +146,7 @@ python "poster/poster-code/Natural Disaster 3 Agents.py"   # d3_relacional, d3_g
 python poster/poster-code/ejemplo_nasa.py                  # octaedro de la NASA -> outputs/ del directorio actual
 ```
 
-Requiere Graphviz (`dot`) en el PATH y las dependencias de `requirements.txt`.
+Requiere Graphviz (`dot`) en el PATH y las dependencias de `pyproject.toml` (`pip install -e .`).
 Los comandos están escritos desde la raíz del repositorio, pero cada script
 agrega la raíz al `sys.path` por su cuenta y calcula su carpeta de salida a
 partir de su propia ubicación, así que funcionan desde cualquier directorio y
