@@ -1,66 +1,20 @@
-"""Three-valued node assignments and belief semantics (Sink's thesis, ch. 3).
+"""Three-valued vertex assignments and the chapter-3 belief semantics (Sink's thesis).
 
-THIS IS THE PROJECT'S CANONICAL "VERTEX-BASED" APPROACH: atoms are assigned --
-partially, silence is value 2 -- to the VERTICES, and truth is then *lifted* to
-the facets (an atom holds at a facet iff some vertex of it carries the atom with
-value 1; :func:`lift_to_facets` materialises that lift as a chapter-2-style
-facet valuation). The facet-based valuation of ch. 2 lives in ``semantics.py``
-as the thesis reference and the direct Kripke bridge; the two evaluators agree
-on every formula whenever the facet valuation IS the lift of the vertex one.
+The project's canonical logical layer: an assignment ``L : N -> 3^P`` records
+what each perspective (node) observes about each atom, ``1`` true, ``0`` false,
+``2`` nothing (the default for an unmentioned atom). Truth at a facet is read
+off its perspectives (thesis p. 20): ``X ⊨ P`` iff some node of ``X`` carries
+``P`` with value 1; ``B_a`` quantifies over the facets of ``S_a`` sharing
+``a``'s node; ``K_a`` (an extension of the chapter's belief-only language)
+over all facets sharing it. Consequences: facets must be CONSISTENT (no atom
+1 at one node and 0 at another; :func:`maximal_complex` builds the complex of
+all consistent facets, :func:`drop_inconsistent` prunes a declared one), and
+the schema NU ``P → ∨_a B_a P`` is sound (:func:`nu_violations` shows where a
+Kripke valuation is not representable). Theory and examples: docs/08.
 
-Chapter 3 of the thesis moves the logical content of a simplicial model from the
-FACETS (where ch. 2 / Bjorndahl & Sink put it) to the NODES: each node is an
-agent's *perspective*, and an assignment ``L : N -> 3^P`` records what that
-perspective directly observes about each atom:
-
-    * ``L(n)(P) = 1``  --  ``P`` is associated with ``n`` (observed TRUE),
-    * ``L(n)(P) = 0``  --  ``¬P`` is associated with ``n`` (observed FALSE),
-    * ``L(n)(P) = 2``  --  neither (the perspective SAYS NOTHING about ``P``).
-
-An atom the assignment does not mention is value ``2``: silence is the default,
-never an error.
-
-Truth at a facet is then read off its perspectives (thesis p. 20):
-
-    M, X |= P        iff  some node of ``X`` carries ``P`` with value 1
-    M, X |= φ → ψ    as usual (⊥ never holds; ¬φ is φ → ⊥)
-    M, X |= B_a φ    iff  φ holds at every facet of ``S_a`` sharing a's node with X
-
-Two consequences worth knowing (both from the chapter):
-
-    * A facet must be CONSISTENT: no atom with a 1-node and a 0-node in the same
-      facet. The **maximal complex** ``M(N, V, L)`` is the set of all UCF,
-      consistent facets buildable from the nodes -- :func:`maximal_complex`
-      (:func:`maximal_model` wraps it into a model). A complex declared by
-      hand is brought to the same footing by :func:`drop_inconsistent`, which
-      REMOVES its inconsistent facets instead of reporting them (GitHub #21).
-    * The schema **NU** ("no uncertainties", ``P → ∨_a B_a P``) is sound: an atom
-      is true at a facet only when some agent's perspective carries it. When an
-      assignment is INDUCED from a Kripke valuation (:func:`assignment_from_model`),
-      the facet truth of ``P`` agrees with the world truth exactly where some agent
-      KNOWS ``P`` -- :func:`nu_violations` lists where they come apart.
-
-Chapter 3's language is belief-only (``L_B``: atoms, ⊥, →, B_a; soundness is
-K45+NU, and D can fail via *isolated perspectives*). Models built under KD45
-(``axiom_d=True``) are validated so that no perspective is isolated, hence D
-holds for them; under K45 (``axiom_d=False``) an isolated perspective is legal
-and ``B_a`` is vacuously true there -- exactly the defunct belief the chapter
-describes. The evaluator also accepts ``K_a`` as a convenience EXTENSION beyond
-``L_B`` (quantifying over all of ``S`` instead of ``S_a``), matching the
-knowledge structure the nodes came from.
-
-Formulas are plain tuples (no classes to construct):
-
-    ("atom", P)            an atomic proposition
-    ("bot",)               falsum
-    ("imp", f, g)          implication (the chapter's primitive)
-    ("B", agent, f)        belief
-    -- sugar, expanded by the evaluator --
-    ("not", f)             = ("imp", f, ("bot",))
-    ("and", f, g), ("or", f, g)
-    ("K", agent, f)        knowledge (extension, see above)
-
-Depends only on ``simplicial`` (for the model class and node/facet types).
+Formulas are plain tuples, shared with ``semantics.py``: ``("atom", P)``,
+``("bot",)``, ``("imp", f, g)``, ``("B", a, f)``, ``("K", a, f)``, and the sugar
+``("not", f)``, ``("and", f, g)``, ``("or", f, g)``.
 """
 
 from __future__ import annotations
@@ -68,6 +22,7 @@ from __future__ import annotations
 from itertools import product
 from typing import Dict, Hashable, Iterable, List, Set, Tuple
 
+from semantics import evaluate, facet_successors
 from simplicial import Facet, Node, SimplicialBeliefModel, label_facet, label_node
 
 Atom = Hashable
@@ -126,15 +81,7 @@ def is_consistent_facet(facet: Facet, assignment: Assignment) -> bool:
 def consistency_violations(
     model: SimplicialBeliefModel, assignment: Assignment
 ) -> List[str]:
-    """Return a message per inconsistent facet of ``model`` under ``assignment``.
-
-    A facet is inconsistent when two of its perspectives observe the SAME atom
-    with opposite values -- ``P`` and ``¬P`` holding together at one facet. Each
-    message names the offending facet, the atom, and the two nodes that clash,
-    so the condition that produced the failure is readable off the error.
-
-    Empty list means every facet is consistent.
-    """
+    """A message per inconsistent facet, naming the atom and the two clashing nodes."""
     problems: List[str] = []
     for facet in sorted(model.facets, key=label_facet):
         for atom, node_true, node_false in facet_inconsistencies(facet, assignment):
@@ -150,22 +97,11 @@ def consistency_violations(
 def require_consistent(
     model: SimplicialBeliefModel, assignment: Assignment
 ) -> None:
-    """Raise unless every facet of ``model`` is consistent under ``assignment``.
-
-    Facet consistency (thesis p. 19) is a PRECONDITION of the chapter-3
-    semantics, not an optional check. :func:`holds` reads an atom as true when
-    *some* node of the facet observes 1 and never consults the 0s, precisely
-    because a consistent facet cannot carry both. On an inconsistent facet that
-    shortcut silently returns a verdict the model does not support: ``P`` comes
-    out true while a perspective in the very same facet observes ``¬P``.
-
-    So this refuses rather than answering. Note that :func:`maximal_complex`
-    cannot trip it -- it builds the complex out of consistent facets by
-    construction -- but a model assembled by hand, or paired with an assignment
-    it was not built from, can.
+    """Raise unless every facet is consistent (thesis p. 19), the precondition of
+    the semantics: :func:`holds` reads only the 1s, which is sound only then.
 
     Raises:
-        ValueError: listing every clash, naming facet, atom and both nodes.
+        ValueError: listing every clash.
     """
     problems = consistency_violations(model, assignment)
     if not problems:
@@ -187,15 +123,11 @@ def maximal_complex(
     nodes: Iterable[Node],
     assignment: Assignment,
 ) -> Set[Facet]:
-    """Return the facets of the maximal complex ``M(N, V, L)`` (thesis p. 19).
-
-    Every UCF facet (exactly one node per agent -- the node's own ``agent`` field
-    is the colouring ``V``) whose perspectives are jointly consistent. The full
-    complex is the downward closure of these facets; as everywhere in this repo,
-    facets suffice to determine it.
+    """The facets of the maximal complex ``M(N, V, L)`` (thesis p. 19): every UCF
+    facet (one node per agent) whose perspectives are jointly consistent.
 
     Raises:
-        ValueError: If the assignment is ill-formed, or some agent has no node.
+        ValueError: ill-formed assignment, or an agent with no node.
     """
     problems = assignment_violations(assignment)
     if problems:
@@ -227,14 +159,9 @@ def maximal_model(
     belief_facets: Dict[Hashable, Iterable[Facet]] | None = None,
     **kwargs,
 ) -> SimplicialBeliefModel:
-    """The model ``M(N, V, L)`` of thesis p. 19 in one call (GitHub #21).
-
-    Builds the complex FROM the maximal complex: every UCF facet the nodes can
-    form, minus the inconsistent ones. Without ``belief_facets`` the result is
-    a knowledge complex (``S_a = S``); with them, each ``S_a`` is restricted to
-    the facets that survive, so an inconsistent facet can never be believed.
-    Keyword arguments go to the constructor (``axiom_d``, ``node_names``...).
-    """
+    """The model ``M(N, V, L)`` of thesis p. 19: the maximal complex, read as
+    knowledge without ``belief_facets``, else with each ``S_a`` restricted to the
+    facets that survive. Keyword arguments go to the constructor."""
     facets = maximal_complex(agents, nodes, assignment)
     if belief_facets is None:
         return SimplicialBeliefModel.knowledge_only(agents, nodes, facets, **kwargs)
@@ -247,15 +174,10 @@ def drop_inconsistent(
 ) -> Tuple[SimplicialBeliefModel, List[Facet]]:
     """``(model without its inconsistent facets, the facets removed)``.
 
-    Chapter 3 defines the model as the MAXIMAL CONSISTENT complex, so a facet
-    whose perspectives disagree on an atom is not an error to report but a
-    facet that does not exist (GitHub #21). This removes such facets from
-    ``S`` and from every ``S_a``, keeping everything else (world names, vertex
-    names, the declared Axiom-D contract) so the result is the same model one
-    would have obtained by never declaring them. The caller decides what to
-    say about the removed ones. Nothing is validated here: dropping a facet
-    can isolate a perspective, and whether that is a violation is the
-    constructor's business under the model's own ``axiom_d_declared``.
+    An inconsistent facet is not an error but a facet that does not exist
+    (ch. 3 works with the maximal consistent complex). Removed from ``S`` and
+    every ``S_a``; names and the declared Axiom-D contract are kept, nothing is
+    validated here.
     """
     bad = {F for F in model.facets if not is_consistent_facet(F, assignment)}
     if not bad:
@@ -285,78 +207,26 @@ def holds(
 ) -> bool:
     """Decide ``M, facet |= formula`` under the chapter-3 semantics.
 
-    Atoms are read off the facet's perspectives: true iff SOME node carries the
-    atom with value 1 (which validates NU). ``B_a`` quantifies over the facets of
-    ``S_a`` sharing ``a``'s node; ``K_a`` (extension) over all facets sharing it.
-
-    Facet consistency is checked FIRST, once, over the whole model -- not just
-    over ``facet``, because the modal clauses evaluate at other facets too. The
-    atomic clause below is only sound on a consistent facet (it reads the 1s and
-    never the 0s), so without the check an inconsistent model answers with a
-    verdict it does not support instead of failing. See :func:`require_consistent`.
-
-    Args:
-        check_consistency: pass False only when :func:`require_consistent` was
-            just run on this exact (model, assignment) pair and nothing has
-            changed since; everyone else should leave it True. The recursion
-            itself lives in :func:`_holds`.
+    An atom is true iff some node of the facet carries it with value 1 (the
+    lift, sound on consistent facets only, hence the whole-model consistency
+    check first). Pass ``check_consistency=False`` only right after
+    :func:`require_consistent` on the same pair.
 
     Raises:
-        ValueError: If some facet is inconsistent (``P`` and ``¬P`` together),
-            or on an unknown connective.
+        ValueError: an inconsistent facet, or an unknown connective.
     """
     if check_consistency:
         require_consistent(model, assignment)
     return _holds(model, assignment, facet, formula)
 
 
-def _holds(
-    model: SimplicialBeliefModel,
-    assignment: Assignment,
-    facet: Facet,
-    formula,
-) -> bool:
+def _holds(model: SimplicialBeliefModel, assignment: Assignment, facet: Facet, formula) -> bool:
     """The recursion of :func:`holds`, with consistency already established."""
-    tag = formula[0]
-    if tag == "atom":
-        # THE vertex-based atomic clause (the "lift" applied on the fly): an
-        # atom is true at a facet iff some perspective in it observes the atom
-        # as true (value 1). Value 0 elsewhere is not consulted -- a consistent
-        # facet cannot carry both 1 and 0 -- and value 2 never makes anything
-        # true. This is what validates NU (P -> some agent believes P): a truth
-        # with no observing perspective simply does not exist at facet level.
-        return any(node_value(assignment, n, formula[1]) == TRUE for n in facet)
-    if tag == "bot":
-        return False
-    # The second operands recurse through _holds too: the public ``holds``
-    # would re-run the whole-model consistency check at every connective.
-    if tag == "imp":
-        return (not _holds(model, assignment, facet, formula[1])) or _holds(
-            model, assignment, facet, formula[2]
-        )
-    if tag == "not":
-        return not _holds(model, assignment, facet, formula[1])
-    if tag == "and":
-        return _holds(model, assignment, facet, formula[1]) and _holds(
-            model, assignment, facet, formula[2]
-        )
-    if tag == "or":
-        return _holds(model, assignment, facet, formula[1]) or _holds(
-            model, assignment, facet, formula[2]
-        )
-    if tag == "B":
-        return all(
-            _holds(model, assignment, Y, formula[2])
-            for Y in model.believes_facets(formula[1], facet)
-        )
-    if tag == "K":  # extension beyond L_B: all of S sharing the agent's node
-        p = model.pi(formula[1], facet)
-        return all(
-            _holds(model, assignment, Y, formula[2])
-            for Y in model.facets
-            if model.pi(formula[1], Y) == p
-        )
-    raise ValueError(f"Unknown connective {tag!r} in formula {formula!r}.")
+    return evaluate(
+        formula, facet,
+        lambda F, P: any(node_value(assignment, n, P) == TRUE for n in F),
+        facet_successors(model),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -366,40 +236,16 @@ def assignment_from_model(
     model: SimplicialBeliefModel,
     valuation: Dict[Atom, Set],
 ) -> Assignment:
-    """Induce the three-valued node assignment from a Kripke world valuation.
+    """Induce the node assignment from a Kripke valuation: a perspective observes
+    what its agent knows in that class (``P`` at every world -> 1, at none ->
+    0, mixed -> 2). Consistent by construction; agrees with world truth exactly
+    where NU holds (:func:`nu_violations`).
 
-    A node IS a knowledge class ``[w]_a`` coloured by ``a``, so the perspective
-    observes exactly what the agent knows there:
-
-        * ``P`` true at EVERY world of the class  ->  ``L(n)(P) = 1`` (knows P),
-        * ``P`` false at every world of the class ->  ``L(n)(P) = 0`` (knows ¬P),
-        * mixed                                   ->  ``L(n)(P) = 2`` (does not know).
-
-    The result is facet-consistent BY CONSTRUCTION: two nodes of one facet share
-    that facet's world, so they can never observe opposite values of one atom.
-
-    Facet truth under :func:`holds` then agrees with world truth at exactly the
-    facets where SOME agent knows the atom's value -- the NU schema. Use
-    :func:`nu_violations` to see where an arbitrary valuation comes apart.
-
-    Args:
-        model: A simplicial belief model whose nodes carry knowledge classes.
-        valuation: ``atom -> set of worlds where it is true``. The worlds are
-            the model's own (the values of ``model.world_of_facet``), or the
-            ORIGINAL worlds they simulate when the model came through
-            ``to_proper`` (``model.projection``): a valuation written for the
-            general model is then carried to every copy of each world, which
-            is how ``to_proper`` itself transports valuations. Any other name
-            is an error, not a silent "false everywhere".
-
-    Returns:
-        The induced assignment, storing only non-2 values (2 is the default).
+    ``valuation`` may name the model's own worlds or, for a model that came
+    through ``to_proper``, the original worlds (carried to every copy).
 
     Raises:
-        ValueError: If some atom names a world that is neither a world of the
-            model nor an original world behind one of them. Without this
-            check a valuation keyed by the wrong names made every perspective
-            "know ¬P", which looks like a result and is not one.
+        ValueError: an atom names a world that is neither.
     """
     worlds = set(model.world_of_facet.values())
     originals = set(model.projection.values())
@@ -439,60 +285,17 @@ def lift_to_facets(
     model: SimplicialBeliefModel,
     assignment: Assignment,
 ) -> Dict[Atom, Set[Facet]]:
-    """Lift a vertex assignment to a chapter-2-style FACET valuation.
-
-    This materialises the project's vertex-based reading of atomic truth --
-    "an atom holds at a facet iff some vertex of it observes the atom as true"
-    -- as an explicit ``L' : P -> 2^F(S)``:
-
-        L'(P) = { X in F(S) : some node n of X has L(n)(P) = 1 }
-
-    Why this exists. :func:`holds` already evaluates formulas directly on the
-    vertex assignment, so the lift is never needed just to compute truth. It
-    exists for INTEROP: anything built for chapter-2 facet valuations
-    (``semantics.holds_simplicial``, comparisons against a Kripke valuation,
-    future tooling) can consume a vertex assignment through this bridge.
-
-    Why the two evaluators then agree on EVERY formula, with no side condition:
-    the atomic clause of :func:`holds` and membership in ``L'(P)`` are the same
-    statement by construction, and the modal clauses of chapters 2 and 3 are
-    identical (``K_a``/``B_a`` quantify over the same facet sets). Induction on
-    the formula does the rest. The NU caveat only appears when comparing against
-    a KRIPKE world valuation (see :func:`nu_violations`): lifting the INDUCED
-    assignment of a valuation ``v`` reproduces the chapter-2 translation
-    ``L_N(P) = f[v(P)]`` exactly when NU holds for ``v`` -- where it fails, the
-    lift is missing the facets whose atom nobody observes.
-
-    Args:
-        model: The simplicial belief model whose facets are being valued.
-        assignment: A (possibly partial) vertex assignment ``L : N -> 3^P``.
-
-    Returns:
-        ``atom -> set of facets`` covering every atom the assignment mentions.
+    """Lift a vertex assignment to a chapter-2 facet valuation,
+    ``L'(P) = {X : some node of X has L(n)(P) = 1}``, for anything built on
+    ``semantics.FacetValuation``. The two evaluators then agree on every formula.
 
     Raises:
-        ValueError: If some facet is inconsistent. The lift reads only the 1s,
-            so on an inconsistent facet it would quietly report the atom as
-            holding while a vertex of that same facet observes its negation --
-            and the chapter-2 valuation it produces cannot express the clash
-            at all (a facet is either in ``L'(P)`` or not). Failing here keeps
-            the inconsistency from being laundered into a well-formed-looking
-            facet valuation.
+        ValueError: if some facet is inconsistent (the lift reads only the 1s).
     """
     require_consistent(model, assignment)
-    # Collect the atoms actually mentioned; unmentioned atoms are value 2 at
-    # every node, so their lift would be the empty set -- omitting them keeps
-    # the result as partial as the input (and holds() treats both the same).
     atoms = {atom for values in assignment.values() for atom in values}
     return {
-        atom: {
-            F
-            for F in model.facets
-            # The lift itself: one observing vertex makes the atom true at the
-            # facet. Facet consistency (no 1-node next to a 0-node) is what
-            # keeps this from ever contradicting another vertex of F.
-            if any(node_value(assignment, n, atom) == TRUE for n in F)
-        }
+        atom: {F for F in model.facets if any(node_value(assignment, n, atom) == TRUE for n in F)}
         for atom in atoms
     }
 
@@ -502,15 +305,10 @@ def nu_violations(
     assignment: Assignment,
     valuation: Dict[Atom, Set],
 ) -> List[Tuple[Atom, Facet]]:
-    """Return the ``(atom, facet)`` pairs where facet truth and world truth differ.
-
-    Under an induced assignment the only possible divergence is one-sided: the
-    atom is TRUE at the facet's world but NO agent knows it, so no perspective
-    carries it and the facet does not satisfy it -- precisely a failure of the NU
-    schema ``P → ∨_a B_a P`` for that valuation. An empty result means the
-    valuation is faithfully representable in the chapter-3 semantics.
-    """
-    require_consistent(model, assignment)  # once, not per (atom, facet) pair
+    """The ``(atom, facet)`` pairs where facet truth differs from world truth:
+    the atom is true at the world but no agent knows it, a failure of NU for
+    that valuation. Empty iff the valuation is representable in ch. 3."""
+    require_consistent(model, assignment)
     out: List[Tuple[Atom, Facet]] = []
     for atom, true_worlds in valuation.items():
         true_set = set(true_worlds)

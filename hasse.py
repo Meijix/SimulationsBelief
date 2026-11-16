@@ -1,82 +1,23 @@
 # -*- coding: utf-8 -*-
 """Hasse diagrams (face lattices) of simplicial complexes, drawn with Graphviz.
 
-This module gives the project a *combinatorial* picture of a simplicial complex, to
-be read next to the *geometric* one that :mod:`visualization` already draws. The
-geometric picture (``show(model, "fig3")``) answers "what does the complex look
-like?"; the Hasse diagram answers "which simplices are in it, and which one is a
-face of which?" -- the question that actually matters when you are checking a
-translation or a belief subcomplex by hand.
+The combinatorial picture of a complex, to read next to the geometric one of
+:mod:`visualization`: one box per face, one row per dimension, a line where one
+face covers another (``dot``'s layered layout is exactly this shape). For a
+:class:`simplicial.SimplicialBeliefModel` vertices take their agent's colour
+and facets the colour of their belief signature, as in the other figures.
+Theory and reading guide: docs/06.
 
-Why a Hasse diagram at all
---------------------------
-The faces of a finite abstract simplicial complex, ordered by inclusion, form a
-graded poset: every face has a dimension (``|face| - 1``), and going up one step in
-the order always raises the dimension by exactly one. A Hasse diagram is the
-standard drawing of such a poset:
+    lattice = face_lattice([[0, 1, 2], [2, 3]])   # or a SimplicialBeliefModel
+    visualize(lattice)                            # text: rows, f-vector, Euler characteristic
+    to_dot(lattice, "title")                      # DOT source
+    show(lattice, "name")                         # outputs/name.png
+    preview(model)                                # temp file, opened
 
-    * one box per face,
-    * one row per dimension (vertices at the bottom, facets at the top),
-    * a line between two faces exactly when one **covers** the other, i.e. when
-      ``sigma subset tau`` and ``dim tau = dim sigma + 1``.
-
-Lines are drawn without arrowheads: in a Hasse diagram the direction of the order
-is carried by the *height*, not by an arrow. Transitive pairs (``{a}`` inside
-``{a,b,c}``) are deliberately NOT drawn -- they are implied by the paths, and
-drawing them would turn any interesting complex into a hairball.
-
-Why Graphviz (and not igraph, as this file used to do)
-------------------------------------------------------
-``dot`` is a *layered* layout engine: it puts every node on an integer rank and
-routes edges between consecutive ranks. A graded poset is exactly that shape, so
-the layout we want is the layout ``dot`` computes natively -- we only have to pin
-each row with ``rank=same`` and let it place things left-to-right to minimise
-crossings. The old version of this file built the complex with a home-made graph
-library (``tigraphs2``) and drew it with an igraph reingold-tilford *tree* layout,
-which cannot show a face shared by two facets (a tree has one parent per node,
-a face has many cofaces). It also ran on Python 2 and neither dependency is
-installed here. The rewrite keeps the mathematics and drops both dependencies:
-Graphviz is already this project's renderer (see :mod:`visualization`), so the
-output matches the rest of the figures and needs no new packages.
-
-What you can feed it
---------------------
-Anything that describes a complex:
-
-    * a list of **maximal simplices** over arbitrary hashable vertices --
-      ``[[0, 1, 2], [2, 3]]``;
-    * a :class:`simplicial.SimplicialBeliefModel` -- its facets are the maximal
-      simplices, and the drawing then reuses the project's colours: vertices get
-      their agent's colour (the chromatic colouring) and facets get the colour of
-      their belief signature, the same one :func:`visualization.show` uses. So the
-      Hasse diagram and the 2-D/3-D figure of the same model can be read together.
-      (``visualization.to_dot`` gives a complex only a flat graph drawing; the
-      lattice is the complementary picture.)
-
-The API mirrors :mod:`visualization`::
-
-    lattice   = face_lattice([[0, 1, 2], [2, 3]])   # the poset itself
-    text      = visualize(lattice)                  # dependency-free text summary
-    source    = to_dot(lattice, "my complex")       # Graphviz DOT source
-    path      = show(lattice, "my_complex")         # outputs/my_complex.png
-    preview(model)                                  # temp file, opens it
-
-Images need the Graphviz ``dot`` binary (``brew install graphviz``); everything
-else here is pure standard library.
-
-A caution about size: a complex with an ``n``-vertex facet has ``2**n`` faces, so
-the diagram grows exponentially with the dimension. Past a few hundred faces the
-picture stops being readable. Two ways out: ``facets_and_vertices=True`` keeps
-only the bottom row (perspectives) and the top row (worlds), joined by the
-incidence "vertex lies in facet" -- the reading that matters for a belief model,
-and the one requested in GitHub #7 -- and ``max_dimension=`` draws only the
-low-dimensional part (the skeleton). ``rankdir="LR"`` helps when a middle row
-gets too wide for the default upward layout.
-
-Isolated vertices (a model node in no facet, GitHub #12) are 0-dimensional
-maximal simplices: they are part of the lattice and sit alone on the vertex row.
-
-Run ``python hasse.py`` for a demo; add ``--open`` to open the figures.
+A facet with ``n`` vertices has ``2**n`` faces; ``facets_and_vertices=True``
+(perspectives and worlds only) and ``max_dimension=`` keep big diagrams readable.
+Isolated vertices are 0-dimensional maximal simplices on the vertex row.
+``python hasse.py [--open]`` runs a demo.
 """
 
 from __future__ import annotations
@@ -86,16 +27,16 @@ import tempfile
 import warnings
 from typing import Any, Dict, FrozenSet, Iterable, List, Tuple
 
-# Reuse the project's renderer plumbing and palettes so every figure in the repo
-# looks the same and there is exactly one place that knows how to invoke `dot`.
 from visualization import (
     OUTPUT_DIR,
     PALETTE,
     _belief_signature,
     _dot_escape,
+    _dot_footer,
     _html_escape,
     _open_file,
     _signature_colors,
+    _swatch_cell,
     _write_and_run_dot,
     ink,
     node_literals,
@@ -112,31 +53,17 @@ __all__ = [
     "preview",
 ]
 
-# A vertex is anything hashable (an int, a string, a simplicial Node...);
-# a face is the frozenset of its vertices, so faces are hashable and comparable
-# with the set operators (<=, <, &) that the order relation is made of.
+# A vertex is anything hashable; a face is the frozenset of its vertices.
 Vertex = Any
 Face = FrozenSet[Vertex]
 
 EMPTY_FACE: Face = frozenset()
-
-# Neutral node style; the model-aware builder overrides these per face.
-FILL_DEFAULT = "#f4f6f8"   # light ink; the drawing reads visualization.ink()
-LINE_DEFAULT = "#555555"
-# Beyond this many faces the diagram is too dense to read, so we warn once.
-CROWDED = 300
+CROWDED = 300   # faces; beyond this the diagram is too dense and a warning is issued
 
 
-# --------------------------------------------------------------------------- #
-# Ordering helpers -- everything is sorted so the generated DOT is deterministic
-# (same input -> byte-identical file, which keeps diffs of outputs/ meaningful).
-# --------------------------------------------------------------------------- #
+# Everything is sorted so the generated DOT is deterministic.
 def _vertex_label(vertex: Vertex) -> str:
-    """Readable name for a vertex.
-
-    Simplicial ``Node``s (agent + knowledge class) are duck-typed so this module
-    never has to import :mod:`simplicial`; anything else falls back to ``str``.
-    """
+    """Readable name for a vertex (``a:{w0,w1}`` for a simplicial Node, duck-typed)."""
     if hasattr(vertex, "agent") and hasattr(vertex, "cls"):
         members = ",".join(sorted(map(str, vertex.cls)))
         return f"{vertex.agent}:{{{members}}}"
@@ -144,23 +71,9 @@ def _vertex_label(vertex: Vertex) -> str:
 
 
 def _face_literals(assignment, face: Face) -> List[str]:
-    """The hard information a face carries: the union of its vertices' literals.
-
-    Why the union is the right reading. In the vertex-based semantics (thesis
-    ch. 3, ``assignment.py``) each vertex is a perspective observing some literals
-    (value 1 -> ``P``, 0 -> ``¬P``, 2 -> nothing). A face is a set of perspectives
-    that hold *simultaneously*, so the information available at the face is
-    everything its perspectives observe, combined. Climbing the Hasse diagram one
-    level therefore ACCUMULATES literals: a vertex shows one agent's observations,
-    an edge what two agents jointly settle, and a facet -- via exactly this union
-    -- the lift that defines atomic truth at the world (``X ⊨ P`` iff some vertex
-    of ``X`` carries ``P``). The lattice becomes an *information lattice*.
-
-    Consistency is not re-checked here on purpose: for a consistent facet the
-    union can never contain both ``P`` and ``¬P``, and for an INCONSISTENT one it
-    will show both -- which is precisely the diagnostic you want visible in a
-    drawing rather than silently resolved.
-    """
+    """The union of the literals its vertices observe: climbing the lattice
+    accumulates information, and at a facet this is the lifted atomic truth.
+    An inconsistent facet shows both ``P`` and ``¬P``, on purpose."""
     literals: set[str] = set()
     for vertex in face:
         literals.update(node_literals(assignment, vertex))
@@ -180,24 +93,13 @@ def _sorted_vertices(face: Face) -> List[Vertex]:
 # The face lattice
 # --------------------------------------------------------------------------- #
 class FaceLattice:
-    """All faces of a finite abstract simplicial complex, ordered by inclusion.
-
-    A complex is given by its **maximal simplices** (facets); every subset of a
-    facet is also a face -- that downward-closure is the definition of a simplicial
-    complex, and :meth:`_downward_closure` is literally that definition executed.
+    """All faces of a finite simplicial complex, ordered by inclusion.
 
     Attributes:
-        maximal_simplices: the facets, with any redundant (non-maximal) entry of the
-            input dropped, so ``is_facet`` means what it says.
-        faces: every face, including the empty face when ``include_empty``.
-        include_empty: whether the empty face (dimension -1, the bottom of the
-            lattice) is part of the poset. It is what makes the poset a *lattice*
-            (a unique minimum) and it is where the reduced Euler characteristic
-            comes from, but it carries no geometry, so it can be switched off.
-        labels / fills / outlines / tooltips: optional per-face styling filled in
-            by :func:`from_simplicial_model`; empty for a plain combinatorial
-            complex. ``tooltips`` keeps the long form of a label for SVG hover.
-        legend_cells: HTML ``<TD>`` strips appended to the drawing's legend.
+        maximal_simplices: the facets (non-maximal input entries are dropped).
+        faces: every face, the empty one included when ``include_empty``.
+        labels / fills / outlines / tooltips / legend_cells: optional per-face
+            styling filled in by :func:`from_simplicial_model`.
     """
 
     def __init__(self, maximal_simplices: Iterable[Iterable[Vertex]], *,
@@ -205,8 +107,6 @@ class FaceLattice:
         given = {frozenset(s) for s in maximal_simplices}
         if not given:
             raise ValueError("A simplicial complex needs at least one maximal simplex.")
-        # "Maximal" must be true of what we store: drop any simplex strictly
-        # contained in another, so [[0,1,2],[0,1]] and [[0,1,2]] build the same object.
         self.maximal_simplices: FrozenSet[Face] = frozenset(
             m for m in given if not any(m < other for other in given)
         )
@@ -222,15 +122,7 @@ class FaceLattice:
 
     # -- construction -------------------------------------------------------- #
     def _downward_closure(self) -> FrozenSet[Face]:
-        """Every subset of every facet: the faces of the complex.
-
-        Enumerating subsets is what makes this exponential (``2**|facet|`` per
-        facet), and it is unavoidable -- the lattice really does have that many
-        elements. Facets overlap, so the set deduplicates shared faces for free:
-        a face shared by two facets is stored once and will be drawn once, with a
-        line up to *both* cofaces. (That sharing is precisely what the old
-        tree-based drawing could not express.)
-        """
+        """Every subset of every facet (``2**|facet|`` each; shared faces stored once)."""
         faces: set[Face] = set()
         for facet in self.maximal_simplices:
             vertices = _sorted_vertices(facet)
@@ -256,13 +148,8 @@ class FaceLattice:
         return face in self.maximal_simplices
 
     def f_vector(self) -> Tuple[int, ...]:
-        """``(f_0, f_1, ...)``: how many faces of each dimension from 0 up.
-
-        The classical invariant of a complex: ``f_0`` vertices, ``f_1`` edges,
-        ``f_2`` triangles... A quick sanity check on a translation -- for a
-        simplicial belief model, ``f_0`` must be the number of distinct agent
-        perspectives and the top entry the number of worlds.
-        """
+        """``(f_0, f_1, ...)``: faces per dimension from 0 up (for a belief model,
+        ``f_0`` = perspectives and the top entry = worlds)."""
         counts = [0] * (self.dimension + 1)
         for face in self.faces:
             if face:
@@ -275,25 +162,15 @@ class FaceLattice:
 
     # -- the order relation -------------------------------------------------- #
     def by_dimension(self) -> Dict[int, List[Face]]:
-        """``dimension -> faces of that dimension``, each row sorted.
-
-        These are the ranks of the graded poset, and they become the rows
-        (``rank=same``) of the drawing.
-        """
+        """``dimension -> faces of that dimension``, each row sorted (the drawing's rows)."""
         rows: Dict[int, List[Face]] = {}
         for face in self.faces:
             rows.setdefault(len(face) - 1, []).append(face)
         return {d: sorted(rows[d], key=_face_sort_key) for d in sorted(rows)}
 
     def covers(self) -> List[Tuple[Face, Face]]:
-        """The covering pairs ``(sigma, tau)``: ``sigma subset tau``, one dimension apart.
-
-        These are the only lines a Hasse diagram draws. Computing them is cheap
-        here, no pairwise comparison needed: because the complex is downward
-        closed, the faces covered by ``tau`` are exactly ``tau`` minus one vertex,
-        so each face of size ``k`` contributes at most ``k`` lines. That is
-        ``O(#faces * dim)`` instead of ``O(#faces**2)``.
-        """
+        """The covering pairs ``(sigma, tau)``, ``sigma = tau`` minus one vertex:
+        the lines of the diagram, in ``O(#faces * dim)``."""
         pairs: List[Tuple[Face, Face]] = []
         for tau in sorted(self.faces, key=_face_sort_key):
             for v in _sorted_vertices(tau):
@@ -340,16 +217,9 @@ class FaceLattice:
 # --------------------------------------------------------------------------- #
 def face_lattice(complex_like, *, include_empty: bool = True,
                  compact: bool = True, assignment=None) -> FaceLattice:
-    """Coerce anything that describes a complex into a :class:`FaceLattice`.
-
-    Accepts a :class:`FaceLattice` (returned unchanged -- an ``assignment`` given
-    here is ignored, the lattice's labels were already built), a
-    :class:`simplicial.SimplicialBeliefModel` (recognised by duck typing, so this
-    module keeps no import of the model layer), or an iterable of maximal
-    simplices. ``assignment`` is the vertex valuation ``L : N -> 3^P`` of the
-    canonical chapter-3 semantics; it only applies on the model path, where the
-    vertices are perspectives.
-    """
+    """A :class:`FaceLattice` from a lattice (returned as is), a
+    :class:`simplicial.SimplicialBeliefModel` (duck-typed; ``assignment`` applies
+    here) or an iterable of maximal simplices."""
     if isinstance(complex_like, FaceLattice):
         return complex_like
     if hasattr(complex_like, "facets") and hasattr(complex_like, "agents"):
@@ -362,67 +232,34 @@ def face_lattice(complex_like, *, include_empty: bool = True,
 
 def from_simplicial_model(model, *, include_empty: bool = True,
                           compact: bool = True, assignment=None) -> FaceLattice:
-    """Build the face lattice of a :class:`simplicial.SimplicialBeliefModel`.
-
-    The facets of the model *are* the maximal simplices, so the lattice itself is
-    just ``FaceLattice(model.facets)``. What this function adds is the reading:
-
-        * a **vertex** ``{node}`` is one agent's perspective; it is filled in that
-          agent's palette colour -- the chromatic colouring of the complex, the same
-          colours :func:`visualization.show` uses for the same model;
-        * a **facet** is a possible world; it is filled with the colour of its
-          *belief signature* (which agents' belief subcomplexes contain it), again
-          the colouring of Figure 3, and its label carries the world name;
-        * everything in between is a shared face -- and the lines running up out of
-          it show exactly which worlds are indistinguishable to that group of
-          agents. That is the fact the Hasse diagram makes visible and the geometric
-          picture does not.
+    """The face lattice of a :class:`simplicial.SimplicialBeliefModel`, styled:
+    vertices in their agent's colour, facets in their belief signature's colour
+    and named by their world, the faces in between showing which worlds a group
+    of agents cannot tell apart.
 
     Args:
-        include_empty: keep the empty face at the bottom of the lattice.
-        compact: label each perspective ``a0, a1, ...`` (agent + an index over that
-            agent's own knowledge classes) instead of printing the whole class. A
-            proper model's classes are sets of duplicated worlds, so the full labels
-            are unreadable in a box; the full text is kept as the node's Graphviz
-            **tooltip**, which SVG output shows on hover. Pass ``compact=False`` to
-            print the classes in the boxes.
-        assignment: The vertex valuation ``L : N -> 3^P`` (thesis ch. 3,
-            ``assignment.py``). Every face then carries an extra label line with
-            the literals its perspectives jointly observe (see
-            :func:`_face_literals`): a vertex shows one agent's observations, and
-            each level up accumulates them, so the diagram reads as an
-            *information lattice* -- at the top, a facet's line is exactly the
-            lifted atomic truth of its world. Value 2 (unknown) prints nothing,
-            so a bare face means "no hard information here yet".
+        include_empty: keep the empty face at the bottom.
+        compact: label perspectives ``a0, a1, ...`` (the full class stays in the
+            SVG tooltip) instead of printing the whole class.
+        assignment: vertex valuation; every face then shows the literals its
+            perspectives jointly observe (:func:`_face_literals`).
     """
     agents = sorted(model.agents, key=str)
     agent_color = {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(agents)}
-    sig_color = _signature_colors(model, agents)  # belief signature -> colour
+    sig_color = _signature_colors(model, agents)
 
-    # A node in no facet of S is still a vertex of the complex -- a maximal
-    # simplex of dimension 0 (GitHub #12). Built from model.facets alone, the
-    # lattice would silently lose it; adding its singleton keeps it on the
-    # vertex row. Duck-typed through ``nodes`` so a model that does not carry
-    # the attribute behaves as before. These singletons are NOT worlds, so the
-    # facet styling below is reserved for members of ``model.facets``.
+    # A node in no facet is a 0-dimensional maximal simplex, kept on the vertex row.
     in_some_facet = {n for F in model.facets for n in F}
     loose = frozenset(n for n in getattr(model, "nodes", ()) if n not in in_some_facet)
     maximal = set(model.facets) | {frozenset({n}) for n in loose}
     lattice = FaceLattice(maximal, include_empty=include_empty)
 
-    # Short name per node: "a0", "a1", ... numbering each agent's own knowledge
-    # classes in a stable (sorted) order, so the same model always yields the same
-    # names. Without this, one box would carry the agent's whole equivalence class.
-    short: Dict[Any, str] = {}
+    short: Dict[Any, str] = {}   # "a0", "a1", ... per agent, in a stable order
     for a in agents:
         classes = sorted((n for n in lattice.vertices if n.agent == a), key=_vertex_label)
         for i, node in enumerate(classes):
             short[node] = f"{a}{i}"
-
-    # A directly-defined complex carries the user's own vertex names; they
-    # win over the generated a0/a1 numbering so the diagram speaks the names
-    # the user typed.
-    given = getattr(model, "node_names", None) or {}
+    given = getattr(model, "node_names", None) or {}   # a complex defined directly
 
     def node_name(node) -> str:
         if node in given:
@@ -434,35 +271,22 @@ def from_simplicial_model(model, *, include_empty: bool = True,
             continue
         nodes = sorted(face, key=lambda n: str(n.agent))
         rows = [node_name(n) for n in nodes]
-        # The full perspectives always stay reachable as a hover tooltip (SVG).
         lattice.tooltips[face] = "; ".join(_vertex_label(n) for n in nodes)
         if face in model.facets:
             world = model.world_of_facet.get(face)
             if world is not None:
-                # A facet IS a world, so name it by the world and keep the
-                # perspectives on a second, smaller line.
                 rows = [str(world), " ".join(node_name(n) for n in nodes)]
             colour = sig_color[_belief_signature(model, face, agents)]
-            # Graphviz accepts #RRGGBBAA, so the "55"/"33" suffixes are alpha: a
-            # translucent wash keeps the label readable while still reading as
-            # the Figure-3 colour (and the agent's colour, below).
-            lattice.fills[face] = colour + "55"
+            lattice.fills[face] = colour + "55"   # #RRGGBBAA: a translucent wash
             lattice.outlines[face] = colour
         elif len(face) == 1:
             colour = agent_color[nodes[0].agent]
             lattice.fills[face] = colour + "33"
             lattice.outlines[face] = colour
             if nodes[0] in loose:
-                # Say WHY the box has no line going up: nothing passes through
-                # this perspective, so it belongs to no world.
                 rows.append("(isolated)")
                 lattice.tooltips[face] += " | in no facet"
         if assignment is not None:
-            # The information line: what this face's perspectives jointly
-            # observe. Added LAST so it always sits under the face's name --
-            # vertices read "a0 / (¬Mb, Mc)", facets "w1 / a0 b1 c0 / (Ma, Mc)".
-            # An empty union adds no line: silence (value 2) stays silent, the
-            # thesis's own drawing convention.
             literals = _face_literals(assignment, face)
             if literals:
                 rows.append("(" + ", ".join(literals) + ")")
@@ -486,15 +310,6 @@ def _dot_label(text: str) -> str:
     return _dot_escape(text).replace("\n", "\\n")
 
 
-def _swatch_cell(color: str, text: str, *, round_dot: bool = False) -> str:
-    """One legend cell: a coloured mark followed by its meaning."""
-    mark = "&#9679;" if round_dot else "&#9632;"  # filled circle / filled square
-    return (
-        f'<TD><FONT COLOR="{color}" POINT-SIZE="15">{mark}</FONT>'
-        f' <FONT POINT-SIZE="11">{_html_escape(text)}</FONT></TD>'
-    )
-
-
 def visualize(complex_like) -> str:
     """Return a dependency-free text rendering of a complex's face lattice."""
     return face_lattice(complex_like).describe()
@@ -512,45 +327,25 @@ def to_dot(
     legend: bool = True,
     assignment=None,
 ) -> str:
-    """Return Graphviz DOT source for the Hasse diagram of a complex.
-
-    Use this to export or hand-tweak the source without the ``dot`` binary;
-    :func:`show` calls it for you.
+    """Graphviz DOT source for the Hasse diagram of a complex.
 
     Args:
-        title: Caption under the diagram (defaults to a short description).
-        assignment: Vertex valuation ``L : N -> 3^P`` to display -- each face gets
-            a line with the literals its perspectives jointly observe (simplicial
-            models only; see :func:`from_simplicial_model`).
-        include_empty: Draw the empty face at the bottom. ``None`` keeps whatever
-            the lattice was built with.
-        max_dimension: Draw only faces up to this dimension -- the ``k``-skeleton.
-            The escape hatch for complexes whose full lattice is too big to read.
-        facets_and_vertices: Draw ONLY the vertices and the facets (GitHub #7),
-            with a line from each vertex up to every facet containing it. For a
-            simplicial belief model that is the perspectives row and the worlds
-            row joined by "this agent's perspective is part of this world" --
-            everything the belief reading needs, without the ``2**n`` middle
-            rows. The lines are incidences, not covering relations, so this is
-            a bipartite incidence diagram rather than a Hasse diagram proper;
-            the rows are still ranked by dimension. The empty face is dropped
-            unless ``include_empty=True`` is asked for explicitly.
-        rankdir: ``"BT"`` (default) grows the dimension upwards, the textbook
-            Hasse layout -- but a lattice with a wide middle row then comes out
-            as a very flat strip. ``"LR"`` puts the dimensions in columns instead,
-            which turns that same wide row into a tall one: usually easier to read
-            on a screen once there are more than ~15 faces in a row.
-        dimension_axis: Draw the "dim k" column on the left labelling each row.
-        legend: Draw the colour legend (only present for simplicial models).
+        title: caption (default: a short description).
+        assignment: vertex valuation to display (simplicial models only).
+        include_empty: draw the empty face; ``None`` follows the lattice.
+        max_dimension: draw only the ``k``-skeleton.
+        facets_and_vertices: only the vertices and the facets, joined by the
+            incidence "vertex lies in facet" (a bipartite diagram, no middle rows;
+            the empty face only on explicit request).
+        rankdir: ``"BT"`` grows the dimension upwards; ``"LR"`` lays the
+            dimensions out as columns, better for a wide middle row.
+        dimension_axis: label each row with ``dim k``.
+        legend: draw the colour legend (simplicial models only).
     """
     lattice = face_lattice(complex_like, assignment=assignment)
 
-    # Which faces to draw. Filtering happens here, not in the lattice, so the same
-    # lattice object can be drawn at several depths without being rebuilt.
     def keep(face: Face) -> bool:
         if not face:
-            # The bottom element: by default follow the lattice, but in the
-            # vertices-and-facets view it is pure noise unless asked for.
             return include_empty is True if facets_and_vertices else include_empty is not False
         if max_dimension is not None and len(face) - 1 > max_dimension:
             return False
@@ -569,9 +364,7 @@ def to_dot(
             stacklevel=2,
         )
 
-    # Stable, DOT-safe node ids. Face labels can contain anything, so we never use
-    # them as identifiers -- an index is both safe and deterministic.
-    ids = {face: f"n{i}" for i, face in enumerate(faces)}
+    ids = {face: f"n{i}" for i, face in enumerate(faces)}   # DOT-safe, deterministic ids
     rows: Dict[int, List[Face]] = {}
     for face in faces:
         rows.setdefault(len(face) - 1, []).append(face)
@@ -583,24 +376,16 @@ def to_dot(
 
     lines = [
         "digraph FaceLattice {",
-        # rankdir=BT puts rank 0 at the bottom, so dimension grows upward: the
-        # conventional reading of a Hasse diagram (bigger = higher). LR lays the
-        # same ranks out as columns for lattices that are too wide to read flat.
         f"    rankdir={rankdir};",
         f'    fontname="Helvetica"; fontcolor="{ink()["text"]}"; nodesep=0.30; ranksep=0.55; splines=true;',
         '    node [shape=box, style="rounded,filled", fontname="Helvetica",'
         f' fontsize=10, margin="0.09,0.05", fillcolor="{ink()["node_fill"]}",'
         f' color="{ink()["node_edge"]}", fontcolor="{ink()["text"]}", penwidth=1.1];',
-        # dir=none: in a Hasse diagram the order is read off the height, so an
-        # arrowhead would be redundant clutter. The edges are still *directed* for
-        # the layout engine -- that is what pins each face above its own faces.
+        # dir=none: the order is read off the height; the edges still direct the layout.
         f'    edge [dir=none, color="{ink()["faint"]}", penwidth=1.0];',
     ]
 
-    # The "dim k" axis labels are declared BEFORE the faces: dot orders the
-    # nodes of a rank by first appearance, so declaring them first puts the
-    # axis at the left edge (top edge for rankdir=LR) instead of dangling at
-    # the far right past the last box, which left a wide empty strip.
+    # Axis labels first: dot orders a rank by first appearance, so the axis sits at the edge.
     axis_ids: List[str] = []
     if dimension_axis:
         lines += ["", "    // Dimension axis, one label per row."]
@@ -612,9 +397,7 @@ def to_dot(
                 f' fontcolor="{ink()["muted"]}", fontsize=10];'
             )
         if len(axis_ids) > 1:
-            # Invisible chain keeps the labels lined up in a single column
-            # (row for rankdir=LR) instead of floating into an arbitrary spot.
-            lines.append("    " + " -> ".join(axis_ids) + " [style=invis];")
+            lines.append("    " + " -> ".join(axis_ids) + " [style=invis];")   # keeps them aligned
 
     lines += ["", "    // Faces: one box each, thicker outline for the maximal ones (facets)."]
 
@@ -629,15 +412,10 @@ def to_dot(
         if lattice.is_facet(face):
             attrs.append("penwidth=2.2")
         if not face:
-            # the empty face: a small anchor at the bottom, no text box
-            attrs += ["shape=circle", "width=0.32", "fixedsize=true"]
+            attrs += ["shape=circle", "width=0.32", "fixedsize=true"]   # the empty face: a small anchor
         lines.append(f"    {ids[face]} [{', '.join(attrs)}];")
 
     if facets_and_vertices:
-        # With the middle rows gone there are no covering pairs to draw (a
-        # vertex covers nothing but the empty face). What connects the two
-        # rows is INCIDENCE: vertex v lies in facet F. One line per pair, so
-        # the lines leaving a vertex count the worlds it belongs to.
         lines += ["", "    // Incidences: vertex -- facet containing it."]
         for tau in faces:
             if len(tau) > 1 and lattice.is_facet(tau):
@@ -651,9 +429,7 @@ def to_dot(
             if sigma in ids and tau in ids:
                 lines.append(f"    {ids[sigma]} -> {ids[tau]};")
 
-    # One rank per dimension. dot would already rank the faces correctly (all
-    # covering edges go up exactly one step), but saying it explicitly guarantees
-    # the rows even when a dimension is filtered out or a face is isolated.
+    # One rank per dimension, explicit so rows survive filtering and isolated faces.
     lines += ["", "    // One row per dimension."]
     for dim in sorted(rows):
         members = " ".join(ids[f] + ";" for f in rows[dim])
@@ -661,42 +437,13 @@ def to_dot(
             members = f'"dim{dim}"; ' + members
         lines.append(f"    {{ rank=same; {members} }}")
 
-    # Caption and legend go UNDER the drawing as the graph's own label, in one
-    # HTML-like table (caption row, then the legend strip). Neither is a node,
-    # so they take no rank: the old legend node in ``rank=min`` sat beside the
-    # vertex row (at the far right with rankdir=BT) and stretched the picture
-    # with empty space; a caption on top competed with the top row of boxes.
-    rows_html = [
-        '        <TR><TD ALIGN="CENTER"><FONT POINT-SIZE="13">'
-        f"{_html_escape(caption)}</FONT></TD></TR>",
-    ]
     legend_cells = list(lattice.legend_cells) if legend else []
     if legend and facets_and_vertices:
-        # Tell the reader the middle rows were left out on purpose, so a
-        # missing edge row is not mistaken for a missing edge.
         legend_cells.append(
             f'<TD><FONT COLOR="{ink()["text_soft"]}" POINT-SIZE="11">vertices and facets only; '
             "a line = vertex lies in facet</FONT></TD>"
         )
-    if legend_cells:
-        rows_html += [
-            '        <TR><TD ALIGN="CENTER">',
-            '          <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="12" CELLPADDING="0"><TR>',
-            *("            " + cell for cell in legend_cells),
-            "          </TR></TABLE>",
-            "        </TD></TR>",
-        ]
-    lines += [
-        "",
-        "    // Caption + legend, centred under the drawing.",
-        '    labelloc="b"; fontsize=11;',
-        "    label=<",
-        '      <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="4">',
-        *rows_html,
-        "      </TABLE>",
-        "    >;",
-        "}",
-    ]
+    lines += [""] + _dot_footer(caption, legend_cells)
     return "\n".join(lines)
 
 
@@ -720,17 +467,11 @@ def show(
     assignment=None,
     transparent: bool = False,
 ) -> str:
-    """Draw the Hasse diagram to ``<output_dir>/<name>.<image_format>`` and return the path.
-
-    Writes the DOT source next to the image (``<name>.dot``) and runs Graphviz on
-    it, exactly like :func:`visualization.show`, so the two renderers leave the same
-    kind of artefacts in ``outputs/``. The drawing options are those of
-    :func:`to_dot` (``facets_and_vertices=True`` for the perspectives/worlds
-    view of GitHub #7).
+    """Draw the Hasse diagram to ``<output_dir>/<name>.<image_format>`` (the DOT
+    source beside it) and return the path. Options are those of :func:`to_dot`.
 
     Raises:
-        RuntimeError: If the Graphviz ``dot`` binary is not on ``PATH``. Use
-            :func:`to_dot` to export the source instead.
+        RuntimeError: if the Graphviz ``dot`` binary is not on ``PATH``.
     """
     source = to_dot(
         complex_like,
@@ -773,19 +514,14 @@ def _demo() -> None:
     def banner(text: str) -> None:
         print(f"\n{'=' * 72}\n{text}\n{'=' * 72}")
 
-    # 1. The full 3-simplex (a solid tetrahedron): one facet, 2**4 = 16 faces.
-    #    Its lattice is the Boolean lattice on 4 elements -- the reference picture.
+    # 1. The solid tetrahedron: one facet, 16 faces (the Boolean lattice on 4 elements).
     banner("Solid tetrahedron: maximal simplices [[0,1,2,3]]")
     solid = face_lattice([[0, 1, 2, 3]])
     print(visualize(solid))
     print("->", show(solid, "hasse_tetrahedron", "Solid tetrahedron (the 3-simplex)",
                      open=opened))
 
-    # 2. The same vertices, but only the four triangles: a HOLLOW tetrahedron (the
-    #    boundary 2-sphere). Same 1-skeleton as above, and the lattice shows the
-    #    difference at a glance -- the top row is missing, Euler characteristic
-    #    goes 1 -> 2. This is why the combinatorial picture is worth drawing:
-    #    the geometric one looks nearly identical.
+    # 2. The hollow tetrahedron: same 1-skeleton, top row missing, Euler characteristic 1 -> 2.
     banner("Hollow tetrahedron: the four triangles only")
     hollow = face_lattice([[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]])
     print(visualize(hollow))
@@ -812,12 +548,9 @@ def _demo() -> None:
         },
     )
     model = to_simplicial(kb.to_proper())
-    
     lattice = face_lattice(model, include_empty=False)
     print(visualize(lattice))
-    # 39 faces with 21 of them on the middle row: flat as "BT", so lay the
-    # dimensions out in columns instead.
-    print("->", show(lattice, "hasse_thesis_fig3",
+    print("->", show(lattice, "hasse_thesis_fig3",   # a wide middle row: columns read better
                      "Fig.3 - face lattice of the simplicial belief model",
                      rankdir="LR", open=opened))
 

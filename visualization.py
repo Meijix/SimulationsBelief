@@ -1,25 +1,18 @@
 """Visualisation for every model in the project: text diagrams and images.
 
-Kept separate from the models so they stay small, dependency-free descriptions of
-the logic, and all drawing concerns live here. These are plain functions taking a
-model as their first argument, so no model class has to carry any drawing code.
-
-There are only three functions to remember, and each one accepts **any** model in
-the project (a :class:`RelationalFrame`, a :class:`KnowledgeBeliefFrame` or a
-:class:`SimplicialBeliefModel`) -- the right renderer is chosen automatically:
+Three functions, each accepting any model (a :class:`RelationalFrame`, a
+:class:`KnowledgeBeliefFrame` or a :class:`SimplicialBeliefModel`):
 
     visualize(model)            -> str, a text diagram (no dependencies)
     show(model, "name")         -> writes outputs/name.png, returns the path
-    to_dot(model)               -> str, Graphviz DOT source (any model)
+    to_dot(model)               -> str, Graphviz DOT source
 
-The style is inferred too: an S5 (knowledge) relation is drawn undirected and
-without self-loops, a KD45 (belief) relation with arrows, an invalid frame with
-its missing edges dashed in red. Pass the keyword arguments of :func:`show` only
-when you want to override that.
-
-Images need the Graphviz ``dot`` binary; simplicial models need matplotlib
-(``dim=2``) or plotly (``dim=3``). This module imports the models only for type
-checking, never at runtime, so there is no circular dependency.
+The style is inferred: an S5 relation is drawn undirected without self-loops,
+a KD45/K45 one with arrows, an invalid frame with its missing edges dashed in
+red. Relational models go through Graphviz (``dot``), simplicial ones through
+matplotlib (``dim=2``) or plotly (``dim=3``, HTML). The core modules are
+imported lazily where a renderer needs them, so no model class knows about
+drawing. Figure conventions: docs/03 §7, docs/06, docs/08 §5.
 """
 
 from __future__ import annotations
@@ -61,21 +54,11 @@ MISSING_COLOR = "#D00000"
 # mistaken for a node's colour (an agent) in the same drawing.
 BELIEF_PALETTE = ("#7B4FA3", "#D98A00", "#2E8B57", "#B23A48", "#3A6EA5", "#8C6D1F")
 
-# --------------------------------------------------------------------------- #
-# Ink themes. Everything in a figure that is NOT data -- text, node fills and
-# outlines, the pad behind a label, the faint 1-skeleton, the "missing" red --
-# comes from one of these dictionaries, so the same drawing can be printed on
-# a white page (``light``, the default and what the paper uses) or laid on a
-# dark page (``dark``, what the GUI uses over its navy background). Agent and
-# belief colours are data and do not change between the two.
-#
-# The theme is looked up at DRAW time through :func:`ink`, per thread: the
-# GUI renders in worker threads and wraps each render in
-# ``with ink_theme("dark"):`` (see ``gui/adapters/base.py``), which cannot
-# leak into a render running in another thread, nor into the CLI scripts and
-# the tests, which never set it. :func:`set_ink_theme` changes the process
-# default for scripts that want every figure dark.
-# --------------------------------------------------------------------------- #
+# Ink themes: everything in a figure that is not data (text, node fills, pads,
+# the faint skeleton, the "missing" red). ``light`` is the default (paper,
+# CLI); the GUI draws with ``dark`` inside ``with ink_theme("dark"):``, which
+# is per thread so concurrent renders never leak into each other. Agent and
+# belief colours are data and never change.
 INK_THEMES = {
     "light": {
         "page": "white",          # the page (3-D HTML; the others go transparent)
@@ -112,20 +95,12 @@ INK_THEMES = {
         "marker_edge": "#E7EAF6",
     },
 }
-_INK_DEFAULT = ["light"]
 _ink_local = threading.local()
 
 
 def ink() -> Dict[str, str]:
-    """The ink theme of the current render (thread override, else the default)."""
-    return INK_THEMES[getattr(_ink_local, "name", None) or _INK_DEFAULT[0]]
-
-
-def set_ink_theme(name: str) -> None:
-    """Set the process-wide default ink theme (``"light"`` or ``"dark"``)."""
-    if name not in INK_THEMES:
-        raise ValueError(f"unknown ink theme {name!r}; one of {sorted(INK_THEMES)}")
-    _INK_DEFAULT[0] = name
+    """The ink theme of the current render (this thread's override, else ``light``)."""
+    return INK_THEMES[getattr(_ink_local, "name", None) or "light"]
 
 
 @contextlib.contextmanager
@@ -197,96 +172,46 @@ def show(
     font_scale: float = 1.0,
     transparent: bool = False,
 ) -> str:
-    """Draw any model to a file and return the path. The one function to call.
+    """Draw any model to ``<output_dir>/<name>.<format>`` and return the path.
 
-    Which renderer runs is decided by the model, and the style by the model's
-    shape, so ``show(model, "name")`` is normally all you need::
-
-        show(belief_frame, "belief")        # outputs/belief.png   (arrows)
-        show(knowledge_frame, "knowledge")  # S5 -> undirected, no self-loops
+        show(belief_frame, "belief")        # arrows
+        show(knowledge_frame, "knowledge")  # S5: undirected, no self-loops
         show(kb_model, "figure1")           # knowledge + belief in one figure
         show(simplicial, "figure3")         # filled simplices (matplotlib)
         show(simplicial, "figure3", dim=3)  # interactive 3-D (plotly, .html)
-        show(belief_frame, "belief", open=True)  # ...and open it in the viewer
-
-    For a zero-config quick look (no name, opens automatically), use
-    :func:`preview` instead.
 
     Args:
-        name: Output basename, so each model can go to its own file.
-        title: Caption (defaults to ``name``). Relational models append their
-            validity verdict automatically; simplicial captions are used as given.
-        dim: Simplicial models only -- 2 for a static image, 3 for interactive HTML.
-        open: If True, open the generated file in the OS default viewer/browser
-            after writing it. Default False, so batch scripts and tests never spawn
-            viewers; pass ``open=True`` for an interactive one-off.
-        output_dir: Directory for generated files (default :data:`OUTPUT_DIR`).
-        image_format: Any format ``dot``/matplotlib supports (``png``, ``svg``, ...).
-        logic: Relational frames only. ``"S5"`` says the frame is MEANT as
-            knowledge even if it is not one yet (a half-drawn preview): the
-            style is the knowledge style and what is missing is measured
-            against the S5 closure (reflexivity and symmetry included) instead
-            of the frame's KD45/K45 contract. ``None`` (default) infers.
-        omit_self_loops: Hide reflexive edges. Default: inferred (hidden for S5).
-        undirected_symmetric: Draw a symmetric pair as one arrow-less edge.
-            Default: inferred (on for S5, whose relations are symmetric).
-        highlight_missing: Draw the edges an invalid frame is missing, and its
-            dead-end worlds, in red.
-        valuation: The logical layer to display. For a RELATIONAL model, a
-            Kripke valuation ``v : P -> 2^W``: every world is labelled with its
-            literals, thesis Figure-33 style (``w1`` over ``¬Pa, Pb``). For a
-            SIMPLICIAL model, a shortcut for the canonical vertex route: the
-            valuation is turned into the induced vertex assignment
-            (``assignment.assignment_from_model``: 1 where the agent knows the
-            atom, 0 where it knows the negation, 2 otherwise) and drawn as
-            ``assignment`` below.
-        assignment: Simplicial models only -- a vertex assignment
-            ``L : N -> 3^P`` (the project's canonical, chapter-3 form). Each
-            node shows the literals its perspective observes, thesis Figure 5-9
-            style (``a1`` with ``(¬Mb, Mc)``); value 2 draws nothing, so an
-            unadorned node reads "no hard information". Takes precedence over
-            ``valuation`` if both are given.
-        engine: Simplicial models only -- which renderer to use. ``"auto"`` (the
-            default) keeps the matplotlib drawing: filled simplices, the right
-            picture for a 2-dimensional complex, but no editable source.
-            ``"dot"`` routes through Graphviz instead, writing a ``.dot`` next to
-            the ``.png`` so the figure can be retouched by hand without re-running
-            the model -- at the cost of the filled areas. This route labels the
-            vertices from ``valuation`` only (``assignment`` is not consulted).
-            Relational models always go through Graphviz and ignore this.
-        revision: Simplicial models only, 2-D matplotlib route only. A
-            ``revision.Revision`` (anything with ``eliminated``, ``lost``,
-            ``winners`` and ``candidates``). Draws the belief revision on top
-            of the complex: the facets the announcement removed come out
-            hatched, the face each candidate shares with the lost facet is
-            marked with its size, and an arrow goes to the winner. Showing the
-            LOSING candidates too is the point -- the rule maximises the shared
-            face, and a maximum cannot be read off a single highlighted facet.
-        font_scale: Simplicial models only (2-D and 3-D routes). Multiplies the
-            size of every label of the drawing: agent letters, vertex names,
-            literals, facet names and the legend (the markers grow with them so
-            the letter still fits). 1.0 is the size of the paper figures; the
-            GUI exposes it as "label size" because a complex that is read on a
-            projector or a phone wants bigger text than one in a PDF page.
-        transparent: Render with no background (Graphviz and matplotlib routes),
-            so the figure sits on whatever the page is; the GUI uses it over
-            its cream paper. The 3-D HTML page keeps its own background.
-
-    Returns:
-        The path to the generated file.
+        title: caption (default ``name``); relational captions get the validity verdict.
+        dim: simplicial only, 2 (image) or 3 (HTML).
+        open: open the file in the OS viewer afterwards.
+        logic: relational frames only; ``"S5"`` draws a half-built frame as
+            knowledge and measures what is missing against the S5 closure.
+        omit_self_loops, undirected_symmetric: style overrides (default inferred).
+        highlight_missing: dash in red what an invalid frame lacks, and its dead ends.
+        valuation: a Kripke valuation; worlds are labelled with their literals.
+            On a simplicial model it is turned into the induced vertex
+            assignment (``assignment.assignment_from_model``).
+        assignment: simplicial only, the vertex assignment ``L : N -> 3^P``; each
+            node shows the literals it observes (value 2 draws nothing). Wins
+            over ``valuation``.
+        engine: simplicial only; ``"dot"`` draws the complex as a Graphviz graph
+            (editable ``.dot``, no filled areas; labels from ``valuation`` only).
+        revision: simplicial, 2-D only: a ``Revision`` from
+            ``poster/poster-code/revision.py`` (anything with ``eliminated``,
+            ``lost``, ``winners``, ``candidates``) drawn over the complex, see
+            :func:`_draw_revision`.
+        font_scale: simplicial only, multiplies every label (and marker) size.
+        transparent: no background (Graphviz and matplotlib routes).
 
     Raises:
-        RuntimeError: If the Graphviz ``dot`` binary is not on ``PATH``.
-        TypeError: If ``model`` is not one of the project's models, or
-            ``assignment`` is passed for a non-simplicial model.
+        RuntimeError: the Graphviz ``dot`` binary is not on ``PATH``.
+        TypeError: not a model of the project, ``assignment`` on a relational
+            model, or ``revision`` outside the 2-D route.
     """
     kind = _kind(model)
     caption = title if title is not None else name
     if kind == "simplicial":
         if assignment is None and valuation is not None:
-            # The canonical vertex-based route: a Kripke valuation reaches the
-            # complex as the assignment it induces on the perspectives
-            # (1 = knows the atom, 0 = knows its negation, 2 = cannot tell).
             from assignment import assignment_from_model
 
             assignment = assignment_from_model(model, valuation)
@@ -297,9 +222,6 @@ def show(
                 'engine="dot" / dim=3, or draw the revision separately.'
             )
         if engine == "dot":
-            # Graphviz route for a complex. Unlike the matplotlib drawing it
-            # leaves a .dot beside the .png -- an editable source, like every
-            # other figure in this repo -- at the cost of the filled simplices.
             dot_source = _dot_simplicial(model, caption, valuation, assignment)
             path = _write_and_run_dot(dot_source, name, image_format, output_dir,
                                       transparent=transparent)
@@ -333,17 +255,7 @@ def show(
 
 
 def preview(model, title: str | None = None, *, dim: int = 2) -> str:
-    """Render a model and open it immediately -- zero-config quick look.
-
-    No name and no output directory to choose: the figure is written to a temporary
-    file and opened in the OS default viewer (images) or browser (the 3-D HTML). Use
-    this while exploring; use :func:`show` when you want the file kept under a name.
-
-        preview(kb_model)          # a window pops up
-        preview(simplicial, dim=3) # rotatable 3-D in the browser
-
-    Returns the path to the (temporary) file.
-    """
+    """Render a model to a temporary file and open it (a quick look while exploring)."""
     return show(
         model,
         name=f"preview_{_kind(model)}",
@@ -364,16 +276,9 @@ def to_dot(
     valuation=None,
     logic: str | None = None,
 ) -> str:
-    """Return Graphviz DOT source for any model in the project.
-
-    Use this to export a figure without the ``dot`` binary, or to tweak the source
-    by hand; :func:`show` calls it for you. The arguments are those of
-    :func:`show`; ``None`` means "infer from the model". With ``valuation``,
-    every world is labelled with its literals (see :func:`world_literals`).
-    A simplicial model gets the graph rendering of :func:`_dot_simplicial`
-    (vertices and facets, no filled areas); the style keywords only apply to
-    relational models.
-    """
+    """Graphviz DOT source for any model; the arguments are those of :func:`show`
+    (``None`` = infer). A simplicial model gets the graph rendering of
+    :func:`_dot_simplicial`; the style keywords apply to relational models."""
     kind = _kind(model)
     if kind == "knowledge_belief":
         return _dot_knowledge_belief(model, title, omit_self_loops, valuation,
@@ -389,42 +294,11 @@ def to_dot(
 
 
 def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=None) -> str:
-    """Return Graphviz DOT source for a SIMPLICIAL belief model.
-
-    Why a DOT form exists at all. :func:`_show_simplicial` draws the complex with
-    matplotlib (filled simplices, spring layout), which is the right picture for a
-    2-dimensional complex but gives no editable source: there is no ``.dot`` beside
-    the ``.png``, so a figure cannot be retouched without re-running the model. The
-    DOT rendering trades the filled areas for exactly that -- a text source the
-    ``.dot`` files of every other figure in this repo already give you.
-
-    How a complex becomes a graph. Every facet with exactly two vertices IS an
-    edge, so a complex whose facets are all pairs (the two-agent case: one vertex
-    per agent) maps to a graph with no loss at all. A facet with three or more
-    vertices is a hyperedge, which DOT cannot draw; those are rendered in the
-    standard incidence form -- a small point for the facet, joined to each of its
-    vertices -- so the drawing stays faithful instead of silently dropping them.
-
-    Conventions match :func:`_show_simplicial` so the two views of one model can be
-    read side by side: vertices carry their agent's colour, facets (or their
-    incidence points) carry the colour of their belief signature, and each facet is
-    labelled with the world it came from.
-
-    Args:
-        model: the :class:`simplicial.SimplicialBeliefModel` to draw.
-        title: caption under the figure.
-        valuation: optional ``atom -> worlds`` map; when given, each vertex is
-            labelled with the literals that perspective observes (via the induced
-            assignment), exactly as the matplotlib drawing labels them.
-        assignment: the vertex assignment itself (``L : N -> 3^P``), for a
-            complex defined directly; takes precedence over ``valuation``.
-
-    Returns:
-        DOT source, ready for ``dot -Tpng``.
+    """Graphviz DOT source for a simplicial model: an editable text source at the
+    cost of the filled areas. A two-vertex facet is an edge; a larger facet is a
+    hyperedge, drawn as a point joined to its vertices. Colours and labels match
+    :func:`_show_simplicial`.
     """
-    # Lazy imports, the rule this module already follows: the core is imported
-    # only where it is needed, never at module level, so the domain code stays
-    # unaware that a renderer exists.
     from simplicial import label_facet, label_node
 
     agents = sorted(model.agents, key=str)
@@ -433,8 +307,6 @@ def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=
 
     assignment = dict(assignment or {})
     if not assignment and valuation:
-        # Same bridge the matplotlib drawing uses: world truth induces what each
-        # perspective OBSERVES (1/0/2), and only 1 and 0 are rendered.
         from assignment import assignment_from_model
 
         assignment = assignment_from_model(model, valuation)
@@ -454,14 +326,10 @@ def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=
         lines.append('  fontsize=14')
 
     for node in sorted(model.nodes, key=label_node):
-        # Visible label = the agent, exactly as the matplotlib drawing labels it,
-        # with the observed literals underneath. The full `label_node` string
-        # (agent + knowledge class) is the node's unique DOT id and its tooltip,
-        # so the picture stays uncluttered without losing which class it is.
+        # Visible label: the agent and its literals; the full label_node string
+        # is the DOT id and the tooltip. "\\n" is Graphviz's line break, so the
+        # pieces are escaped separately.
         literals = ", ".join(node_literals(assignment, node)) if assignment else ""
-        # The pieces are escaped SEPARATELY and joined with a raw "\n": that
-        # sequence is Graphviz's line break, and _dot_escape would double the
-        # backslash and turn it into two visible characters in the drawing.
         caption = _dot_escape(node.agent)
         if literals:
             caption += "\\n(" + _dot_escape(literals) + ")"
@@ -485,12 +353,7 @@ def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=
                 f'[color="{color}", label="{caption}", fontsize=10]'
             )
         else:
-            # Three or more vertices: DOT has no hyperedge, so the facet becomes a
-            # point joined to its vertices (incidence rendering). Faithful, and it
-            # keeps higher-dimensional complexes drawable instead of refused.
-            hub = _dot_id("facet_" + label_facet(facet))
-            # xlabel, not label: Graphviz draws no text inside a point, so the
-            # world's name goes beside it.
+            hub = _dot_id("facet_" + label_facet(facet))   # xlabel: no text fits in a point
             lines.append(
                 f'  {hub} [label="", xlabel="{caption}", shape=point, width=0.18, '
                 f'color="{color}", fontsize=10]'
@@ -506,13 +369,7 @@ def _dot_simplicial(model, title: str | None = None, valuation=None, assignment=
 
 
 def world_literals(valuation, world) -> List[str]:
-    """Render a world's atoms as literals, thesis Figure-33 style: ``¬Pa, Pb``.
-
-    A Kripke valuation ``v : P -> 2^W`` is TOTAL: every atom it mentions is
-    either true or false at each world, so both polarities are informative and
-    both are shown (``P`` if ``world ∈ v(P)``, ``¬P`` otherwise). Atoms are
-    sorted for a stable, comparable label.
-    """
+    """A world's literals under a (total) Kripke valuation: ``P`` or ``¬P`` per atom."""
     return [
         (str(atom) if world in trues else f"¬{atom}")
         for atom, trues in sorted(valuation.items(), key=lambda kv: str(kv[0]))
@@ -520,30 +377,18 @@ def world_literals(valuation, world) -> List[str]:
 
 
 def node_literals(assignment, node) -> List[str]:
-    """Render a perspective's observed literals, thesis Figure 5-9 style.
-
-    A vertex assignment ``L : N -> 3^P`` is PARTIAL: value 1 renders as ``P``,
-    value 0 as ``¬P``, and value 2 ("doesn't know") renders as NOTHING -- silence
-    is the point of the third value, so an uncertain atom must not clutter the
-    node. A node with no observations gets an empty list (drawn bare, like
-    ``b1`` in the thesis's Figure 5).
-    """
+    """A perspective's observed literals: value 1 -> ``P``, 0 -> ``¬P``, 2 -> nothing."""
     out: List[str] = []
     for atom, value in sorted(assignment.get(node, {}).items(), key=lambda kv: str(kv[0])):
         if value == 1:
             out.append(str(atom))
         elif value == 0:
             out.append(f"¬{atom}")
-        # value 2: deliberately omitted
     return out
 
 
 def agent_colors(model) -> Dict["Agent", str]:
-    """Return a stable ``agent -> hex colour`` mapping from the palette.
-
-    Colours are assigned by the agent's sorted position and the palette cycles, so
-    the same model always colours the same agent the same way.
-    """
+    """``agent -> hex colour`` by sorted position in the palette (stable per model)."""
     ordered = sorted(model.agents, key=str)
     return {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(ordered)}
 
@@ -565,20 +410,6 @@ def _kind(model) -> str:
     )
 
 
-def _is_s5(frame: "RelationalFrame") -> bool:
-    """True if every relation is reflexive and symmetric -- i.e. knowledge (S5).
-
-    Used to pick the default drawing style: S5 relations read best as undirected
-    edges with the (assumed) self-loops hidden, KD45 relations as arrows.
-    """
-    for relation in frame.relations.values():
-        if any((w, w) not in relation for w in frame.worlds):
-            return False
-        if any((t, s) not in relation for (s, t) in relation):
-            return False
-    return True
-
-
 # --------------------------------------------------------------------------- #
 # Text diagrams
 # --------------------------------------------------------------------------- #
@@ -596,11 +427,7 @@ def _visualize_frame(
             successors = frame.successors(a, w)
             targets = sorted(successors, key=str)
             rendered = ", ".join(f"{t}{' (self)' if t == w else ''}" for t in targets)
-            # The world's literals, when a valuation is displayed: w1 (¬P, Q) -> ...
             lits = f" ({', '.join(world_literals(valuation, w))})" if valuation else ""
-            # A world with no successor: under KD45 that breaks Axiom D (an
-            # error); under K45 it is a legal defunct-belief world -- name each
-            # for what it is instead of always shouting NOT SERIAL.
             if successors:
                 marker = ""
             elif frame.axiom_d:
@@ -626,24 +453,10 @@ def _dot_id(value) -> str:
 
 def _world_label_attr(valuation, world, dead_for=(), colors=None,
                       error: bool = True) -> str:
-    """DOT ``label=...`` attribute for a world: its literals and its dead-end agents.
-
-    Returns an empty string when there is nothing to show, so callers can splice
-    the result into an attribute list unconditionally. The literals go on a
-    second line under the world name, Figure-33 style. Only the label attribute
-    changes -- the node's DOT identifier stays the bare world name, so edges
-    keep pointing at the same node.
-
-    ``dead_for`` names the agents for whom this world is a dead end (no
-    outgoing belief edge). A dead end is a property of a world AND an agent
-    (GitHub #11): the same world can leave ``a`` believing nothing while ``b``
-    is fine, so the drawing says WHICH agents on the world itself -- a third
-    line ``⊘ a, b`` with each name in that agent's colour. That line needs
-    Graphviz's HTML-like label syntax (``label=<...>``) for the colours; the
-    plain quoted form is kept whenever there is no dead end, so figures
-    without one are byte-identical to before. ``error`` colours the mark red
-    (a KD45 seriality violation) or grey (a legal K45 defunct belief).
-    """
+    """DOT ``label=...`` for a world: its literals and, as a line ``⊘ a, b`` in
+    the agents' colours, the agents for whom it is a dead end (``dead_for``);
+    the mark is red when ``error`` (KD45) and grey otherwise (legal in K45).
+    Empty string when there is nothing to show."""
     literals = world_literals(valuation, world) if valuation else []
     dead_for = list(dead_for)
     if not dead_for:
@@ -664,11 +477,7 @@ def _world_label_attr(valuation, world, dead_for=(), colors=None,
 
 
 def _dead_ends_by_world(frame) -> Dict:
-    """``world -> [agents]`` for whom the world is a dead end, agents sorted.
-
-    Inverts :meth:`RelationalFrame.dead_ends` (which is per agent) into the
-    per-world form the drawings need to label each world with its agents.
-    """
+    """``world -> [agents]`` for whom the world is a dead end (inverts ``dead_ends``)."""
     out: Dict = {}
     for a, stuck in sorted(frame.dead_ends().items(), key=lambda kv: str(kv[0])):
         for w in stuck:
@@ -690,14 +499,7 @@ def _html_escape(value) -> str:
 
 
 def _dot_header() -> List[str]:
-    """Opening lines of a DOT digraph: layout and default node/edge style.
-
-    The caption and the legend are NOT here: both go into the root graph's
-    bottom label (see :func:`_dot_footer`), so neither takes part in the
-    node layout. A caption on top overlapped the edges that arc above the
-    nodes, and a legend node in ``rank=sink`` sat, with ``rankdir=LR``, in a
-    rank of its own at the far right leaving a wide empty column.
-    """
+    """Opening lines of a DOT digraph: layout and default node/edge style."""
     return [
         "digraph Model {",
         "    rankdir=LR;",
@@ -709,20 +511,13 @@ def _dot_header() -> List[str]:
 
 
 def _dot_footer(caption: str, cells: List[str]) -> List[str]:
-    """Caption and legend under the drawing, then close the graph.
-
-    Both are one HTML-like root label at ``labelloc="b"``: first row the
-    caption, second row the legend cells in a single horizontal strip. Being
-    the graph label, it is centred under the drawing whatever the rank
-    direction and never collides with nodes or edges.
-    """
+    """Caption and legend as the graph's bottom label (so they never collide
+    with the drawing), then close the graph."""
     rows = [
         "        <TR><TD COLSPAN=\"99\" ALIGN=\"CENTER\">"
         f"<FONT POINT-SIZE=\"13\">{_html_escape(caption)}</FONT></TD></TR>",
     ]
     if cells:
-        # Nested table: the legend cells keep their own spacing while the
-        # caption row spans the full width above them.
         rows += [
             "        <TR><TD ALIGN=\"CENTER\">",
             '          <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="14" CELLPADDING="0"><TR>',
@@ -741,11 +536,12 @@ def _dot_footer(caption: str, cells: List[str]) -> List[str]:
     ]
 
 
-def _agent_cell(agent, color: str) -> str:
-    """Legend cell: a coloured dot followed by the agent's name."""
+def _swatch_cell(color: str, text: str, *, round_dot: bool = False) -> str:
+    """Legend cell: a coloured mark (square, or a dot for agents) and its meaning."""
+    mark = "&#9679;" if round_dot else "&#9632;"
     return (
-        f'<TD><FONT COLOR="{color}" POINT-SIZE="15">&#9679;</FONT>'
-        f' <FONT POINT-SIZE="11">{_html_escape(agent)}</FONT></TD>'
+        f'<TD><FONT COLOR="{color}" POINT-SIZE="15">{mark}</FONT>'
+        f' <FONT POINT-SIZE="11">{_html_escape(text)}</FONT></TD>'
     )
 
 
@@ -760,6 +556,41 @@ def _sorted_edges(relation):
     return sorted(relation, key=lambda e: (str(e[0]), str(e[1])))
 
 
+def _world_lines(worlds, valuation, dead_for: Dict, colors, flag_dead: bool) -> List[str]:
+    """One DOT node line per world, with its label and the dead-end styling."""
+    lines = []
+    for w in sorted(worlds, key=str):
+        attrs = []
+        label = _world_label_attr(valuation, w, dead_for.get(w, ()), colors, flag_dead)
+        if label:
+            attrs.append(label)
+        if flag_dead and w in dead_for:
+            attrs += [f'fillcolor="{ink()["dead_fill"]}"', f'color="{_missing()}"',
+                      'style="filled,dashed"', "penwidth=2"]
+        lines.append(f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";")
+    return lines
+
+
+def _edge_lines(edges, attrs: str, omit_self_loops: bool, undirected_symmetric: bool) -> List[str]:
+    """One DOT edge line per edge of ``edges`` (a set), with ``attrs``. Self-loops
+    are skipped when ``omit_self_loops``; a symmetric pair is drawn once without
+    arrowheads when ``undirected_symmetric``."""
+    lines = []
+    drawn: Set[frozenset] = set()
+    for (s, t) in _sorted_edges(edges):
+        if omit_self_loops and s == t:
+            continue
+        if undirected_symmetric and s != t and (t, s) in edges:
+            key = frozenset((s, t))
+            if key in drawn:
+                continue
+            drawn.add(key)
+            lines.append(f'    {_dot_id(s)} -> {_dot_id(t)} [{attrs}, dir=none];')
+        else:
+            lines.append(f'    {_dot_id(s)} -> {_dot_id(t)} [{attrs}];')
+    return lines
+
+
 # --------------------------------------------------------------------------- #
 # DOT: a single relational frame
 # --------------------------------------------------------------------------- #
@@ -772,31 +603,21 @@ def _dot_frame(
     valuation=None,
     logic: str | None = None,
 ) -> str:
-    """DOT for one frame, one colour per agent (see :func:`to_dot`).
-
-    ``logic="S5"`` declares the frame as KNOWLEDGE regardless of its current
-    shape: the knowledge style applies, validity is judged as an equivalence
-    relation, and the red overlay shows what the S5 closure would add. Without
-    it, an incomplete knowledge frame would be judged (and completed) as a
-    KD45 belief frame -- wrong loops, wrong verdict.
-    """
+    """DOT for one frame, one colour per agent. ``logic="S5"`` draws the frame as
+    knowledge whatever its current shape and measures what is missing against
+    the S5 closure (a half-built knowledge frame would otherwise be judged as
+    belief)."""
     as_knowledge = logic == "S5"
-    # Style defaults: knowledge (S5) is symmetric and reflexive, so it reads best
-    # as undirected edges with the assumed self-loops hidden; belief keeps arrows.
     if omit_self_loops is None or undirected_symmetric is None:
-        s5 = as_knowledge or _is_s5(frame)
+        s5 = as_knowledge or frame.logic_label() == "S5"
         omit_self_loops = s5 if omit_self_loops is None else omit_self_loops
         undirected_symmetric = s5 if undirected_symmetric is None else undirected_symmetric
 
     colors = agent_colors(frame)
-    # Caption shows validity so valid and invalid models are told apart at a
-    # glance -- judged against the frame's DECLARED logic (violations() consults
-    # axiom_d), not blanket KD45: a legal K45 frame must not read as broken.
     if as_knowledge:
-        from properness import equivalence_violations  # local: no import cycle
         from relational_frame import s5_closure
 
-        violations = equivalence_violations(frame)
+        violations = frame.s5_violations()
         logic_name = "S5"
         missing = {a: s5_closure(frame.worlds, frame.relations[a]) - set(frame.relations[a])
                    for a in frame.agents}
@@ -806,79 +627,22 @@ def _dot_frame(
         missing = frame.missing_edges()
     status = f"valid {logic_name}" if not violations else f"INVALID: {len(violations)} violation(s)"
     caption = f"{title} — {status}" if title else status
-    lines = _dot_header()
 
-    # Which agents believe nothing at each world (no outgoing edge). A dead end
-    # is per AGENT, so the world is labelled with their names (GitHub #11).
-    # Under KD45 it is a seriality violation and the world also gets the red
-    # error styling; under K45 (axiom_d off) a dead end is a legal
-    # defunct-belief world: the names stay (in grey) and nothing reads as
-    # broken. Knowledge frames are reflexive, so there is nothing to look for.
+    # Dead ends are named per agent on the world: red under KD45, grey under K45.
     dead_for: Dict = {} if as_knowledge else _dead_ends_by_world(frame)
     flag_dead = highlight_missing and frame.axiom_d and not as_knowledge
-    for w in sorted(frame.worlds, key=str):
-        # The valuation label rides along with whatever styling the world gets:
-        # attributes are collected and joined, so dead-end highlighting and the
-        # literals never fight over the bracket.
-        attrs = []
-        label = _world_label_attr(valuation, w, dead_for.get(w, ()), colors, flag_dead)
-        if label:
-            attrs.append(label)
-        if flag_dead and w in dead_for:
-            attrs += [f'fillcolor="{ink()["dead_fill"]}"', f'color="{_missing()}"',
-                      'style="filled,dashed"', "penwidth=2"]
-        lines.append(
-            f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
-        )
-
-    # One coloured edge per agent -- the colour identifies the agent, so no
-    # per-edge labels are needed (the legend below maps colour -> agent).
-    for a in sorted(frame.agents, key=str):
-        color = colors[a]
-        relation = frame.relations[a]
-        drawn_undirected: Set[frozenset] = set()
-        for (source, target) in _sorted_edges(relation):
-            if omit_self_loops and source == target:
-                continue
-            if undirected_symmetric and source != target and (target, source) in relation:
-                # Symmetric pair -> draw once, without arrowheads.
-                key = frozenset((source, target))
-                if key in drawn_undirected:
-                    continue
-                drawn_undirected.add(key)
-                lines.append(
-                    f'    {_dot_id(source)} -> {_dot_id(target)} [color="{color}", dir=none];'
-                )
-            else:
-                lines.append(f'    {_dot_id(source)} -> {_dot_id(target)} [color="{color}"];')
-
-    # Overlay the edges that are required but missing (dashed red, no label).
-    # Follows the drawing's own conventions: loops are skipped when loops are
-    # hidden, and a missing symmetric pair is one dashed line when pairs are
-    # drawn undirected -- otherwise the overlay would show what the drawing
-    # deliberately abbreviates.
+    agents = sorted(frame.agents, key=str)
+    lines = _dot_header()
+    lines += _world_lines(frame.worlds, valuation, dead_for, colors, flag_dead)
+    for a in agents:
+        lines += _edge_lines(frame.relations[a], f'color="{colors[a]}"',
+                             omit_self_loops, undirected_symmetric)
     if highlight_missing:
-        for a in sorted(frame.agents, key=str):
-            drawn_missing: Set[frozenset] = set()
-            for (source, target) in _sorted_edges(missing[a]):
-                if omit_self_loops and source == target:
-                    continue
-                if undirected_symmetric and source != target and (target, source) in missing[a]:
-                    key = frozenset((source, target))
-                    if key in drawn_missing:
-                        continue
-                    drawn_missing.add(key)
-                    lines.append(
-                        f'    {_dot_id(source)} -> {_dot_id(target)} '
-                        f'[style=dashed, dir=none, color="{_missing()}"];'
-                    )
-                    continue
-                lines.append(
-                    f'    {_dot_id(source)} -> {_dot_id(target)} '
-                    f'[style=dashed, color="{_missing()}"];'
-                )
+        for a in agents:
+            lines += _edge_lines(missing[a], f'style=dashed, color="{_missing()}"',
+                                 omit_self_loops, undirected_symmetric)
 
-    cells = [_agent_cell(a, colors[a]) for a in sorted(frame.agents, key=str)]
+    cells = [_swatch_cell(colors[a], a, round_dot=True) for a in agents]
     if cells:
         if highlight_missing and any(missing.values()):
             cells.append(_note_cell("&#9548;&#9548; missing edge", _missing()))
@@ -895,134 +659,55 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
                           valuation=None,
                           undirected_symmetric: bool | None = None,
                           highlight_missing: bool = True) -> str:
-    """DOT for a knowledge+belief model, both relations in one figure.
-
-    Knowledge ``R_a`` is drawn as thin, arrow-less lines (S5 is symmetric, so
-    indistinguishability has no direction); belief ``Q_a`` as bold, directed arrows
-    (what the agent actually believes). Both are coloured by agent. Since
-    ``Q_a ⊆ R_a``, each belief arrow sits alongside a knowledge line.
-
-    Both simplifications can be switched off to show the relation AS IT IS
-    (every edge, every direction): ``omit_self_loops=False`` draws the
-    reflexive loops of both relations, ``undirected_symmetric=False`` draws a
-    symmetric knowledge pair as two thin arrows. The GUI exposes this as
-    "show implicit edges", the way to see what the S5/KD45 closures added.
-
-    ``highlight_missing`` (default on) overlays, in red, what an INVALID model
-    is missing -- the same treatment :func:`_dot_frame` gives a single frame,
-    so a half-drawn model in the GUI preview shows what the closures will
-    fill in: the S5 edges knowledge lacks (thin dashed), the KD45 edges belief
-    lacks (bold dashed), belief arrows that leave the knowledge class (bold
-    red: ``Q_a ⊆ R_a`` fails) and, under Axiom D, the worlds where an agent
-    believes nothing (red dashed outline: seriality fails).
-    """
+    """DOT for a knowledge+belief model: knowledge as thin arrow-less lines,
+    belief as bold arrows, both coloured by agent. ``highlight_missing`` dashes
+    in red the S5 edges knowledge lacks, the 4/5 edges belief lacks, belief
+    arrows outside knowledge and, under Axiom D, dead-end worlds."""
     omit_self_loops = True if omit_self_loops is None else omit_self_loops
     undirected_symmetric = True if undirected_symmetric is None else undirected_symmetric
     colors = agent_colors(kb)
     status = "valid" if kb.is_valid() else "INVALID"
     caption = f"{title} — {status}" if title else status
-    lines = _dot_header()
+    agents = sorted(kb.agents, key=str)
 
-    # What is missing, computed up front so nodes and edges can both use it.
-    # Knowledge is measured against its S5 closure (RelationalFrame.missing_edges
-    # only covers axioms 4/5, and knowledge also needs T: reflexivity), belief
-    # against its own 4/5 closure; dead ends only count when Axiom D applies.
     missing_k: Dict = {}
     missing_b: Dict = {}
     if highlight_missing:
-        from relational_frame import s5_closure  # local: avoids an import cycle
+        from relational_frame import s5_closure
 
-        for a in kb.agents:
+        for a in agents:
             rel = kb.knowledge.relations[a]
             missing_k[a] = s5_closure(kb.worlds, rel) - set(rel)
         missing_b = kb.belief.missing_edges()
-    # Dead ends are named per agent on the world itself (GitHub #11, see
-    # _dot_frame): red error styling only under Axiom D, grey names under K45.
     dead_for = _dead_ends_by_world(kb.belief)
     flag_dead = highlight_missing and kb.axiom_d
 
-    for w in sorted(kb.worlds, key=str):
-        attrs = []
-        label = _world_label_attr(valuation, w, dead_for.get(w, ()), colors, flag_dead)
-        if label:
-            attrs.append(label)
-        if flag_dead and w in dead_for:
-            attrs += [f'fillcolor="{ink()["dead_fill"]}"', f'color="{_missing()}"',
-                      'style="filled,dashed"', "penwidth=2"]
-        lines.append(
-            f"    {_dot_id(w)}" + (f" [{', '.join(attrs)}]" if attrs else "") + ";"
-        )
-
-    # Knowledge: thin, undirected (symmetric). Belief: bold, directed.
-    for a in sorted(kb.agents, key=str):
-        color = colors[a]
-        relation = kb.knowledge.relations[a]
-        drawn: Set[frozenset] = set()
-        for (s, t) in _sorted_edges(relation):
-            if omit_self_loops and s == t:
-                continue
-            if undirected_symmetric and s != t and (t, s) in relation:
-                key = frozenset((s, t))
-                if key in drawn:
-                    continue
-                drawn.add(key)
-                lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", dir=none, penwidth=0.7];'
-                )
-            else:
-                lines.append(f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", penwidth=0.7];')
+    lines = _dot_header()
+    lines += _world_lines(kb.worlds, valuation, dead_for, colors, flag_dead)
+    for a in agents:
+        lines += _edge_lines(kb.knowledge.relations[a], f'color="{colors[a]}", penwidth=0.7',
+                             omit_self_loops, undirected_symmetric)
     outside_knowledge = False
-    for a in sorted(kb.agents, key=str):
-        color = colors[a]
-        for (s, t) in _sorted_edges(kb.belief.relations[a]):
-            if omit_self_loops and s == t:
-                continue
-            # A belief arrow with no knowledge edge underneath breaks Q_a ⊆ R_a:
-            # drawn in red so the offending arrow itself is the diagnosis.
-            if highlight_missing and (s, t) not in kb.knowledge.relations[a]:
-                outside_knowledge = True
-                lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{_missing()}", '
-                    'penwidth=2.6, arrowsize=1.0];'
-                )
-            else:
-                lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [color="{color}", penwidth=2.6, arrowsize=1.0];'
-                )
-
-    # Overlay of what is missing (dashed red): thin for knowledge, bold for
-    # belief. Knowledge follows the undirected convention of the drawn edges.
+    for a in agents:
+        belief = kb.belief.relations[a]
+        outside = {e for e in belief if e not in kb.knowledge.relations[a]} if highlight_missing else set()
+        lines += _edge_lines(belief - outside, f'color="{colors[a]}", penwidth=2.6, arrowsize=1.0',
+                             omit_self_loops, False)
+        red = _edge_lines(outside, f'color="{_missing()}", penwidth=2.6, arrowsize=1.0',
+                          omit_self_loops, False)
+        outside_knowledge = outside_knowledge or bool(red)
+        lines += red
     any_missing = False
-    for a in sorted(kb.agents, key=str):
-        drawn_m: Set[frozenset] = set()
-        for (s, t) in _sorted_edges(missing_k.get(a, ())):
-            if omit_self_loops and s == t:
-                continue
-            any_missing = True
-            if undirected_symmetric and s != t and (t, s) in missing_k[a]:
-                key = frozenset((s, t))
-                if key in drawn_m:
-                    continue
-                drawn_m.add(key)
-                lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, dir=none, '
-                    f'color="{_missing()}", penwidth=0.7];'
-                )
-            else:
-                lines.append(
-                    f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
-                    f'color="{_missing()}", penwidth=0.7];'
-                )
-        for (s, t) in _sorted_edges(missing_b.get(a, ())):
-            if omit_self_loops and s == t:
-                continue
-            any_missing = True
-            lines.append(
-                f'    {_dot_id(s)} -> {_dot_id(t)} [style=dashed, '
-                f'color="{_missing()}", penwidth=2.6, arrowsize=1.0];'
-            )
+    for a in agents:
+        thin = _edge_lines(missing_k.get(a, set()), f'style=dashed, color="{_missing()}", penwidth=0.7',
+                           omit_self_loops, undirected_symmetric)
+        bold = _edge_lines(missing_b.get(a, set()),
+                           f'style=dashed, color="{_missing()}", penwidth=2.6, arrowsize=1.0',
+                           omit_self_loops, False)
+        any_missing = any_missing or bool(thin or bold)
+        lines += thin + bold
 
-    cells = [_agent_cell(a, colors[a]) for a in sorted(kb.agents, key=str)]
+    cells = [_swatch_cell(colors[a], a, round_dot=True) for a in agents]
     if cells:
         cells.append(_note_cell("&#9472; knowledge (thin)"))
         cells.append(_note_cell("&#10142; belief (bold)"))
@@ -1038,14 +723,11 @@ def _dot_knowledge_belief(kb, title: str | None, omit_self_loops: bool | None,
 
 def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir: str,
                        transparent: bool = False) -> str:
-    """Write DOT to ``<output_dir>/<name>.dot`` and render it with Graphviz ``dot``.
-
-    ``transparent`` drops the white page of the drawing: the source's own
-    ``bgcolor="white"`` (the simplicial route sets one) is rewritten, and the
-    default is overridden on the command line for sources that set none.
+    """Write ``<output_dir>/<name>.dot`` and render it with Graphviz; ``transparent``
+    drops the page colour.
 
     Raises:
-        RuntimeError: If the ``dot`` binary is not found on ``PATH``.
+        RuntimeError: if the ``dot`` binary is not on ``PATH``.
     """
     if shutil.which("dot") is None:
         raise RuntimeError(
@@ -1053,15 +735,13 @@ def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir
             "graphviz') or use to_dot(model) to export the source manually."
         )
     os.makedirs(output_dir, exist_ok=True)
-    # basename() keeps a stray "/" or ".." in `name` from writing outside output_dir.
-    base = os.path.join(output_dir, os.path.basename(name))
+    base = os.path.join(output_dir, os.path.basename(name))   # never outside output_dir
     dot_path = f"{base}.dot"
     image_path = f"{base}.{image_format}"
     if transparent:
         dot_source = dot_source.replace('bgcolor="white"', 'bgcolor="transparent"')
     with open(dot_path, "w", encoding="utf-8") as fh:
         fh.write(dot_source)
-    # -T selects the output format; -o the destination file; -G a graph default.
     cmd = ["dot", f"-T{image_format}", dot_path, "-o", image_path]
     if transparent:
         cmd.insert(1, "-Gbgcolor=transparent")
@@ -1070,12 +750,7 @@ def _write_and_run_dot(dot_source: str, name: str, image_format: str, output_dir
 
 
 def _open_file(path: str) -> None:
-    """Open ``path`` in the OS default application (image viewer / browser).
-
-    Best-effort and cross-platform; never raises (a failed open must not break a
-    render). Falls back to the ``webbrowser`` module, which handles both images and
-    the interactive 3-D HTML.
-    """
+    """Open ``path`` in the OS default application; best effort, never raises."""
     import sys
 
     abspath = os.path.abspath(path)
@@ -1100,14 +775,7 @@ def _open_file(path: str) -> None:
 # Simplicial belief models (facets drawn as filled simplices)
 # --------------------------------------------------------------------------- #
 def facet_name(model, facet) -> str:
-    """Readable name of a facet: the world it came from.
-
-    Under the translation every facet IS a world of the proper model, so the
-    natural name of a facet is that world. Worlds of a proper model are copies
-    ``(w, u)``: rendered as ``(w, u)`` without the quotes ``str`` would add,
-    so the label stays short inside the drawing. An empty string when the
-    model does not record its worlds (hand-built complexes).
-    """
+    """The facet's world as a short label (``(w, u)`` for a copy); empty if unknown."""
     world = model.world_of_facet.get(facet) if hasattr(model, "world_of_facet") else None
     if world is None:
         return ""
@@ -1122,28 +790,16 @@ def _belief_signature(model, facet, agents):
 
 
 def signature_label(model, sig, agents) -> str:
-    """Legend text for a belief signature: ``belief: a+b``, ``belief: none``...
-
-    On a KNOWLEDGE-only complex (``S_a = S`` for every agent, see
-    ``SimplicialBeliefModel.is_knowledge_only``) every facet carries the full
-    signature, and "belief: a+b+c" would suggest a belief model that happens to
-    be unanimous. It is not: there is no belief data at all, so the legend
-    says so. Shared by the 2-D, 3-D and Hasse renderers so the three figures
-    of one model read the same.
-    """
+    """Legend text for a belief signature (``belief: a+b``, ``belief: none``); on a
+    knowledge-only complex the full signature reads ``knowledge only (S_a = S)``.
+    Shared by the 2-D, 3-D and Hasse renderers."""
     if getattr(model, "is_knowledge_only", False) and tuple(sig) == tuple(agents):
         return "knowledge only (S_a = S)"
     return "belief: " + ("+".join(map(str, sig)) if sig else "none")
 
 
 def _node_key(node):
-    """A canonical, run-stable sort key for a simplicial node.
-
-    ``str(node)`` is NOT usable: a Node carries a frozenset, whose repr orders
-    its elements by hash, so the same node stringifies differently on every
-    run. Sorting by it was the hidden source of figures that changed each time
-    the script was re-run.
-    """
+    """A run-stable sort key for a node (``str(node)`` orders a frozenset by hash)."""
     agent = getattr(node, "agent", None)
     cls = getattr(node, "cls", None)
     if agent is None or cls is None:
@@ -1152,11 +808,10 @@ def _node_key(node):
 
 
 def _signature_colors(model, agents) -> Dict[tuple, str]:
-    """Map each belief signature to a fill colour (the empty one stays neutral grey)."""
+    """Belief signature -> fill colour, handed out in a stable order; the empty
+    signature is neutral."""
     signatures = {_belief_signature(model, f, agents) for f in model.facets}
     colors = {(): ink()["neutral"]}
-    # Sorted (singletons first, then alphabetically) so the palette is handed out
-    # in the same order on every run and the legend reads in that order too.
     for i, sig in enumerate(sorted((s for s in signatures if s), key=lambda s: (len(s), s))):
         colors[sig] = BELIEF_PALETTE[i % len(BELIEF_PALETTE)]
     return colors
@@ -1168,26 +823,18 @@ def _skeleton_edges(model):
     for facet in model.facets:
         for u, v in itertools.combinations(facet, 2):
             edges.add(frozenset((u, v)))
-    # Sorted: the accumulation order of the spring forces changes the result
-    # in the last floating-point digits, and a set gives a different order
-    # on every run.
+    # Sorted: the order of the spring forces changes the last digits of the layout.
     return sorted((tuple(sorted(e, key=_node_key)) for e in edges),
                   key=lambda e: tuple(map(_node_key, e)))
 
 
 def _spring_layout(nodes, edges, iterations: int = 250):
-    """A small deterministic Fruchterman-Reingold layout (no external deps).
-
-    Nodes start on a circle (deterministic, no randomness) and are then relaxed by
-    edge attraction + all-pairs repulsion. Returns ``node -> (x, y)``.
-    """
+    """A deterministic Fruchterman-Reingold layout: nodes start on a circle (in
+    sorted order, so PNGs are reproducible) and relax under edge attraction,
+    all-pairs repulsion and a weak gravity that keeps isolated nodes near.
+    Returns ``node -> (x, y)``."""
     import math
 
-    # Sort before placing: the caller passes a SET, whose iteration order
-    # changes with PYTHONHASHSEED, so without this the starting circle -- and
-    # therefore the whole drawing -- came out different on every run. The
-    # figures committed to the repo could not be reproduced by re-running the
-    # script, which is exactly what "deterministic" above is supposed to mean.
     nodes = sorted(nodes, key=_node_key)
     n = len(nodes)
     if n == 0:
@@ -1197,9 +844,6 @@ def _spring_layout(nodes, edges, iterations: int = 250):
         for i, v in enumerate(nodes)
     }
     k = 1.0 / math.sqrt(n)
-    # Weak gravity towards the centroid, for the same reason as in the 3-D
-    # layout (GitHub #19): a node no edge pulls on would otherwise be pushed
-    # away on every iteration and end up far from the complex.
     gravity = 0.08
     for _ in range(iterations):
         disp = {v: [0.0, 0.0] for v in nodes}
@@ -1228,9 +872,7 @@ def _spring_layout(nodes, edges, iterations: int = 250):
         for v in nodes:
             disp[v][0] -= (pos[v][0] - cx) * gravity
             disp[v][1] -= (pos[v][1] - cy) * gravity
-        # Cap each step (the Fruchterman-Reingold "temperature", kept constant):
-        # the circular start is already tame, so no cooling schedule is needed.
-        for v in nodes:
+        for v in nodes:   # constant step cap (the "temperature")
             dx, dy = disp[v]
             d = math.hypot(dx, dy) or 1e-6
             pos[v][0] += dx / d * min(d, 0.08)
@@ -1239,17 +881,8 @@ def _spring_layout(nodes, edges, iterations: int = 250):
 
 
 def _park_isolated(pos, edges):
-    """Put the nodes no edge touches in a row just past the complex (GitHub #19).
-
-    Gravity (see the layouts) keeps an isolated node from flying away, but
-    where it settles -- a few edge-lengths out, at the equilibrium of
-    repulsion and gravity -- still reads as "something strange at a
-    distance". Its position carries no information anyway (there is no
-    adjacency to respect), so it is placed deliberately: beside the bounding
-    box of the connected part, one median edge-length apart, where it is
-    seen as what it is, a perspective no world passes through. Works for 2-D
-    and 3-D positions alike; a complex with no edges at all is left as laid.
-    """
+    """Place the nodes no edge touches in a row just past the connected part,
+    one median edge-length apart (2-D or 3-D)."""
     touched = {v for e in edges for v in e}
     loose = sorted((v for v in pos if v not in touched), key=_node_key)
     if not loose or len(loose) == len(pos):
@@ -1270,13 +903,7 @@ def _park_isolated(pos, edges):
 
 
 def _rotate_to_horizontal(pos):
-    """Rotate a 2-D layout so its principal axis (largest spread) is horizontal.
-
-    Plain PCA on the point cloud: the eigenvector of the covariance matrix with
-    the larger eigenvalue becomes the x axis. Only used for 1-dimensional
-    complexes, whose layouts are essentially a line; rotating a genuinely 2-D
-    drawing would gain nothing.
-    """
+    """Rotate a 2-D layout so its principal axis (PCA) is horizontal."""
     import math
 
     pts = list(pos.values())
@@ -1296,21 +923,9 @@ def _rotate_to_horizontal(pos):
 
 
 def _strip_order(model):
-    """Node order n0..n_{k+m-2} such that every window of m is a facet, or None.
-
-    A great many of these complexes are **strips**: the facets form a chain,
-    each glued to the next along a shared face. The spring layout only sees the
-    1-skeleton, so it has no idea the facets are 2-cells that must not overlap,
-    and it happily folds the chain over itself. When the chain exists we can
-    place it exactly instead of guessing: unfold it into a zigzag, which is the
-    canonical picture of a triangle strip and never self-intersects.
-
-    Returns None whenever the facets are not a simple chain, so the caller falls
-    back to the spring layout.
-    """
-    # Sorted, like the node order in _spring_layout: model.facets is a set, so
-    # without this the chain could be walked from either end on different runs
-    # and the drawing came out mirrored at random.
+    """A node order in which every window of ``m`` consecutive nodes is a facet,
+    when the facets form a simple chain (a strip); else None. A strip is then
+    unfolded as a zigzag instead of being folded by the spring layout."""
     facets = sorted((frozenset(F) for F in model.facets),
                     key=lambda F: sorted(map(_node_key, F)))
     if len(facets) < 2:
@@ -1369,38 +984,82 @@ def _strip_order(model):
 
 
 def _strip_layout(chain):
-    """Place a node chain as an open zigzag: consecutive windows are triangles.
-
-    Unit steps in x and a 1.5 rise in y make each triangle close to equilateral
-    (height sqrt(3) ~ 1.7 for base 2) instead of a flat sliver.
-    """
+    """Place a node chain as a zigzag (unit x steps, 1.5 rise): near-equilateral triangles."""
     return {n: (float(i), 0.0 if i % 2 == 0 else 1.5) for i, n in enumerate(chain)}
+
+
+def _draw_revision(ax, pos, revision, font_scale) -> None:
+    """Draw a belief revision over the complex: eliminated facets hatched, each
+    candidate's face shared with the lost facet marked with its size (the rule
+    maximises it, so the losers are shown too), an arrow onto the winner.
+    ``revision`` is a ``Revision`` of ``poster/poster-code/revision.py``."""
+    import math
+
+    from matplotlib.patches import FancyArrowPatch, Polygon
+
+    GONE, WIN, LOSE = ink()["gone"], ink()["win"], ink()["lose"]
+
+    def centroid(nodes):
+        pts = [pos[n] for n in nodes if n in pos]
+        return (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))
+
+    for facet in sorted(getattr(revision, "eliminated", ()) or (),
+                        key=lambda F: sorted(map(_node_key, F))):
+        pts = [pos[n] for n in facet if n in pos]
+        if len(pts) < 2:
+            continue
+        cx, cy = centroid(facet)
+        pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
+        # A pad first to mute the belief colour, then hatching (reads in greyscale).
+        ax.add_patch(Polygon(pts, closed=True, facecolor=ink()["pad"],
+                             edgecolor="none", alpha=0.76, zorder=2.1))
+        ax.add_patch(Polygon(pts, closed=True, facecolor="none",
+                             edgecolor=GONE, hatch="//////", linewidth=1.1, zorder=2.2))
+
+    lost = getattr(revision, "lost", None)
+    winners = set(getattr(revision, "winners", ()) or ())
+    for facet, overlap in getattr(revision, "candidates", ()) or ():
+        shared = sorted((n for n in (facet & lost) if n in pos), key=_node_key) if lost else []
+        won = facet in winners
+        col = WIN if won else LOSE
+        if len(shared) >= 2:
+            sx = [pos[n][0] for n in shared]
+            sy = [pos[n][1] for n in shared]
+            ax.plot(sx, sy, color=col, linewidth=5.5 if won else 3.0,
+                    solid_capstyle="round", alpha=1.0 if won else 0.8, zorder=2.5)
+            mx, my = sum(sx) / len(sx), sum(sy) / len(sy)
+        elif len(shared) == 1:
+            mx, my = pos[shared[0]]
+            ax.scatter([mx], [my], s=620, facecolor="none", edgecolor=col,
+                       linewidth=3.0 if won else 2.2, alpha=1.0 if won else 0.8, zorder=2.5)
+        else:
+            continue
+        ax.annotate(
+            f"|Y ∩ X| = {overlap}", (mx, my), xytext=(0, 13),
+            textcoords="offset points", ha="center", va="bottom",
+            fontsize=7.5 * font_scale, color=col, fontweight="bold" if won else "normal",
+            zorder=6,
+            bbox=dict(boxstyle="round,pad=0.22", facecolor=ink()["pad"],
+                      edgecolor=col, linewidth=0.8, alpha=0.95),
+        )
+
+    if lost is not None:
+        for facet in sorted(winners, key=lambda F: sorted(map(_node_key, F))):
+            ax.add_patch(FancyArrowPatch(
+                centroid(lost), centroid(facet),
+                connectionstyle="arc3,rad=-0.32", arrowstyle="-|>",
+                mutation_scale=18, linewidth=2.4, color=WIN,
+                shrinkA=22, shrinkB=22, zorder=2.8,
+            ))
 
 
 def _show_simplicial(model, name, output_dir, title, image_format,
                      assignment=None, revision=None, font_scale=1.0,
                      transparent=False) -> str:
-    """Draw a simplicial belief model: facets as filled simplices, nodes by agent.
-
-    ``font_scale`` multiplies every label size (and the marker area, so the
-    agent letter keeps fitting); the offsets of the texts around a node scale
-    with it so they do not overlap the bigger marker.
-
-    Each facet (a possible world) is drawn as a filled polygon over its nodes -- an
-    edge for 2 agents, a triangle for 3, and the convex node polygon for more. The
-    fill colour encodes which agents' **belief subcomplexes** the facet belongs to
-    (the Figure-3 colouring); facets in no belief subcomplex are light grey. Nodes
-    are coloured by agent (the shared palette).
-
-    With ``assignment`` (the canonical vertex valuation, L : N -> 3^P), each node
-    additionally shows the literals its perspective observes, under the marker --
-    the thesis's own drawing convention (Figures 5-9: ``a1`` with ``(¬Mb, Mc)``).
-    Value 2 draws nothing: a bare node means "no hard information here".
-
-    With ``revision`` (a :class:`revision.Revision`) the belief revision is drawn
-    over the same complex: eliminated facets hatched out, every candidate's
-    shared face marked with ``|Y n X|``, and an arrow onto the winner.
-    """
+    """Draw a simplicial belief model with matplotlib: facets as filled simplices
+    coloured by belief signature, nodes coloured by agent, literals under the
+    nodes when an ``assignment`` is given, and optionally a revision overlay
+    (:func:`_draw_revision`). ``font_scale`` multiplies every label size."""
     import math
 
     import matplotlib
@@ -1408,46 +1067,31 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
-    from matplotlib.patches import FancyArrowPatch, Patch, Polygon
+    from matplotlib.patches import Patch, Polygon
 
     agents = sorted(model.agents, key=str)
     colors = {a: PALETTE[i % len(PALETTE)] for i, a in enumerate(agents)}
     edge_pairs = _skeleton_edges(model)
     chain = _strip_order(model)
     pos = _strip_layout(chain) if chain else _spring_layout(model.nodes, edge_pairs)
-    # Nodes in no facet (isolated vertices, GitHub #12/#19) are placed LAST,
-    # by _park_isolated below, once the connected part has been rotated: they
-    # carry no adjacency, so they must neither steer the rotation (PCA over
-    # the point cloud) nor end up wherever the rotation throws them. The
-    # strip layout never placed them anyway; the spring layout did, and those
-    # positions are dropped here for the same reason.
+    # Isolated nodes are placed last by _park_isolated, after the rotation
+    # (they carry no adjacency and must not steer the PCA).
     touched = {n for e in edge_pairs for n in e}
     if touched:
         pos = {n: p for n, p in pos.items() if n in touched}
     sig_color = _signature_colors(model, agents)
 
-    # A 1-dimensional complex (two agents: every facet is an edge) is a graph
-    # whose spring layout comes out as a line or a thin zigzag at some
-    # arbitrary angle -- on the square canvas that meant a 45° diagonal in a
-    # sea of white. Rotate it so its long axis is horizontal, then size the
-    # canvas to the drawing's own aspect ratio (wide and low for a path).
+    # An elongated drawing (a path, a strip) is rotated to lie horizontally and
+    # the canvas is then sized to its aspect ratio.
     one_dimensional = all(len(F) <= 2 for F in model.facets)
-    # ...and the same is true of any ELONGATED drawing, not just a path: a
-    # strip of triangles is genuinely 2-dimensional but just as flat as a
-    # line, and on the square canvas it came out as a tall ribbon in a sea of
-    # white. Rotate whenever the principal axis dominates, then fall into the
-    # same aspect-ratio sizing below.
     flat = one_dimensional
     if len(pos) > 1:
         candidate = _rotate_to_horizontal(pos)
         cxs = [p[0] for p in candidate.values()]
         cys = [p[1] for p in candidate.values()]
-        # 1.6: clearly elongated, so a near-square drawing is left as it is.
         if one_dimensional or (max(cxs) - min(cxs)) > 1.6 * ((max(cys) - min(cys)) or 1e-9):
             pos = candidate
             flat = True
-    # Now the isolated vertices: in a row just past the right end of the
-    # (rotated) complex, one edge-length apart -- see _park_isolated.
     for n in model.nodes:
         if n not in pos:
             pos[n] = (0.0, 0.0)
@@ -1456,18 +1100,13 @@ def _show_simplicial(model, name, output_dir, title, image_format,
     ys = [p[1] for p in pos.values()] or [0.0]
     spread_x = max(xs) - min(xs) or 1.0
     spread_y = max(ys) - min(ys) or 1.0
-    # Page layout in INCHES, top to bottom: drawing / caption / legend. The
-    # caption and legend get a fixed strip at the bottom of the figure (so
-    # they never overlap the drawing however flat it is) and the drawing gets
-    # the rest. Sizes below are in inches; fractions are derived from them.
+    # Page layout in inches, top to bottom: drawing / caption / legend strip.
     legend_rows = math.ceil((len(agents) + len(sig_color)) / 4)
-    legend_in = 0.24 * legend_rows + 0.08      # measured: ~0.24in per row at 8pt
-    legend_y0 = 0.06                           # gap under the legend
-    caption_y = legend_y0 + legend_in + 0.06   # caption sits right above it
-    strip_in = caption_y + 0.32                # + the caption's own height
+    legend_in = 0.24 * legend_rows + 0.08
+    legend_y0 = 0.06
+    caption_y = legend_y0 + legend_in + 0.06
+    strip_in = caption_y + 0.32
     if flat:
-        # Give a flat drawing some height of its own (room for the node
-        # markers and their literal labels) and keep the aspect ratio equal.
         pad_y = 0.09 * spread_x
         width = 9.0
         draw_in = width * (spread_y + 2 * pad_y) / (spread_x * 1.08)
@@ -1479,10 +1118,7 @@ def _show_simplicial(model, name, output_dir, title, image_format,
         ax.set_xlim(min(xs) - 0.04 * spread_x, max(xs) + 0.04 * spread_x)
         ax.set_ylim(min(ys) - pad_y, max(ys) + pad_y)
 
-    # Draw facets (filled), largest first so smaller ones stay visible.
-    # Total order, not just by size: ties were broken by the set's own
-    # iteration order, so the z-order of the shared edges -- and the PNG --
-    # changed from run to run.
+    # Facets, largest first so smaller ones stay visible (total order: reproducible z-order).
     for facet in sorted(model.facets,
                         key=lambda F: (-len(F), sorted(map(_node_key, F)))):
         pts = [pos[n] for n in facet]
@@ -1497,19 +1133,13 @@ def _show_simplicial(model, name, output_dir, title, image_format,
             pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
             ax.add_patch(Polygon(pts, closed=True, facecolor=col, edgecolor=col,
                                  alpha=0.35, linewidth=1.5, zorder=1))
-        # Name the facet by its world at the centroid, so the reader can match
-        # each triangle to a world of the proper model (and to the Hasse
-        # diagram, whose facet boxes carry the same name). White pad behind
-        # the text keeps it legible over the fill and the crossing edges.
-        # (``fname``, not ``name``: ``name`` is this function's output file.)
+        # The world's name at the centroid (above the line for an edge-facet).
         fname = facet_name(model, facet)
         if fname:
             dead = (revision is not None
                     and frozenset(facet) in (getattr(revision, "eliminated", ()) or ()))
             cx = sum(p[0] for p in pts) / len(pts)
             cy = sum(p[1] for p in pts) / len(pts)
-            # On an edge-facet the label rides just above the line; on a
-            # filled facet it sits at the centroid.
             lift = (0, 9) if len(pts) == 2 else (0, 0)
             ax.annotate(
                 fname, (cx, cy), xytext=lift, textcoords="offset points",
@@ -1520,73 +1150,8 @@ def _show_simplicial(model, name, output_dir, title, image_format,
                           linewidth=0.8, alpha=0.9),
             )
 
-    # --- belief revision, when asked for --------------------------------
-    # Three marks, each answering one question: which world is gone, WHY the
-    # winner wins, and where the belief moves. Only the middle one is not
-    # obvious, so every candidate's shared face is drawn with its size: the
-    # winner shares a whole edge, the loser touches at a single point, and the
-    # maximum is legible without reading the formula.
-    GONE, WIN, LOSE = ink()["gone"], ink()["win"], ink()["lose"]
     if revision is not None:
-        def _centroid(nodes):
-            pts = [pos[n] for n in nodes if n in pos]
-            return (sum(p[0] for p in pts) / len(pts),
-                    sum(p[1] for p in pts) / len(pts))
-
-        for facet in sorted(getattr(revision, "eliminated", ()) or (),
-                            key=lambda F: sorted(map(_node_key, F))):
-            pts = [pos[n] for n in facet if n in pos]
-            if len(pts) < 2:
-                continue
-            cx, cy = _centroid(facet)
-            pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
-            # White first to mute the belief colour, then hatching so the
-            # "this is gone" still reads in one-ink printing and in greyscale.
-            ax.add_patch(Polygon(pts, closed=True, facecolor=ink()["pad"],
-                                 edgecolor="none", alpha=0.76, zorder=2.1))
-            ax.add_patch(Polygon(pts, closed=True, facecolor="none",
-                                 edgecolor=GONE, hatch="//////",
-                                 linewidth=1.1, zorder=2.2))
-
-        lost = getattr(revision, "lost", None)
-        winners = set(getattr(revision, "winners", ()) or ())
-        for facet, overlap in getattr(revision, "candidates", ()) or ():
-            shared = sorted((n for n in (facet & lost) if n in pos),
-                            key=_node_key) if lost else []
-            won = facet in winners
-            col = WIN if won else LOSE
-            if len(shared) >= 2:
-                sx = [pos[n][0] for n in shared]
-                sy = [pos[n][1] for n in shared]
-                ax.plot(sx, sy, color=col, linewidth=5.5 if won else 3.0,
-                        solid_capstyle="round", alpha=1.0 if won else 0.8,
-                        zorder=2.5)
-                mx, my = sum(sx) / len(sx), sum(sy) / len(sy)
-            elif len(shared) == 1:
-                mx, my = pos[shared[0]]
-                ax.scatter([mx], [my], s=620, facecolor="none", edgecolor=col,
-                           linewidth=3.0 if won else 2.2,
-                           alpha=1.0 if won else 0.8, zorder=2.5)
-            else:
-                continue
-            ax.annotate(
-                f"|Y \u2229 X| = {overlap}", (mx, my), xytext=(0, 13),
-                textcoords="offset points", ha="center", va="bottom",
-                fontsize=7.5 * font_scale, color=col, fontweight="bold" if won else "normal",
-                zorder=6,
-                bbox=dict(boxstyle="round,pad=0.22", facecolor=ink()["pad"],
-                          edgecolor=col, linewidth=0.8, alpha=0.95),
-            )
-
-        for facet in sorted(winners, key=lambda F: sorted(map(_node_key, F))):
-            if lost is None:
-                break
-            ax.add_patch(FancyArrowPatch(
-                _centroid(lost), _centroid(facet),
-                connectionstyle="arc3,rad=-0.32", arrowstyle="-|>",
-                mutation_scale=18, linewidth=2.4, color=WIN,
-                shrinkA=22, shrinkB=22, zorder=2.8,
-            ))
+        _draw_revision(ax, pos, revision, font_scale)
 
     # The 1-skeleton, faintly.
     for (u, v) in edge_pairs:
@@ -1600,18 +1165,12 @@ def _show_simplicial(model, name, output_dir, title, image_format,
                    edgecolor=ink()["marker_edge"], linewidth=1.0, zorder=3)
         ax.annotate(f"{node.agent}", (x, y), color="white", ha="center", va="center",
                     fontsize=10 * font_scale, fontweight="bold", zorder=4)
-        # A directly-defined complex names its vertices: show the name just
-        # above the marker (the marker itself keeps the agent's letter, which
-        # is the colouring). Translated models have no names and stay as-is.
-        vname = (getattr(model, "node_names", None) or {}).get(node)
+        vname = (getattr(model, "node_names", None) or {}).get(node)   # a complex defined directly
         if vname:
             ax.annotate(str(vname), (x, y), xytext=(0, 14 * font_scale),
                         textcoords="offset points", ha="center", va="bottom",
                         fontsize=10 * font_scale, color=ink()["text"], zorder=4)
         if assignment is not None:
-            # The observed literals sit just below the marker (offset in POINTS,
-            # not data units, so the gap survives any zoom/layout scale). Nodes
-            # whose perspective observes nothing stay bare on purpose.
             literals = node_literals(assignment, node)
             if literals:
                 ax.annotate(
@@ -1627,15 +1186,11 @@ def _show_simplicial(model, name, output_dir, title, image_format,
         label = signature_label(model, sig, agents)
         handles.append(Patch(facecolor=col, alpha=0.5, label=label))
     if revision is not None:
-        handles.append(Patch(facecolor=ink()["pad"], edgecolor=GONE, hatch="///",
+        handles.append(Patch(facecolor=ink()["pad"], edgecolor=ink()["gone"], hatch="///",
                              label="eliminated"))
-        handles.append(Line2D([0], [0], color=WIN, linewidth=4,
+        handles.append(Line2D([0], [0], color=ink()["win"], linewidth=4,
                               label=f"R_{revision.agent}(X): max shared face"))
-    # Caption and legend strip BELOW the drawing (same page layout as the DOT
-    # figures: drawing / caption / legend), instead of a legend box inside the
-    # axes that covered part of the complex. Both are placed in FIGURE
-    # coordinates computed from the strip height in inches, so they sit at
-    # the same distance from the drawing whatever the drawing's shape.
+    # Caption and legend in the strip below the drawing, in figure coordinates.
     ncol = min(len(handles), 4)
     fig.legend(handles=handles, loc="lower center",
                bbox_to_anchor=(0.5, legend_y0 / height), ncol=ncol, fontsize=9 * font_scale,
@@ -1644,8 +1199,6 @@ def _show_simplicial(model, name, output_dir, title, image_format,
              color=ink()["text"])
     ax.set_axis_off()
     ax.set_aspect("equal")
-    # The axes take everything above the strip; bbox_inches="tight" (savefig)
-    # then trims the outer white margins.
     fig.subplots_adjust(left=0.02, right=0.98, top=0.98,
                         bottom=(strip_in + 0.06) / height)
 
@@ -1658,16 +1211,9 @@ def _show_simplicial(model, name, output_dir, title, image_format,
 
 
 def _spring_layout_3d(nodes, edges, iterations: int = 220):
-    """A randomness-free 3-D Fruchterman-Reingold layout (no external deps).
-
-    Nodes start on a Fibonacci sphere (no random numbers) and are relaxed by edge
-    attraction + all-pairs repulsion. Returns ``node -> (x, y, z)``.
-
-    Unlike :func:`_spring_layout`, the nodes are taken in the order given: the
-    caller passes a set, so the interactive figure may come out oriented
-    differently from run to run. It is rotatable anyway, so that was never
-    pinned down the way the committed 2-D PNGs had to be.
-    """
+    """The 3-D counterpart of :func:`_spring_layout`: nodes start on a Fibonacci
+    sphere. Returns ``node -> (x, y, z)``. Nodes are taken in the order given
+    (the figure is rotatable, so orientation was never pinned)."""
     import math
 
     nodes = list(nodes)
@@ -1681,16 +1227,8 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
         r = math.sqrt(max(0.0, 1 - y * y))
         theta = golden * i
         pos[v] = [math.cos(theta) * r, y, math.sin(theta) * r]
-    k = 1.0 / (n ** (1 / 3)) if n else 1.0   # ideal edge length: cube root in 3-D (sqrt in 2-D)
-    # Gravity towards the centroid (GitHub #19). Plain Fruchterman-Reingold
-    # has nothing holding a node that no edge pulls on: an isolated vertex, or
-    # a whole disconnected piece of the complex, is only ever REPELLED, so it
-    # drifts outwards by the step cap on every iteration and ends up tens of
-    # edge-lengths away -- a dot floating far from a tiny complex, with the
-    # camera zoomed out to fit it. A weak pull proportional to the distance
-    # from the centroid bounds that drift (the standard remedy) while barely
-    # touching connected nodes, whose edge forces dominate it.
-    gravity = 0.08
+    k = 1.0 / (n ** (1 / 3)) if n else 1.0   # ideal edge length: cube root in 3-D
+    gravity = 0.08                            # keeps isolated nodes from drifting away
     for _ in range(iterations):
         disp = {v: [0.0, 0.0, 0.0] for v in nodes}
         for i in range(n):
@@ -1722,21 +1260,10 @@ def _spring_layout_3d(nodes, edges, iterations: int = 220):
 
 def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
                         font_scale=1.0) -> str:
-    """Draw a simplicial belief model as an INTERACTIVE 3-D Plotly figure (HTML).
-
-    Facets are drawn as solid simplices, coloured by which agents' **belief
-    subcomplexes** they belong to; nodes are coloured by agent. The output is a
-    **self-contained, offline HTML** file the user can open in a browser and
-    rotate/zoom -- which is where 3-D earns its keep (a tetrahedron cannot be shown
-    in 2-D).
-
-    Geometric limit: under UCF each facet is an ``(|Ag|-1)``-simplex, so the drawing
-    is **faithful only for up to 4 agents** (edge / triangle / tetrahedron -- the
-    3-simplex is the largest that fits in 3-D). For **5 or more agents** a facet is a
-    4-simplex or higher, which cannot be embedded in 3-D without self-intersection;
-    the figure then shows a *projection* (the full boundary 2-skeleton of each
-    facet), and a warning is emitted.
-    """
+    """Draw a simplicial belief model as a self-contained interactive 3-D HTML
+    (plotly): solid simplices coloured by belief signature, nodes by agent.
+    Faithful up to 4 agents (a 3-simplex); with 5 or more the figure is a
+    projection and a warning is emitted."""
     import plotly.graph_objects as go
 
     agents = sorted(model.agents, key=str)
@@ -1763,17 +1290,11 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
         seen_sig.add(sig)
         world = str(model.world_of_facet.get(facet, ""))
         if len(pts) >= 3:
-            # A facet with m nodes is an (m-1)-simplex; its full boundary 2-skeleton
-            # is every triple of vertices. Explicit (i,j,k) faces render reliably
-            # (unlike alphahull on coplanar points). For m<=4 (triangle/tetrahedron)
-            # this is a FAITHFUL drawing; for m>=5 it is a projection of a >3-D
-            # simplex, which cannot be embedded in 3-D without self-intersection.
+            # The boundary 2-skeleton of the simplex: every triple of vertices.
             faces = list(itertools.combinations(range(len(pts)), 3))
             traces.append(go.Mesh3d(
                 x=[p[0] for p in pts], y=[p[1] for p in pts], z=[p[2] for p in pts],
                 i=[f[0] for f in faces], j=[f[1] for f in faces], k=[f[2] for f in faces],
-                # Translucent so facets behind stay visible; flat shading keeps
-                # each simplex looking like flat panels rather than a smooth blob.
                 color=col, opacity=0.45, flatshading=True,
                 name=label, legendgroup=label, showlegend=show_in_legend,
                 hovertext=world, hoverinfo="text",
@@ -1787,8 +1308,7 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
                 hovertext=world, hoverinfo="text",
             ))
 
-    # Facet names at the centroids (one text trace for all of them). The hover
-    # already says the world, but a label survives rotation and screenshots.
+    # Facet names at the centroids, one text trace.
     named = [(F, facet_name(model, F)) for F in model.facets]
     named = [(F, n) for F, n in named if n]
     if named:
@@ -1811,16 +1331,11 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
                                line=dict(color=ink()["faint"], width=1),
                                name="1-skeleton", hoverinfo="skip", showlegend=False))
 
-    # Nodes, one trace per agent (coloured, labelled by agent, class on hover).
-    # With an assignment, the visible label becomes "a (¬Mb, Mc)" -- the
-    # perspective's observed literals, thesis style -- and the hover shows the
-    # knowledge class plus the literals, so nothing is lost by rotating away.
+    # Nodes, one trace per agent: label = vertex name or agent letter (+ literals), class on hover.
     for a in agents:
         ns = [nd for nd in model.nodes if nd.agent == a]
 
         def _txt(nd) -> str:
-            # The user's vertex name when the complex was defined directly,
-            # the agent's letter otherwise.
             base = str((getattr(model, "node_names", None) or {}).get(nd, a))
             if assignment is None:
                 return base
@@ -1846,20 +1361,16 @@ def _show_simplicial_3d(model, name, output_dir, title, assignment=None,
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=title, showlegend=True,
-        # No axes: the coordinates are a layout artefact and carry no meaning.
         scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False),
-                   bgcolor=ink()["page"]),
+                   bgcolor=ink()["page"]),   # coordinates carry no meaning
         margin=dict(l=0, r=0, t=40, b=0),
-        # The page's ink: white page and dark text by default, the GUI's
-        # navy and light text under the dark theme (see ``ink``).
         paper_bgcolor=ink()["page"], plot_bgcolor=ink()["page"],
         font=dict(color=ink()["text"]), legend=dict(bgcolor="rgba(0,0,0,0)"),
     )
     os.makedirs(output_dir, exist_ok=True)
     path = os.path.join(output_dir, f"{os.path.basename(name)}.html")
     fig.write_html(path, include_plotlyjs=True)  # self-contained, works offline
-    # The browser paints the page's own margin: give it the same colour as
-    # the figure, so an embedded dark page has no white rim.
+    # The browser's own page margin gets the figure's colour (no white rim on a dark page).
     with open(path, encoding="utf-8") as fh:
         html = fh.read()
     html = html.replace("<head>", f'<head><style>html,body{{margin:0;background:{ink()["page"]}}}</style>', 1)
