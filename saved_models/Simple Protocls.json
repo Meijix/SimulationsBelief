@@ -1,0 +1,332 @@
+{
+ "format": "simulationsbelief-workspace/1",
+ "saved": "2026-10-19T22:07:37",
+ "models": [
+  {
+   "name": "Input",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b"
+    ],
+    "worlds": [],
+    "per_agent": {
+     "a": [],
+     "b": []
+    },
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0",
+      "a1"
+     ],
+     "b": [
+      "b0",
+      "b1"
+     ]
+    },
+    "facets": [
+     {
+      "name": "F1",
+      "nodes": {
+       "a": "a0",
+       "b": "b0"
+      },
+      "belief": [
+       "a",
+       "b"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F2",
+      "nodes": {
+       "b": "b1",
+       "a": "a0"
+      },
+      "belief": [
+       "a",
+       "b"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F3",
+      "nodes": {
+       "b": "b0",
+       "a": "a1"
+      },
+      "belief": [
+       "a",
+       "b"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F4",
+      "nodes": {
+       "b": "b1",
+       "a": "a1"
+      },
+      "belief": [
+       "a",
+       "b"
+      ],
+      "auto": true
+     }
+    ],
+    "vatoms": {
+     "b0": {
+      "true": [
+       "b0"
+      ],
+      "false": [
+       "b1"
+      ]
+     },
+     "aS": {
+      "true": [],
+      "false": [
+       "a0",
+       "a1"
+      ]
+     },
+     "bS": {
+      "true": [
+       "b0",
+       "b1"
+      ],
+      "false": []
+     },
+     "bR": {
+      "true": [],
+      "false": [
+       "b0",
+       "b1"
+      ]
+     },
+     "aR": {
+      "true": [
+       "a0",
+       "a1"
+      ],
+      "false": []
+     },
+     "a0": {
+      "true": [
+       "a0"
+      ],
+      "false": [
+       "a1"
+      ]
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  }
+ ],
+ "actions": [
+  {
+   "name": "Alternating Message Passing Protocol",
+   "events": [
+    {
+     "name": "bS0aR",
+     "nodes": {
+      "a": "aR0",
+      "b": "bS0"
+     }
+    },
+    {
+     "name": "bS1aR",
+     "nodes": {
+      "a": "aR1",
+      "b": "bS1"
+     }
+    },
+    {
+     "name": "bS0anR",
+     "nodes": {
+      "a": "anR",
+      "b": "bS0"
+     }
+    },
+    {
+     "name": "bS1anR",
+     "nodes": {
+      "a": "anR",
+      "b": "bS1"
+     }
+    },
+    {
+     "name": "aS0bR",
+     "nodes": {
+      "a": "aS0",
+      "b": "bR0"
+     }
+    },
+    {
+     "name": "aS1bR",
+     "nodes": {
+      "a": "aS1",
+      "b": "bR1"
+     }
+    },
+    {
+     "name": "aS0bnR",
+     "nodes": {
+      "a": "aS0",
+      "b": "bnR"
+     }
+    },
+    {
+     "name": "aS1bnR",
+     "nodes": {
+      "a": "aS1",
+      "b": "bnR"
+     }
+    },
+    {
+     "name": "nSnR",
+     "nodes": {
+      "a": "anR",
+      "b": "bnR"
+     }
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": []
+   },
+   "pre": {
+    "a0": {
+     "true": [
+      "aS0"
+     ],
+     "false": [
+      "aS1"
+     ]
+    },
+    "b0": {
+     "true": [
+      "bS0"
+     ],
+     "false": [
+      "bS1"
+     ]
+    },
+    "aS": {
+     "true": [
+      "aS0",
+      "aS1"
+     ],
+     "false": [
+      "aR0",
+      "aR1",
+      "anR"
+     ]
+    },
+    "bS": {
+     "true": [
+      "bS0",
+      "bS1"
+     ],
+     "false": [
+      "bR0",
+      "bR1",
+      "bnR"
+     ]
+    },
+    "aR": {
+     "true": [
+      "aR1",
+      "aR0"
+     ],
+     "false": [
+      "aS0",
+      "aS1",
+      "anR"
+     ]
+    },
+    "bR": {
+     "true": [
+      "bR0",
+      "bR1"
+     ],
+     "false": [
+      "bS0",
+      "bS1"
+     ]
+    }
+   },
+   "post": {
+    "a0": {
+     "true": [
+      "bR0"
+     ],
+     "false": [
+      "bR1"
+     ]
+    },
+    "b0": {
+     "true": [
+      "aR0"
+     ],
+     "false": [
+      "aR1"
+     ]
+    },
+    "aS": {
+     "true": [
+      "aR0",
+      "aR1"
+     ],
+     "false": [
+      "aS0",
+      "aS1"
+     ]
+    },
+    "bS": {
+     "true": [
+      "bR0",
+      "bR1"
+     ],
+     "false": [
+      "bS0",
+      "bS1"
+     ]
+    },
+    "aR": {
+     "true": [
+      "aS0",
+      "aS1"
+     ],
+     "false": [
+      "aR0",
+      "aR1"
+     ]
+    },
+    "bR": {
+     "true": [
+      "bS0",
+      "bS1"
+     ],
+     "false": [
+      "bR0",
+      "bR1",
+      "bnR"
+     ]
+    }
+   },
+   "mode": 3,
+   "update": "knowledge"
+  }
+ ]
+}

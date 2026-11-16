@@ -1,0 +1,246 @@
+{
+ "format": "simulationsbelief-workspace/1",
+ "saved": "2026-10-19T20:45:45",
+ "models": [
+  {
+   "name": "Muddy Children",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {
+     "a": [],
+     "b": [],
+     "c": []
+    },
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "(a0,a)",
+      "(a1,a)",
+      "(a2,a)",
+      "(a3,a)"
+     ],
+     "b": [
+      "(b0,b)",
+      "(b1,b)",
+      "(b2,b)",
+      "(b3,b)"
+     ],
+     "c": [
+      "(c0,c)",
+      "(c1,c)",
+      "(c2,c)",
+      "(c3,c)"
+     ]
+    },
+    "facets": [
+     {
+      "name": "F1",
+      "nodes": {
+       "c": "(c0,c)",
+       "b": "(b0,b)",
+       "a": "(a0,a)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F2",
+      "nodes": {
+       "a": "(a0,a)",
+       "c": "(c2,c)",
+       "b": "(b2,b)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F3",
+      "nodes": {
+       "c": "(c0,c)",
+       "a": "(a1,a)",
+       "b": "(b1,b)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F4",
+      "nodes": {
+       "a": "(a1,a)",
+       "b": "(b3,b)",
+       "c": "(c2,c)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F5",
+      "nodes": {
+       "a": "(a2,a)",
+       "b": "(b0,b)",
+       "c": "(c1,c)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F6",
+      "nodes": {
+       "c": "(c3,c)",
+       "a": "(a2,a)",
+       "b": "(b2,b)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F7",
+      "nodes": {
+       "a": "(a3,a)",
+       "b": "(b1,b)",
+       "c": "(c1,c)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     },
+     {
+      "name": "F8",
+      "nodes": {
+       "a": "(a3,a)",
+       "c": "(c3,c)",
+       "b": "(b3,b)"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ],
+      "auto": true
+     }
+    ],
+    "vatoms": {
+     "Ma": {
+      "true": [
+       "(b0,b)",
+       "(b1,b)",
+       "(c0,c)",
+       "(c1,c)"
+      ],
+      "false": [
+       "(b2,b)",
+       "(b3,b)",
+       "(c2,c)",
+       "(c3,c)"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "(a0,a)",
+       "(a1,a)",
+       "(c0,c)",
+       "(c2,c)"
+      ],
+      "false": [
+       "(a2,a)",
+       "(a3,a)",
+       "(c1,c)",
+       "(c3,c)"
+      ]
+     },
+     "Mc": {
+      "true": [
+       "(a0,a)",
+       "(a2,a)",
+       "(b0,b)",
+       "(b2,b)"
+      ],
+      "false": [
+       "(a1,a)",
+       "(a3,a)",
+       "(b1,b)",
+       "(b3,b)"
+      ]
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  }
+ ],
+ "actions": [
+  {
+   "name": "announcement ¬C",
+   "events": [
+    {
+     "name": "announcement",
+     "nodes": {
+      "a": "a_oye",
+      "b": "b_oye"
+     }
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": [],
+    "c": []
+   },
+   "pre": {
+    "C": {
+     "true": [],
+     "false": [
+      "a_oye",
+      "b_oye"
+     ]
+    }
+   },
+   "post": {
+    "C": {
+     "true": [],
+     "false": []
+    }
+   },
+   "mode": 3,
+   "update": "knowledge"
+  }
+ ]
+}
