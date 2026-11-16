@@ -1,5 +1,6 @@
-# Packaging for the project: `pip install -e .` makes the core modules and the
-# GUI importable from anywhere and installs the `simulationsbelief-gui` command.
+# `pip install -e .` makes the core modules and the GUI importable from anywhere
+# and installs the `simulationsbelief-gui` command; this file is the only list of
+# dependencies.
 # The core modules stay flat in the repository root on purpose (the scripts and
 # docs refer to them by file name); they are listed as py-modules.
 [build-system]
@@ -22,6 +23,7 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8", "hypothesis>=6"]
+build = ["pyinstaller>=6"]   # packaging/build_gui.py
 # Graphviz (the `dot` binary) is a separate system install: brew install graphviz
 
 [project.scripts]

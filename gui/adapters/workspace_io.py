@@ -1,5 +1,5 @@
 """Saving and loading workspaces (models + action specs) as JSON files under
-``saved_models/`` (GitHub #18).
+``saved_models/``; the file format is described in saved_models/README.md.
 """
 from __future__ import annotations
 
@@ -10,27 +10,15 @@ from typing import List, Tuple
 
 from . import base  # noqa: F401  (puts the repository root on sys.path first)
 from .actions import blank_action
-from .base import ROOT, blank_state
+from .base import DATA, blank_state
 
 
-# --------------------------------------------------------------------------- #
-# Saving and loading (GitHub #18). A WORKSPACE file holds every open model --
-# name, state, read-only flag and provenance -- as plain JSON, so it can be
-# re-opened later, shared, or produced by a script that applied actions. The
-# files live in ``saved_models/`` next to the code (tracked by git on purpose:
-# a saved workspace is part of the project's material, not a scratch output).
-# --------------------------------------------------------------------------- #
-SAVED = ROOT / "saved_models"
+# Saved workspaces live next to the code (tracked by git), or in the data
+# folder of the packaged executable. Tests point this at a temporary folder.
+SAVED = DATA / "saved_models"
 
-
-def _saved_dir() -> Path:
-    """The folder in force: read through the package so ``adapters.SAVED = …``
-    (what the tests do to write into a temporary folder) is honoured here."""
-    import importlib
-
-    return importlib.import_module(__package__).SAVED
-# Format 2 (2026-10-27) numbers action modes as the thesis does (0, 1, 2); format 1
-# used 1, 2, 3 for the same three tests and is still read (modes are shifted).
+# Format 2 numbers action modes as the thesis does (0, 1, 2); format 1 used
+# 1, 2, 3 for the same three tests and is still read (modes are shifted).
 WORKSPACE_FORMAT = "simulationsbelief-workspace/2"
 OLD_FORMATS = ("simulationsbelief-workspace/1",)
 
@@ -56,15 +44,19 @@ def workspace_payload(docs: List[dict], actions: List[dict] | None = None) -> di
     }
 
 
+def file_name(name: str) -> str:
+    """A file-safe version of a model or workspace name: path separators and
+    control characters become ``_``; accents and ``·`` stay."""
+    return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip() or "model"
+
+
 def save_workspace(docs: List[dict], name: str, actions: List[dict] | None = None) -> Path:
     """Write ``docs`` (and ``actions``) to ``saved_models/<name>.json`` and return the path."""
     import json
-    import re
 
-    folder = _saved_dir()
-    folder.mkdir(exist_ok=True)
-    slug = re.sub(r"[^\w\-. ]+", "_", name).strip() or "workspace"
-    path = folder / (slug if slug.endswith(".json") else slug + ".json")
+    SAVED.mkdir(exist_ok=True)
+    slug = file_name(name)
+    path = SAVED / (slug if slug.endswith(".json") else slug + ".json")
     path.write_text(json.dumps(workspace_payload(docs, actions), ensure_ascii=False, indent=1),
                     encoding="utf-8")
     return path
@@ -112,7 +104,6 @@ def load_workspace(path: Path) -> List[dict]:
 
 def list_saved() -> List[Path]:
     """Saved workspaces, newest first."""
-    folder = _saved_dir()
-    if not folder.exists():
+    if not SAVED.exists():
         return []
-    return sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return sorted(SAVED.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)

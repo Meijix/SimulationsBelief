@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from nicegui import ui
 
-from theme import ATOMS_HELP, CARD, FLAT, card_title, take
+from theme import ATOMS_HELP, add_field, card, panel_head, take
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -22,15 +22,10 @@ class AtomsView:
         self.box = None
 
     def build(self) -> None:
-        with ui.card().classes(CARD).props(FLAT) as self.card:
-            card_title("Atoms (propositions)")
-            self.help = ui.markdown(ATOMS_HELP["kb"]).classes("text-xs text-grey-5")
-            with ui.row().classes("w-full no-wrap items-center gap-2"):
-                self.atom_input = ui.input("new atom") \
-                    .props("dense outlined").classes("grow")
-                ui.button(icon="add", on_click=lambda: self.add_atom()) \
-                    .props("round dense")
-            self.atom_input.on("keydown.enter", lambda: self.add_atom())
+        with card() as self.card:
+            panel_head("Atoms (propositions)")
+            self.help = ui.markdown(ATOMS_HELP["kb"]).classes("text-xs muted")
+            self.atom_input = add_field("new atom", lambda _: self.add_atom())
             self.box = ui.column().classes("w-full gap-2")
 
     def set_help(self, kind: str) -> None:

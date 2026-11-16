@@ -1,164 +1,41 @@
-"""Proper KNOWLEDGE (S5) models: the properness check and the general -> proper conversion.
+"""Proper knowledge (S5) models: the properness check and the general -> proper step.
 
-Scope: this module is for **knowledge**, i.e. frames whose relations are equivalence
-relations (S5 = reflexive + transitive + Euclidean). Checking properness and converting
-to a proper model are BOTH defined only for such frames, so every entry point that does either
-refuses anything else up front and raises -- it never falls back to a partial or
-best-effort answer. See :func:`require_knowledge` and the REVIEW note below for why.
+A relational model is **proper** when no two distinct worlds are related by
+*every* agent (Bjorndahl & Sink, *A Note on Proper Relational Structures*):
 
-A relational model is **proper** when there is no pair of **distinct** worlds
-``x != y`` related by *every* agent:
+    for all x != y:   NOT (x R_a y for every agent a)
 
-    for all x, y in W:   x != y   =>   NOT (x R_a y for every agent a)
+:func:`jointly_confused_with` computes ``⋂_a R_a(w) \\ {w}``; a world is a
+violation when that set is non-empty. (The ``|⋂_a R_a(w)| = 1`` form found in
+the literature is equivalent only for reflexive relations; the definition
+itself is implemented, so an empty intersection is never mistaken for a
+properness failure.)
 
-That is the definition in Bjorndahl & Sink, *A Note on Proper Relational Structures*
-(arXiv:2506.17142), and it is the one implemented here. :func:`jointly_confused_with`
-computes ``⋂_a R_a(w) \\ {w}``, so a world is a violation exactly when some *other*
-world is jointly accessible from it.
+Properness is a condition on knowledge: every public function here requires
+equivalence (S5) relations and refuses anything else (:func:`require_knowledge`).
+Opening it to KD45 belief frames is an open question, see docs/02 §1.
 
-    Not the ``= 1`` test. Properness is often stated instead as
-    ``| intersection over agents a of R_a(w) | = 1`` at every world. That form is
-    *equivalent* to the definition above only when the relations are **reflexive**:
-    reflexivity is what puts ``w`` in the intersection and pins
-    ``|intersection| >= 1``, and then ``= 1`` says precisely "no *other* world is
-    jointly accessible". Without reflexivity the two come apart, because an empty
-    intersection becomes possible -- and ``|.| = 0`` means the agents' beliefs are
-    mutually inconsistent at that world, which is NOT a properness failure, yet
-    ``!= 1`` reports it as one. Implementing the definition removes that trap.
-    :func:`joint_possibilities` still exposes the raw intersection for diagnostics.
-
-For knowledge, ``R_a(w)`` is agent ``a``'s equivalence class ``[w]_a``, so properness
-says: no two distinct worlds are indistinguishable to *every* agent at once. That is
-exactly the condition a model must meet to be translated into a simplicial model --
-distinct worlds must map to distinct facets.
-
-Many natural models are not proper: several agents can share the same mistaken
-perspective across several worlds. :func:`to_proper` fixes this the way the thesis
-does -- it makes ``|W|`` copies of the model (new worlds are pairs ``(w, copy)``) and
-*skews* the accessibility relation of a single distinguished agent so that it links
-worlds *across* copies. The result is **bisimilar** to the original (the projection
-``(w, copy) -> w`` is a surjective bounded morphism) but proper, at the cost of the
-redundant copies the thesis describes.
-
-Two notes recorded from a careful audit against the thesis:
-
-* Skew formula (typo in the PDF). The thesis prints the distinguished agent's
-  skew as ``g(u) - g(w) = g(u') - g(w)`` -- the same ``g(w)`` on both sides. Read
-  literally this collapses to ``u = u'`` (a within-copy relation), which would NOT
-  connect copies and would NOT make the model proper, contradicting the theorem
-  and the surrounding text ("connect worlds *across* copies ... ensures the model
-  is proper"). The intended condition is ``g(u) - g(w) = g(u') - g(w')`` (the prime
-  is lost in the PDF); that is what :func:`copy_and_skew` implements, and it is the
-  only reading consistent with the proof.
-
-* Finite case = the source paper's own construction. The thesis presents the
-  skew for an infinite ``W`` (a bijection ``g: W -> Z`` in the countable case,
-  ``g: W -> R`` in the continuum case). The source note (Bjorndahl & Sink,
-  *A Note on Proper Relational Structures*, Props. 2.1-2.3) gives the **finite**
-  case explicitly, and it uses arithmetic **modulo ``|W|``** -- exactly the cyclic
-  skew implemented here. So this is not an ad-hoc adaptation; it is the paper's
-  finite-case construction. (A non-modular skew would push boundary copies out of
-  range and break seriality; the modular version is what the paper uses.)
-
-  Why it is correct (Prop. 2.2), for the setting that matters (>= 2 agents,
-  equivalence relations): a non-distinguished agent forces ``u = u'`` (same copy),
-  and the distinguished agent then forces ``g(u) - g(w) = g(u') - g(w') (mod |W|)``,
-  which with ``u = u'`` gives ``g(w) = g(w') (mod |W|)`` hence ``w = w'`` (``g`` is a
-  bijection onto ``0..|W|-1``). So the joint intersection is exactly ``{(w, u)}``.
-  Cross-checked here on 1000 random models with zero failures.
-
-  The construction singles out one distinguished agent and needs at least one
-  *other* agent to pin the copy index, so it requires **>= 2 agents**. A
-  single-agent, non-proper model has no proper bisimilar counterpart at all
-  (properness would force the identity relation, which bisimulation cannot reach),
-  so :func:`to_proper` raises for that case.
-
-Depends only on ``relational_frame``.
+:func:`to_proper` makes ``|W|`` copies of a non-proper model and skews one
+distinguished agent's relation across the copies (:func:`copy_and_skew`, the
+finite, modulo-``|W|`` construction of the Note, Props. 2.1-2.3). The result
+is proper and bisimilar to the input; the projection ``(w, copy) -> w`` is the
+witness. Construction and proof: docs/02 §4-5. Depends only on ``relational_frame``.
 """
 
 from __future__ import annotations
+
 from typing import Dict, Iterable, List, Optional, Set
+
 from relational_frame import Agent, Edge, RelationalFrame, World
-
-
-# --------------------------------------------------------------------------- #
-# Scope guard: knowledge (S5) only -- belief (KD45) is refused, for now
-# --------------------------------------------------------------------------- #
-# ============================ REVIEW LATER ================================= #
-# OPEN QUESTION: should properness be definable for BELIEF (KD45) frames too?
-#
-# Today the answer here is NO, and every public function below refuses a
-# non-reflexive frame. Reasons for the current restriction:
-#
-#   1. In the thesis architecture properness is a condition on the KNOWLEDGE
-#      relations (see knowledge_belief.KnowledgeBeliefFrame.is_proper, which
-#      passes self.knowledge). Belief lives in Q_a; properness never touches it.
-#   2. to_proper / copy_and_skew (Sink Thm 2.4, Bjorndahl & Sink Props. 2.1-2.3)
-#      is proved for equivalence relations. Its correctness on a non-reflexive
-#      KD45 frame has NOT been verified. This is now the real blocker: is_proper()
-#      would be safe to open up today, to_proper() would not, and shipping one
-#      without the other is a confusing API.
-#
-# NO LONGER A REASON: this module used to test `|intersection| = 1`, which is
-# equivalent to the definition only under reflexivity -- so on a KD45 frame it
-# reported mutually-inconsistent beliefs (`|intersection| = 0`) as properness
-# failures. That was the confusing behaviour reported against examples3.py. The
-# definition itself is now implemented (jointly_confused_with); it needs no
-# reflexivity, and it agrees with the old test on 5800 S5 frames. Soundness is no
-# longer an argument for the guard -- only reasons 1 and 2 above are.
-#
-# So the guard stays. Remove it deliberately, not by accident.
-# =========================================================================== #
-def equivalence_violations(frame: RelationalFrame) -> List[str]:
-    """Return every reason ``frame``'s relations are not equivalence relations.
-
-    Knowledge means each ``R_a`` is an equivalence relation, i.e. S5: **reflexive**
-    (Axiom T), **transitive** (Axiom 4) and **Euclidean** (Axiom 5). Reflexivity is
-    checked here; transitivity and Euclideanness are reused from the frame's own
-    KD45 validators (seriality cannot fail once reflexivity holds).
-
-    Checking only reflexivity would not be enough: a frame built with
-    ``validate=False`` can be reflexive and still fail transitivity or
-    Euclideanness, and so not be an equivalence relation at all.
-
-    Returns:
-        A message per violation, empty iff every relation is an equivalence relation.
-    """
-    problems: List[str] = []
-    missing = [
-        (a, w)
-        for a in sorted(frame.agents, key=str)
-        for w in sorted(frame.worlds, key=str)
-        if w not in frame.successors(a, w)
-    ]
-    if missing:
-        shown = ", ".join(f"R_{a}({w})" for a, w in missing[:5])
-        more = f" (and {len(missing) - 5} more)" if len(missing) > 5 else ""
-        problems.append(
-            f"Reflexivity (Axiom T) fails: {len(missing)} missing self-loop(s) "
-            f"-- {shown}{more}."
-        )
-    # Transitivity + Euclideanness (+ seriality, which reflexivity already implies).
-    problems.extend(frame.kd45_violations())
-    return problems
 
 
 def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> None:
     """Raise unless every relation in ``frame`` is an equivalence relation (S5).
 
-    Properness -- both **checking** it and **converting** to it -- is defined for
-    KNOWLEDGE only. A frame that is not an equivalence relation is refused here and
-    the caller never proceeds: no partial verdict, no best-effort answer.
-
-    Args:
-        frame: The frame to check.
-        operation: Name of the caller, used in the error message.
-
     Raises:
-        ValueError: If any relation is not an equivalence relation, listing every
-            axiom that fails.
+        ValueError: listing every axiom (T, 4, 5) that fails.
     """
-    problems = equivalence_violations(frame)
+    problems = frame.s5_violations()
     if not problems:
         return
     listed = "\n  - ".join(problems)
@@ -167,31 +44,23 @@ def require_knowledge(frame: RelationalFrame, operation: str = "Properness") -> 
         f"relation (S5 = reflexive + transitive + Euclidean). This frame is not, so "
         f"no properness verdict is given and nothing is converted.\n"
         f"  - {listed}\n"
-        f"Properness is a condition on the knowledge relations, and to_proper "
-        f"(Sink Thm 2.4) is only proved for equivalence relations -- running either "
-        f"on a KD45 belief frame would produce an answer with no theorem behind it. "
-        f"If you meant knowledge, build the relations with "
-        f"RelationalFrame.from_partial_s5(...) or relational_frame.s5_closure(...). "
-        f"If you have both knowledge and belief, use "
-        f"knowledge_belief.KnowledgeBeliefFrame, whose is_proper() checks the "
-        f"knowledge relations. See the REVIEW LATER note in properness.py."
+        f"Properness is a condition on knowledge and to_proper (Sink Thm 2.4) is "
+        f"proved for equivalence relations only. Build knowledge with "
+        f"RelationalFrame.from_partial_s5(...) or relational_frame.s5_closure(...); "
+        f"with both knowledge and belief use knowledge_belief.KnowledgeBeliefFrame, "
+        f"whose is_proper() checks the knowledge relations."
     )
+
 
 # --------------------------------------------------------------------------- #
 # The properness check
 # --------------------------------------------------------------------------- #
 def joint_possibilities(frame: RelationalFrame, world: World) -> Set[World]:
-    """Return ``⋂_a R_a(world)``: the worlds *every* agent considers possible from it.
+    """``⋂_a R_a(world)``: the worlds every agent considers possible from it.
 
-    Deliberately NOT guarded: this is a raw set intersection, not a properness
-    verdict, and it stays available on any frame as a diagnostic -- on a belief
-    frame an empty result means the agents' beliefs are mutually inconsistent there.
-    Every function that does deliver a properness verdict (:func:`jointly_confused_with`
-    and everything built on it) requires knowledge and refuses otherwise.
+    Not guarded: a raw intersection, usable as a diagnostic on any frame (on a
+    belief frame an empty result means mutually inconsistent beliefs there).
     """
-    # Start from None rather than set(): the first agent's successor set seeds
-    # the intersection (an empty start would make every result empty). With no
-    # agents at all the intersection is empty by convention.
     intersection: Set[World] | None = None
     for agent in frame.agents:
         reachable = frame.successors(agent, world)
@@ -200,53 +69,25 @@ def joint_possibilities(frame: RelationalFrame, world: World) -> Set[World]:
 
 
 def jointly_confused_with(frame: RelationalFrame, world: World) -> Set[World]:
-    """Return the *other* worlds jointly accessible from ``world``: ``⋂_a R_a(w) \\ {w}``.
+    """The *other* worlds jointly accessible from ``world``: ``⋂_a R_a(w) \\ {w}``.
 
-    This is properness read directly off the definition. ``world`` is a violation
-    exactly when this set is non-empty -- i.e. when some **distinct** ``y`` has
-    ``world R_a y`` for *every* agent ``a``, so the agents' perspectives together
-    fail to tell ``world`` apart from ``y``.
-
-    Subtracting ``{w}`` rather than testing ``|⋂_a R_a(w)| = 1`` is what makes this
-    the primary definition: an *empty* intersection is not a properness failure (it
-    means the agents' beliefs are mutually inconsistent there, a separate matter),
-    and the ``= 1`` reading only coincides with the definition when the frame is
-    reflexive. See the module docstring.
+    Non-empty exactly when ``world`` violates properness.
 
     Raises:
-        ValueError: If ``frame`` is not a knowledge (equivalence / S5) frame. This
-            function *is* the properness test, so it is guarded like the rest; for
-            the raw intersection on any frame use :func:`joint_possibilities`.
+        ValueError: if ``frame`` is not a knowledge (S5) frame.
     """
     require_knowledge(frame, "jointly_confused_with")
     return joint_possibilities(frame, world) - {world}
 
 
 def non_proper_worlds(frame: RelationalFrame) -> List[World]:
-    """Return the worlds where properness fails; empty if proper.
-
-    A world ``w`` fails when some distinct ``y`` satisfies ``w R_a y`` for every
-    agent (:func:`jointly_confused_with`).
-
-    Raises:
-        ValueError: If ``frame`` is not a knowledge (S5) frame.
-    """
+    """The worlds where properness fails, sorted; empty if proper."""
     require_knowledge(frame, "non_proper_worlds")
-    return [
-        w
-        for w in sorted(frame.worlds, key=str)
-        if jointly_confused_with(frame, w)
-    ]
+    return [w for w in sorted(frame.worlds, key=str) if jointly_confused_with(frame, w)]
 
 
 def properness_pairs(frame: RelationalFrame) -> List[Edge]:
-    """Return every ordered pair ``(x, y)``, ``x != y``, with ``x R_a y`` for all agents.
-
-    The definition's own witnesses. Empty iff the frame is proper.
-
-    Raises:
-        ValueError: If ``frame`` is not a knowledge (S5) frame.
-    """
+    """Every ordered pair ``(x, y)``, ``x != y``, with ``x R_a y`` for all agents."""
     require_knowledge(frame, "properness_pairs")
     return [
         (x, y)
@@ -256,11 +97,7 @@ def properness_pairs(frame: RelationalFrame) -> List[Edge]:
 
 
 def properness_violations(frame: RelationalFrame) -> List[str]:
-    """Return a message per world where properness fails (empty list if proper).
-
-    Raises:
-        ValueError: If ``frame`` is not a knowledge (S5) frame.
-    """
+    """A message per world where properness fails (empty if proper)."""
     require_knowledge(frame, "properness_violations")
     problems: List[str] = []
     for w in sorted(frame.worlds, key=str):
@@ -278,36 +115,19 @@ def properness_violations(frame: RelationalFrame) -> List[str]:
 
 
 def is_proper(frame: RelationalFrame) -> bool:
-    """Return True iff the knowledge model is proper (bridges to a simplicial model).
-
-    Proper = there is no pair of distinct worlds ``x != y`` with ``x R_a y`` for
-    every agent ``a``. For knowledge (where each ``R_a`` is reflexive) this is
-    equivalent to ``|⋂_a [w]_a| = 1`` at every world, but the definition above is
-    what is implemented -- see :func:`jointly_confused_with`.
-
-    Raises:
-        ValueError: If ``frame`` is not a knowledge (S5) frame.
-    """
+    """True iff the knowledge model is proper (no two worlds jointly confused)."""
     return not properness_violations(frame)
 
 
 def explain(frame: RelationalFrame) -> str:
-    """Return a human-readable verdict: proper, or which worlds break it and why.
-
-    Raises:
-        ValueError: If ``frame`` is not a knowledge (S5) frame.
-    """
+    """A readable verdict: proper, or which worlds break it and with which others."""
     bad = non_proper_worlds(frame)
     if not bad:
         return "PROPER: every world is uniquely pinned down by the agents' joint knowledge."
-    lines = [
-        f"NOT PROPER: {len(bad)} world(s) are jointly confused with another world:"
-    ]
+    lines = [f"NOT PROPER: {len(bad)} world(s) are jointly confused with another world:"]
     for w in bad:
         others = sorted(jointly_confused_with(frame, w), key=str)
-        lines.append(
-            f"  world {w!r}: every agent also considers {others} possible from it"
-        )
+        lines.append(f"  world {w!r}: every agent also considers {others} possible from it")
     return "\n".join(lines)
 
 
@@ -315,15 +135,8 @@ def explain(frame: RelationalFrame) -> str:
 # Proper frames and the general -> proper conversion
 # --------------------------------------------------------------------------- #
 class ProperRelationalFrame(RelationalFrame):
-    """A :class:`RelationalFrame` that is *proper* (ready for the simplicial step).
-
-    Beyond the usual KD45 checks, construction also verifies properness (no two
-    distinct worlds are jointly accessible to every agent), which requires the
-    frame to be a knowledge (S5) frame. When produced by :func:`to_proper`, :attr:`projection`
-    maps each (copied) world back to the world it simulates in the original model
-    -- the surjective bounded morphism that witnesses bisimilarity, and the link
-    the simplicial translation will need.
-    """
+    """A knowledge frame that is proper; ``projection`` maps each world back to
+    the world of the original model it simulates (identity when nothing was copied)."""
 
     def __init__(
         self,
@@ -334,12 +147,9 @@ class ProperRelationalFrame(RelationalFrame):
         projection: Optional[Dict[World, World]] = None,
     ) -> None:
         super().__init__(agents, worlds, relations, validate=validate)
-        # projection[(w, copy)] = w : which original world each new world simulates.
         self.projection: Dict[World, World] = dict(projection or {})
-        # Unconditional, even when validate=False: "proper" is only defined for
-        # knowledge, so a non-equivalence frame cannot be an instance of this class
-        # at all. validate=False may skip the *properness* check (a caller that
-        # built the relations itself), never the equivalence precondition.
+        # The S5 precondition holds even with validate=False: "proper" is only
+        # defined for knowledge. validate=False skips the properness check only.
         require_knowledge(self, "ProperRelationalFrame")
         if validate:
             problems = properness_violations(self)
@@ -350,37 +160,15 @@ class ProperRelationalFrame(RelationalFrame):
                 )
 
     def is_proper(self) -> bool:
-        """Return True (a validated ProperRelationalFrame is proper by construction)."""
         return is_proper(self)
 
     def properness_violations(self) -> List[str]:
-        """Return properness violations (empty for a validated proper frame)."""
         return properness_violations(self)
 
 
 def skew_cost(relations: Dict[Agent, Set[Edge]], agent: Agent) -> int:
-    """How many edges :func:`copy_and_skew` will route ACROSS copies for ``agent``.
-
-    The distinguished agent's edge ``w -> w2`` becomes ``(w, u) -> (w2, u2)`` with
-    ``g(u2) = g(u) - g(w) + g(w2) (mod |W|)``, so ``u2 == u`` exactly when
-    ``w2 == w``. Reflexive edges therefore stay INSIDE a copy and every other edge
-    jumps between copies -- once per copy, i.e. ``|W|`` times each.
-
-    So the cross-copy edge count is ``(non-reflexive edges) * |W|``, and since
-    ``|W|`` is the same whoever is distinguished, the non-reflexive count alone
-    ranks the candidates. Those jumps are the long lines that span the whole
-    drawing; every other agent's edges stay local. Minimising this is what makes
-    the proper diagram readable -- see :func:`cheapest_distinguished_agent`.
-
-    Args:
-        relations: ``agent -> edge set``. Pass several families' worth summed by
-            the caller when more than one relation gets skewed (knowledge AND
-            belief, in :meth:`knowledge_belief.KnowledgeBeliefFrame.to_proper`).
-        agent: The candidate distinguished agent.
-
-    Returns:
-        The number of non-reflexive edges ``agent`` owns.
-    """
+    """Non-reflexive edges of ``agent``: each one crosses copies ``|W|`` times
+    when ``agent`` is the distinguished one, so this ranks the candidates."""
     return sum(1 for (w, u) in relations.get(agent, ()) if w != u)
 
 
@@ -388,76 +176,67 @@ def cheapest_distinguished_agent(
     *families: Dict[Agent, Set[Edge]],
     agents: Iterable[Agent],
 ) -> Agent:
-    """Pick the distinguished agent that keeps the proper diagram cleanest.
+    """The agent whose skew draws the fewest cross-copy edges; ties by name.
 
-    Every agent produces a proper model of the same size -- ``|W|`` copies of
-    ``|W|`` worlds, with the same total edge count -- so the choice is purely
-    about READABILITY: the distinguished agent is the only one whose edges cross
-    between copies, and those crossings are what turn the picture into a hairball.
-    Picking the agent with the fewest non-reflexive edges minimises them.
-
-    All families that will be skewed with the SAME distinguished agent must be
-    passed together, because the cost is their sum. Counting only one of them was
-    a real bug: with complete knowledge every agent ties on ``|R_a|``, the tie
-    broke alphabetically, and the alphabetically-first agent could easily be the
-    one with the *most* belief edges -- the worst choice available.
-
-    Ties break on the sorted agent name, so the result is deterministic.
-
-    Args:
-        *families: one or more ``agent -> edge set`` mappings that get skewed.
-        agents: The candidates to choose among.
-
-    Returns:
-        The agent minimising the total cross-copy cost.
+    Every choice gives a proper model of the same size; this one only keeps the
+    drawing readable. Pass every family that will be skewed with the same agent
+    (knowledge and belief), since the cost is their sum.
     """
     candidates = sorted(agents, key=str)
-    return min(
-        candidates,
-        key=lambda a: sum(skew_cost(family, a) for family in families),
+    return min(candidates, key=lambda a: sum(skew_cost(family, a) for family in families))
+
+
+def choose_distinguished(
+    agents: Iterable[Agent],
+    distinguished_agent: Optional[Agent],
+    *families: Dict[Agent, Set[Edge]],
+) -> Agent:
+    """Check the preconditions of the copy construction and pick the agent to skew.
+
+    Shared by :func:`to_proper` and ``KnowledgeBeliefFrame.to_proper``.
+
+    Raises:
+        ValueError: fewer than two agents (a single-agent non-proper model has no
+            proper bisimilar counterpart: properness would force the identity
+            relation), or an unknown ``distinguished_agent``.
+    """
+    agents = set(agents)
+    if len(agents) < 2:
+        raise ValueError(
+            "No proper model bisimilar to this frame exists: a single-agent, "
+            "non-proper frame cannot be made proper (properness would force the "
+            "relation to be the identity). The construction requires >= 2 agents."
+        )
+    distinguished = (
+        distinguished_agent
+        if distinguished_agent is not None
+        else cheapest_distinguished_agent(*families, agents=agents)
     )
+    if distinguished not in agents:
+        raise ValueError(
+            f"Unknown distinguished agent {distinguished!r}; "
+            f"choose one of {sorted(map(str, agents))}."
+        )
+    return distinguished
 
 
 def to_proper(
     frame: RelationalFrame,
     distinguished_agent: Optional[Agent] = None,
 ) -> ProperRelationalFrame:
-    """Convert a general KNOWLEDGE frame into a bisimilar PROPER one (Sink, Thm 2.4).
+    """Convert a knowledge frame into a bisimilar proper one (Sink, Thm 2.4).
 
-    Makes ``|W|`` copies of the model -- new worlds are pairs ``(w, copy)`` -- and
-    skews the accessibility relation of one distinguished agent so it connects
-    worlds across copies, guaranteeing properness while staying bisimilar to
-    ``frame`` (the projection ``(w, copy) -> w`` is a surjective bounded morphism).
-
-    If ``frame`` is already proper, it is returned as a :class:`ProperRelationalFrame`
-    without any copying (no point inflating an already-proper model).
-
-    Args:
-        frame: A knowledge (S5) frame -- the equivalence relations that properness
-            is about; the construction preserves its axioms.
-        distinguished_agent: The agent whose relation is skewed. Defaults to the
-            one with the fewest non-reflexive edges, ties broken by name
-            (:func:`cheapest_distinguished_agent`). Any agent works, and
-            the size of the result never depends on the choice -- always ``|W|^2``
-            worlds, and every original edge yields exactly ``|W|`` copies whether
-            skewed or not. What the sparsest-relation default minimises is the
-            number of *cross-copy* (skewed) edges, keeping the construction as
-            readable as possible.
-
-    Returns:
-        A :class:`ProperRelationalFrame` whose :attr:`projection` maps each new
-        world back to the original world it simulates.
+    An already proper frame is wrapped with the identity projection. Otherwise
+    ``|W|`` copies are made and ``distinguished_agent`` (default: the one with
+    the fewest non-reflexive edges) is skewed across them.
 
     Raises:
-        ValueError: If ``frame`` has no agents, is not a knowledge (S5) frame, or
-            ``distinguished_agent`` is unknown.
+        ValueError: no agents, not a knowledge frame, a single agent, or an
+            unknown ``distinguished_agent``.
     """
     if not frame.agents:
         raise ValueError("Cannot build a proper model from a frame with no agents.")
-
     require_knowledge(frame, "to_proper")
-
-    # Already proper -> wrap with the identity projection; no copies needed.
     if is_proper(frame):
         return ProperRelationalFrame(
             agents=frame.agents,
@@ -465,32 +244,7 @@ def to_proper(
             relations=frame.relations,
             projection={w: w for w in frame.worlds},
         )
-
-    # The copy construction needs a non-distinguished agent to pin the copy index,
-    # so >= 2 agents are required. With a single agent, "proper" means the relation
-    # is the identity, which no bisimilar model can achieve (bisimilarity preserves
-    # how many worlds the agent considers possible) -- so no proper model exists.
-    if len(frame.agents) < 2:
-        raise ValueError(
-            "No proper model bisimilar to this frame exists: a single-agent, "
-            "non-proper frame cannot be made proper (properness would force the "
-            "relation to be the identity). The construction requires >= 2 agents."
-        )
-
-    # Default: the sparsest relation gets skewed. The result's SIZE is the same
-    # for every choice (|W|^2 worlds; each edge copied |W| times regardless);
-    # this just minimises how many edges end up crossing copies.
-    distinguished = (
-        distinguished_agent
-        if distinguished_agent is not None
-        else cheapest_distinguished_agent(frame.relations, agents=frame.agents)
-    )
-    if distinguished not in frame.agents:
-        raise ValueError(
-            f"Unknown distinguished agent {distinguished!r}; "
-            f"choose one of {sorted(map(str, frame.agents))}."
-        )
-
+    distinguished = choose_distinguished(frame.agents, distinguished_agent, frame.relations)
     new_worlds, new_relations, projection = copy_and_skew(
         frame.worlds, frame.agents, frame.relations, distinguished
     )
@@ -503,49 +257,30 @@ def to_proper(
 
 
 def copy_and_skew(worlds, agents, relations, distinguished):
-    """Make ``|W|`` copies of a relation family and cyclically skew one agent's.
+    """Make ``|W|`` copies of a relation family and skew one agent's across them.
 
-    Shared core of the general->proper conversion. New worlds are pairs
-    ``(w, copy)``; non-distinguished agents act within a single copy, while the
-    ``distinguished`` agent is skewed cyclically across copies (guaranteeing
-    properness). Applying this to a knowledge family and a belief family with the
-    SAME ``distinguished`` agent preserves ``Q_a ⊆ R_a``.
-
-    This is a pure edge-set transformation with no properness check of its own, so
-    ``knowledge_belief`` can apply it to a *belief* family too (the properness
-    verdict is still taken on the knowledge family).
-
-    Args:
-        worlds: The original world set.
-        agents: The agents (keys of ``relations``).
-        relations: ``agent -> set of (source, target)`` edges.
-        distinguished: The agent whose relation is skewed across copies.
+    New worlds are pairs ``(w, copy)``. A non-distinguished agent's edge
+    ``w -> w2`` becomes ``(w, u) -> (w2, u)`` in every copy ``u``; the
+    distinguished agent's becomes ``(w, u) -> (w2, u2)`` with
+    ``g(u2) = g(u) - g(w) + g(w2)  (mod |W|)``, ``g`` the sorted-name bijection
+    ``W -> 0..|W|-1``. (The thesis prints ``g(w)`` for the last ``g(w2)``; the
+    primed reading is the one the proof needs, see docs/02 §4 Step D.) Pure edge
+    arithmetic, no properness check, so it applies to a belief family too.
 
     Returns:
-        ``(new_worlds, new_relations, projection)`` where ``projection`` maps each
-        new world ``(w, copy)`` back to ``w``.
+        ``(new_worlds, new_relations, projection)`` with ``projection[(w, u)] = w``.
     """
-    # Sorted by name so the bijection g -- and with it the skew -- is deterministic.
     worlds_sorted = sorted(worlds, key=str)
     n = len(worlds_sorted)
-    g = {w: i for i, w in enumerate(worlds_sorted)}  # bijection world -> index
+    g = {w: i for i, w in enumerate(worlds_sorted)}
 
     new_relations: Dict[Agent, Set[Edge]] = {a: set() for a in agents}
     for a in agents:
         for (w, w2) in relations[a]:
             for u in worlds_sorted:
                 if a != distinguished:
-                    # Non-distinguished agents act *within* a single copy u.
                     new_relations[a].add(((w, u), (w2, u)))
                 else:
-                    # Distinguished agent skewed cyclically ACROSS copies -- the
-                    # finite, modulo-|W| skew of Bjorndahl & Sink Props. 2.1-2.3
-                    # (the thesis states it for g: W -> R) -- so its relation
-                    # never fully coincides with another agent's -> proper.
-                    # Skew condition: g(u) - g(w) = g(u') - g(w')  =>
-                    #   g(u') = g(u) - g(w) + g(w')   (mod |W| for the finite case).
-                    # (The thesis PDF drops the prime on the final g(w'); see the
-                    # module docstring for why g(w') is the correct reading.)
                     u2 = worlds_sorted[(g[u] - g[w] + g[w2]) % n]
                     new_relations[a].add(((w, u), (w2, u2)))
 
@@ -555,9 +290,8 @@ def copy_and_skew(worlds, agents, relations, distinguished):
 
 
 if __name__ == "__main__":
-    # --- a PROPER 2-agent knowledge model --------------------------------- #
-    # 4 worlds; agent a can tell the top pair from the bottom pair, agent b the
-    # left pair from the right pair. Together they pin down every world uniquely.
+    # A PROPER 2-agent knowledge model: a tells the top pair from the bottom
+    # pair, b the left pair from the right pair; together they pin every world.
     worlds = {"w0", "w1", "w2", "w3"}
 
     def equivalence(classes):
@@ -574,7 +308,7 @@ if __name__ == "__main__":
     print("Example 1 (grid of two partitions):")
     print(explain(proper))
 
-    # --- a NON-PROPER model (thesis Figure 1: everyone sees everything) ----- #
+    # A NON-PROPER model (thesis Figure 1: everyone sees everything).
     complete = {(x, y) for x in worlds for y in worlds}
     non_proper = RelationalFrame(
         {"a", "b"}, worlds, {"a": set(complete), "b": set(complete)}
@@ -583,7 +317,7 @@ if __name__ == "__main__":
     print(explain(non_proper))
     print("\nto_proper ->", to_proper(non_proper))
 
-    # --- a BELIEF (KD45) model: refused, not silently mis-judged ----------- #
+    # A BELIEF (KD45) model is refused, not silently mis-judged.
     belief = RelationalFrame.from_partial(
         {"a", "b"}, {"w0", "w1"}, {"a": {("w0", "w1")}, "b": {("w0", "w1")}},
         make_serial=True,

@@ -1,52 +1,30 @@
-"""Valuations and formula semantics on BOTH sides of the translation (thesis ch. 2).
+"""Valuations and formula semantics on both sides of the translation (thesis ch. 2).
 
-This module adds the logical layer chapter 2 of Sink's thesis puts on top of the
-structural pipeline:
+Kripke side: a valuation ``v : P -> 2^W``; ``K_a`` quantifies over ``R_a(w)``,
+``B_a`` over ``Q_a(w)`` (:func:`holds_kripke`). Simplicial side: a facet
+valuation ``L : P -> 2^F(S)``; ``K_a`` over the facets sharing ``a``'s vertex,
+``B_a`` over those of ``S_a`` (:func:`holds_simplicial`). The translation
+carries valuations along: :func:`lift_valuation` (general -> proper, thesis
+p. 13) and :func:`facet_valuation` (proper -> simplicial, Lemma 2.6).
 
-    Kripke side (p. 9-10). A relational model is a frame plus a valuation
-    ``v : P -> 2^W`` (which worlds make each atom true). Truth is the usual
-    recursion: atoms by membership, ``K_a`` quantifying over ``R_a(w)``, ``B_a``
-    over ``Q_a(w)`` -- :func:`holds_kripke`.
+The project's canonical route puts atoms on the VERTICES instead
+(``assignment.py``, thesis ch. 3); ``assignment.lift_to_facets`` turns a vertex
+assignment into a facet valuation for this module, and the two agree on every
+formula. They differ from a Kripke valuation only where NU fails
+(``assignment.nu_violations``). See docs/08.
 
-    Simplicial side (p. 8). A simplicial model carries a FACET valuation
-    ``L : P -> 2^F(S)``; ``X |= P`` iff ``X ∈ L(P)``, ``K_a`` quantifies over the
-    facets of ``S`` sharing ``a``'s vertex, ``B_a`` over those of ``S_a`` --
-    :func:`holds_simplicial`.
-
-    The translation carries the valuation along (and truth with it):
-
-      * general -> proper (p. 13): the copies inherit the original world's atoms,
-        ``v~(P) = {(x, y) : x ∈ v(P)}`` -- :func:`lift_valuation`, phrased through
-        the bisimulation projection ``ρ`` so it composes with this repo's
-        ``to_proper`` output directly. ``ρ`` is a bounded morphism for every
-        ``R_a`` and ``Q_a``, so ``w`` and each copy ``(w, u)`` satisfy the same
-        formulas.
-      * proper -> simplicial (p. 9, Lemma 2.6): ``L_N(P) = f[v(P)]`` = the facets
-        of the worlds where ``P`` holds -- :func:`facet_valuation`; then
-        ``N, w |= φ  iff  M_N, f(w) |= φ`` for the whole language ``L_KB``.
-
-ROLE IN THIS PROJECT: the facet valuation here is the chapter-2 REFERENCE and
-the exact bridge to Kripke valuations; the project's CANONICAL approach is the
-vertex-based one of ``assignment.py`` (atoms assigned partially to the
-vertices, truth lifted to facets -- ``assignment.lift_to_facets`` produces a
-facet valuation this module's evaluator consumes, and the two evaluators agree
-on every formula over a lifted valuation). Prefer the vertex route when
-modelling; come through here when you start from an arbitrary Kripke valuation
-``v``, because not every ``v`` is vertex-representable: the two chains coincide
-exactly when ``v`` has "no uncertainties" (some agent always knows each atom's
-value, the NU schema), and ``assignment.nu_violations`` locates the divergences.
-
-Formulas are the same plain tuples used by ``assignment.py``:
+Formulas are plain tuples, shared with ``assignment.py``:
 
     ("atom", P) | ("bot",) | ("imp", f, g) | ("K", a, f) | ("B", a, f)
     sugar: ("not", f), ("and", f, g), ("or", f, g)
 
-Depends on ``knowledge_belief`` and ``simplicial``.
+:func:`evaluate` is the one recursion over the connectives; each semantics
+supplies its atom test and its modal successor sets.
 """
 
 from __future__ import annotations
 
-from typing import Dict, Hashable, List, Set
+from typing import Callable, Dict, Hashable, Iterable, List, Set
 
 from knowledge_belief import KnowledgeBeliefFrame
 from relational_frame import RelationalFrame, World
@@ -57,12 +35,59 @@ Valuation = Dict[Atom, Set[World]]        # v : P -> 2^W   (Kripke side)
 FacetValuation = Dict[Atom, Set[Facet]]   # L : P -> 2^F(S) (simplicial side)
 
 
-def valuation_violations(worlds, valuation: Valuation) -> List[str]:
-    """Return a message per atom whose truth set mentions an unknown world.
+def evaluate(
+    formula,
+    point,
+    atom: Callable[[object, Atom], bool],
+    successors: Callable[[str, Hashable, object], Iterable],
+) -> bool:
+    """Truth of ``formula`` at ``point`` (a world or a facet).
 
-    Checked before a valuation is translated, so a mistyped world name fails
-    loudly instead of silently making the atom false everywhere it mattered.
+    ``atom(point, P)`` decides the atoms; ``successors(tag, agent, point)`` gives
+    the points ``K_a`` (``tag="K"``) or ``B_a`` (``tag="B"``) quantify over.
+
+    Raises:
+        ValueError: on an unknown connective.
     """
+    tag = formula[0]
+    if tag == "atom":
+        return atom(point, formula[1])
+    if tag == "bot":
+        return False
+    if tag == "imp":
+        return (not evaluate(formula[1], point, atom, successors)) or evaluate(
+            formula[2], point, atom, successors
+        )
+    if tag == "not":
+        return not evaluate(formula[1], point, atom, successors)
+    if tag == "and":
+        return evaluate(formula[1], point, atom, successors) and evaluate(
+            formula[2], point, atom, successors
+        )
+    if tag == "or":
+        return evaluate(formula[1], point, atom, successors) or evaluate(
+            formula[2], point, atom, successors
+        )
+    if tag in ("K", "B"):
+        return all(
+            evaluate(formula[2], q, atom, successors)
+            for q in successors(tag, formula[1], point)
+        )
+    raise ValueError(f"Unknown connective {tag!r} in formula {formula!r}.")
+
+
+def facet_successors(model: SimplicialBeliefModel) -> Callable:
+    """The modal clause of both simplicial semantics: ``K_a`` ranges over the
+    facets of ``S`` sharing ``a``'s vertex, ``B_a`` over those of ``S_a``."""
+    def successors(tag, agent, facet):
+        if tag == "K":
+            return model.knows_facets(agent, facet)
+        return model.believes_facets(agent, facet)
+    return successors
+
+
+def valuation_violations(worlds, valuation: Valuation) -> List[str]:
+    """A message per atom whose truth set mentions an unknown world."""
     world_set = set(worlds)
     problems: List[str] = []
     for atom, trues in valuation.items():
@@ -89,50 +114,21 @@ def holds_kripke(model, valuation: Valuation, world: World, formula) -> bool:
         ValueError: On an unknown connective, or ``B_a`` over a frame that has
             no belief relations.
     """
-    tag = formula[0]
-    if tag == "atom":
-        return world in valuation.get(formula[1], ())
-    if tag == "bot":
-        return False
-    if tag == "imp":
-        return (not holds_kripke(model, valuation, world, formula[1])) or (
-            holds_kripke(model, valuation, world, formula[2])
-        )
-    if tag == "not":
-        return not holds_kripke(model, valuation, world, formula[1])
-    if tag == "and":
-        return holds_kripke(model, valuation, world, formula[1]) and holds_kripke(
-            model, valuation, world, formula[2]
-        )
-    if tag == "or":
-        return holds_kripke(model, valuation, world, formula[1]) or holds_kripke(
-            model, valuation, world, formula[2]
-        )
-    if tag == "K":
-        successors = (
-            model.knows(formula[1], world)
-            if isinstance(model, KnowledgeBeliefFrame)
-            else model.successors(formula[1], world)
-        )
-        return all(holds_kripke(model, valuation, u, formula[2]) for u in successors)
-    if tag == "B":
-        if isinstance(model, KnowledgeBeliefFrame):
-            successors = model.believes(formula[1], world)
-        elif model.logic_label() == "S5":
-            # A reflexive frame reads as knowledge (logic_label detects S5), so
-            # there is no belief relation for B_a to quantify over.
+    kb = isinstance(model, KnowledgeBeliefFrame)
+
+    def successors(tag, agent, w):
+        if kb:
+            return model.knows(agent, w) if tag == "K" else model.believes(agent, w)
+        if tag == "B" and model.logic_label() == "S5":
             raise ValueError(
                 "B_a needs a belief relation, but this RelationalFrame is a "
                 "knowledge (S5) frame. Express the formula with K_a, or use a "
                 "KnowledgeBeliefFrame."
             )
-        else:
-            # A plain KD45/K45 frame IS a belief relation (a pure-belief
-            # model): B_a quantifies over its successors, exactly as K_a does
-            # over a pure-knowledge frame.
-            successors = model.successors(formula[1], world)
-        return all(holds_kripke(model, valuation, u, formula[2]) for u in successors)
-    raise ValueError(f"Unknown connective {tag!r} in formula {formula!r}.")
+        # A plain frame is the one relation: knowledge if S5, belief otherwise.
+        return model.successors(agent, w)
+
+    return evaluate(formula, world, lambda w, P: w in valuation.get(P, ()), successors)
 
 
 # --------------------------------------------------------------------------- #
@@ -141,17 +137,8 @@ def holds_kripke(model, valuation: Valuation, world: World, formula) -> bool:
 def lift_valuation(
     valuation: Valuation, projection: Dict[World, World]
 ) -> Valuation:
-    """Lift ``v`` through a general -> proper conversion (thesis p. 13).
-
-    Each copy inherits its original world's atoms: ``v~(P) = ρ^{-1}[v(P)]``,
-    which for the W×W construction is exactly the thesis's
-    ``{(x, y) : x ∈ v(P)}``. Pass the ``projection`` attribute of the frame
-    ``to_proper`` returned (the identity projection of an already-proper model
-    leaves the valuation unchanged).
-
-    Because ``ρ`` is a bounded morphism for every relation, ``w`` and every copy
-    in ``ρ^{-1}(w)`` satisfy exactly the same formulas under the lifted valuation.
-    """
+    """Lift ``v`` through general -> proper: each copy inherits its original's
+    atoms, ``v~(P) = ρ^{-1}[v(P)]`` (thesis p. 13). Pass the frame's ``projection``."""
     return {
         atom: {w2 for w2, w0 in projection.items() if w0 in trues}
         for atom, trues in valuation.items()
@@ -161,16 +148,11 @@ def lift_valuation(
 def facet_valuation(
     model: SimplicialBeliefModel, valuation: Valuation
 ) -> FacetValuation:
-    """Translate a world valuation into the facet valuation ``L_N(P) = f[v(P)]``.
-
-    Defined for the simplicial model of a PROPER relational model (thesis p. 9):
-    there ``f`` is a bijection worlds <-> facets (``model.world_of_facet`` is its
-    inverse), so ``P`` is true at a facet exactly when it was true at the world
-    the facet came from -- the definition that makes Lemma 2.6 (truth
-    preservation) go through for the full language ``L_KB``.
+    """The facet valuation ``L_N(P) = f[v(P)]`` of a translated model (thesis p. 9):
+    ``P`` holds at a facet iff it held at the world the facet came from.
 
     Raises:
-        ValueError: If the valuation mentions worlds the model does not have.
+        ValueError: if the valuation mentions worlds the model does not have.
     """
     worlds = set(model.world_of_facet.values())
     problems = valuation_violations(worlds, valuation)
@@ -193,43 +175,11 @@ def holds_simplicial(
     facet: Facet,
     formula,
 ) -> bool:
-    """Decide ``M, facet |= formula`` under the chapter-2 semantics.
-
-    Atoms by facet membership (``X ∈ L(P)``); ``K_a`` over the facets of ``S``
-    sharing ``a``'s vertex with ``facet``; ``B_a`` over those of ``S_a``.
+    """Decide ``M, facet |= formula`` under the chapter-2 (facet valuation) semantics.
 
     Raises:
-        ValueError: On an unknown connective.
+        ValueError: on an unknown connective.
     """
-    tag = formula[0]
-    if tag == "atom":
-        return facet in valuation.get(formula[1], ())
-    if tag == "bot":
-        return False
-    if tag == "imp":
-        return (not holds_simplicial(model, valuation, facet, formula[1])) or (
-            holds_simplicial(model, valuation, facet, formula[2])
-        )
-    if tag == "not":
-        return not holds_simplicial(model, valuation, facet, formula[1])
-    if tag == "and":
-        return holds_simplicial(model, valuation, facet, formula[1]) and (
-            holds_simplicial(model, valuation, facet, formula[2])
-        )
-    if tag == "or":
-        return holds_simplicial(model, valuation, facet, formula[1]) or (
-            holds_simplicial(model, valuation, facet, formula[2])
-        )
-    if tag == "K":
-        p = model.pi(formula[1], facet)
-        return all(
-            holds_simplicial(model, valuation, Y, formula[2])
-            for Y in model.facets
-            if model.pi(formula[1], Y) == p
-        )
-    if tag == "B":
-        return all(
-            holds_simplicial(model, valuation, Y, formula[2])
-            for Y in model.believes_facets(formula[1], facet)
-        )
-    raise ValueError(f"Unknown connective {tag!r} in formula {formula!r}.")
+    return evaluate(
+        formula, facet, lambda F, P: F in valuation.get(P, ()), facet_successors(model)
+    )

@@ -17,7 +17,6 @@ from semantics import lift_valuation
 from simplicial import Node, SimplicialBeliefModel, label_node, to_relational, to_simplicial
 from visualization import visualize
 from .base import (
-    FIGURE_FORMAT,
     OUTPUTS,
     PipelineResult,
     StepReport,
@@ -25,6 +24,7 @@ from .base import (
     _fname,
     _geometric_ok,
     _hasse_caption,
+    hasse_show,
     blank_state,
     show,
 )
@@ -106,14 +106,14 @@ def build_simplicial(
             # user filled it in. Not part of the model yet, not an error.
             facet_of[name] = members
             if notes is not None:
-                notes.append(f"facet '{name}' has no vertices yet: not drawn until it has some")
+                notes.append(f"facet {name}: no vertices yet, not drawn")
             continue
         facet_of[name] = members
         if members in name_of:
             if notes is not None:
                 notes.append(
-                    f"facets '{name_of[members]}' and '{name}' have the same vertices: "
-                    f"they are one facet, drawn once as '{name_of[members]}'"
+                    f"facets {name_of[members]} and {name}: same vertices, one facet, "
+                    f"drawn once as {name_of[members]}"
                 )
             continue
         name_of[members] = name
@@ -185,21 +185,19 @@ def _consistent_part(model, assignment, by_name) -> Tuple[SimplicialBeliefModel,
     ]
 
 
-def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str], List[str]]:
+def _simplicial_problems(model, assignment, by_name) -> Tuple[List[str], List[str]]:
     """``(violations, notes)`` for a hand-declared complex (already pruned)."""
     problems = model.violations()
     name = {n: v for v, n in by_name.items()}
     notes = []
     if not model.facets:
         notes.append(
-            "no facets yet: a 0-dimensional complex, every vertex is a world of "
-            "its own agent alone (add facets to glue perspectives into worlds)"
+            "no facets: 0-dimensional complex, each vertex a world of its own agent"
         )
     loose = sorted(name[n] for n in model.isolated_nodes())
     if loose:
         notes.append(
-            "vertices in no facet (isolated: no world passes through them; "
-            f"drawn loose): {', '.join(loose)}"
+            f"isolated vertices (in no facet, no world through them): {', '.join(loose)}"
         )
     if not model.axiom_d:
         # Under K45 an isolated perspective is not a violation, but it does
@@ -209,15 +207,14 @@ def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str
             stuck = sorted(name[n] for n in model.isolated_perspectives()[a])
             if stuck:
                 notes.append(
-                    f"isolated perspectives of {a} (in no facet of S_{a}: "
-                    f"there {a} vacuously believes everything): {', '.join(stuck)}"
+                    f"isolated perspectives of {a} (in no facet of S_{a}; "
+                    f"B_{a} vacuous there): {', '.join(stuck)}"
                 )
     orphan = [model.world_of_facet[F] for F in model.facets
               if not any(F in fs for fs in model.belief_facets.values())]
     if orphan:
         notes.append(
-            "facets outside every belief subcomplex (nobody considers them "
-            f"possible): {', '.join(sorted(map(str, orphan)))}"
+            f"facets in no belief subcomplex: {', '.join(sorted(map(str, orphan)))}"
         )
     return problems, notes
 
@@ -245,7 +242,7 @@ def preview_simplicial(
                      output_dir=str(OUTPUTS), assignment=assignment or None,
                      engine="auto" if _geometric_ok(model) else "dot",
                      font_scale=font_scale))
-    problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
+    problems, _ = _simplicial_problems(model, assignment, by_name)
     notes = [] if _geometric_ok(model) else [_dimension_note(model)]
     return path, dropped + problems + notes
 
@@ -375,25 +372,24 @@ def run_simplicial(
         assignment = simplicial_assignment(by_name, vatoms)
     except ValueError as exc:
         step.failed.append(str(exc))
-        result.badges.append(("inexpressible", "negative"))
+        result.badges.append(("inexpressible", "bad"))
         return result
     # Inconsistent facets are removed, not refused (GitHub #21): the model is
     # the maximal consistent complex, and the removal is reported as something
     # the theory completed for the user. Duplicate facets are merged the same way.
     model, dropped = _consistent_part(model, assignment, by_name)
     step.completed += merged + dropped
-    problems, notes = _simplicial_problems(model, assignment, by_name, vertices)
+    problems, notes = _simplicial_problems(model, assignment, by_name)
     step.missing += notes
     if problems:
         step.failed.append("\n".join(problems))
-        result.badges.append(("invalid", "negative"))
+        result.badges.append(("invalid", "bad"))
     else:
-        result.badges.append(("valid", "positive"))
+        result.badges.append(("valid", "ok"))
         if knowledge_only:
             step.completed.append(
                 f"well-formed knowledge complex: {len(model.facets)} facets, "
-                f"{len(model.nodes)} vertices; S_a = S for every agent (each one "
-                "believes exactly what it knows, B_a coincides with K_a)"
+                f"{len(model.nodes)} vertices; S_a = S (B_a coincides with K_a)"
             )
         else:
             sizes = ", ".join(f"S_{a} = {len(model.belief_facets[a])}"
@@ -405,7 +401,7 @@ def run_simplicial(
     # A knowledge complex has no belief logic to name: S_a = S makes D hold
     # trivially, so the KD45/K45 badge would say nothing.
     result.badges.append(("knowledge (S_a = S)" if knowledge_only
-                          else ("KD45" if axiom_d else "K45"), "primary"))
+                          else ("KD45" if axiom_d else "K45"), "info"))
     result.stats.append((str(len(model.facets)), "facets"))
     result.stats.append((str(len(model.nodes)), "vertices"))
     if not knowledge_only:
@@ -435,9 +431,9 @@ def run_simplicial(
     lattice = hasse.face_lattice(model, include_empty=False, assignment=asg)
     result.figures.append((
         _hasse_caption("Fig. 2", hasse_full),
-        Path(hasse.show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
+        Path(hasse_show(lattice, _fname("gui_fig4_hasse", tag), "Face lattice",
                         output_dir=str(OUTPUTS), rankdir="BT",
-                        facets_and_vertices=not hasse_full, image_format=FIGURE_FORMAT)),
+                        facets_and_vertices=not hasse_full)),
     ))
     result.text_diagrams.append(("Simplicial complex", str(model)))
     result.text_diagrams.append(("Face lattice", hasse.visualize(lattice)))
@@ -447,8 +443,7 @@ def run_simplicial(
     # no world and are left out, with a note.
     back = StepReport("2 · Equivalent relational model (complex → Kripke)")
     if not model.facets:
-        back.missing.append("no facets, so no worlds: the Kripke model is empty "
-                            "(each vertex alone has no world to stand in)")
+        back.missing.append("no facets, so no worlds: the Kripke model is empty")
         result.steps.append(back)
         return result
     try:
@@ -461,15 +456,14 @@ def run_simplicial(
     loose = sorted(name.get(n, label_node(n)) for n in model.isolated_nodes())
     if loose:
         back.missing.append(
-            "vertices in no facet have no world in the Kripke model "
-            f"(they stay outside the equivalence, docs/12 §3.3): {', '.join(loose)}"
+            f"vertices in no facet, left out of the Kripke model (docs/12 §3.3): {', '.join(loose)}"
         )
     logic = "KD45" if rel.frame.axiom_d else "K45"
     back.completed.append(
-        f"complex → Kripke model (G_B): {len(rel.frame.worlds)} worlds, one per "
-        "facet; R_a = sharing a's vertex, Q_a = facets of S_a with that vertex; "
+        f"G_B: {len(rel.frame.worlds)} worlds (one per facet); R_a = shared vertex of a, "
+        "Q_a = facets of S_a; "
         + ("pure knowledge (Q_a = R_a)" if model.is_knowledge_only else
-           f"{logic} belief (D ⟺ no isolated perspectives)")
+           f"{logic} (D ⟺ no isolated perspectives)")
     )
     result.steps.append(back)
     if model.is_knowledge_only:
@@ -491,18 +485,16 @@ def simplicial_state_from_editor(
     kind: str, agents: List[str], worlds: List[str],
     per_agent: Dict[str, List[dict]], atoms: Dict[str, List[str]],
     axiom_d: bool, believe_all_when_silent: bool = True,
-) -> Tuple[Dict[str, List[str]], List[dict], Dict[str, dict]]:
-    """Translate the relational model being edited into a direct-complex state.
+) -> dict:
+    """The direct-complex STATE of the relational model being edited.
 
-    This BOOTSTRAPS the simplicial editor from what is already drawn: it runs
-    general -> proper -> simplicial and dumps the result into named vertices
-    (a0, a1, ... per agent), facets named after their world, and the
-    assignment the valuation induces. From there the complex is free: it is
-    edited without going through Kripke.
+    Runs general -> proper -> simplicial and names the result for the editor:
+    vertices ``a0, a1, ...`` per agent, facets named after their world, the
+    assignment the valuation induces; a knowledge-only model becomes a
+    knowledge complex (``S_a = S``). From there the complex is edited freely.
 
     Raises:
-        ValueError: if the current model cannot be translated (pure belief,
-            invalid model...).
+        ValueError: if the model cannot be translated (pure belief, invalid).
     """
     from visualization import facet_name
 
@@ -538,7 +530,11 @@ def simplicial_state_from_editor(
                 spec["true" if value == 1 else "false"].append(names[node])
     for atom in atoms or {}:
         vatoms.setdefault(atom, {"true": [], "false": []})
-    return vertices, facets, vatoms
+    state = blank_state("simplicial")
+    state.update({"agents": list(agents), "vertices": vertices, "facets": facets,
+                  "vatoms": vatoms, "axiom_d": axiom_d,
+                  "complex_kind": "knowledge" if kind == "knowledge" else "kb"})
+    return state
 
 
 def state_from_simplicial_model(

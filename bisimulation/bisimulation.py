@@ -1,67 +1,21 @@
 # -*- coding: utf-8 -*-
 """Bisimilarity between relational models, by partition refinement.
 
-WHAT THIS IS FOR. ``properness.to_proper`` and ``KnowledgeBeliefFrame.to_proper``
-claim that the model they build is **bisimilar** to the one they were given:
-that is the whole content of Sink's Thm 2.4. Properness is bought by making
-``|W|`` copies of the model, and the price must not be any change of modal
-theory. Until now the repo checked that claim only *indirectly*, in the tests,
-by verifying that the projection ``ρ(w, u) = w`` is a surjective bounded
-morphism -- which implies bisimilarity by a theorem we did not re-derive.
+Checks the claim of Sink's Thm 2.4 that ``to_proper`` returns a model bisimilar
+to its input: the largest bisimulation is computed from scratch (Kanellakis &
+Smolka's coarsest stable partition) and every copy must land in the class of
+the world it simulates (:func:`projection_violations`).
 
-This module checks the conclusion itself, and from the other side: it computes
-the largest bisimulation between the two models **from scratch**, knowing
-nothing about ``ρ``, and then asks whether every copy really does land in the
-class of the world it simulates (:func:`projection_violations`). A bug in the
-copy-and-skew construction that happened to preserve boundedness-as-coded would
-still be caught here, because the two computations share no code.
-
-THE ALGORITHM (Kanellakis & Smolka 1983, 1990). Bisimilarity is the largest
-fixed point of the usual functional, and over an image-finite system it is the
-limit of the stratified approximants ``∼_k`` (Hennessy & Milner 1985): ``∼_0``
-relates everything, and ``∼_{k+1}`` refines ``∼_k`` by one round of
-back-and-forth. Kanellakis and Smolka compute that limit as a **coarsest stable
-partition**: keep an equivalence relation as a partition into *blocks*, and
-while some block is unstable -- some of its states can reach a given block via
-an ``a``-labelled step and others cannot, so that block is a *splitter* for it
-(Def. 0.2.3) -- split it in two. The loop can only ever increase the number of
-blocks, so it stops after at most ``|states|`` passes, and what it stops at is
-exactly bisimilarity (Thm 0.2.6, in ``O(n·m)`` time).
-
-    π := the initial partition
+    π := the initial partition (one block, or the partition by atomic theory)
     repeat until nothing changed:
         for each block B, for each action a:
             if split(B, a, π) != {B}: replace B by the two halves
 
-:func:`coarsest_stable_partition` is that loop, and :func:`_split` is the
-``split`` of the paper's Figure 0.1: pick a representative of the block and
-keep exactly the states that reach the *same set of blocks* as it does.
-
-TWO ADAPTATIONS, both inside the paper's own framework:
-
-* **Several modalities.** A model here carries one relation per agent, and in
-  the knowledge+belief case two (``R_a`` and ``Q_a``). The chapter's labelled
-  transition systems already allow an arbitrary action set, so we simply take
-  ``Act = {("K", a), ("B", a) : a ∈ Ag}`` (or ``("R", a)`` for a bare frame) --
-  the same tags the formula tuples of ``semantics.py`` use. Stability with
-  respect to every one of those actions is exactly the back-and-forth clause
-  for every modality.
-* **Atoms.** The chapter starts from ``π_init = {Pr}`` because its transition
-  systems have no valuation; that computes bisimilarity of *frames*. For
-  *models* two bisimilar worlds must also satisfy the same atoms, so we start
-  from the partition by atomic theory instead. This is not a departure: §0.2.3
-  defines the coarsest stable refinement *of a given* ``π_init``, and the
-  correctness argument of Thm 0.2.6 goes through verbatim as long as ``π_init``
-  is coarser than bisimilarity, which it is (bisimilar worlds agree on atoms).
-  With no valuation you get the frame-level answer, which is what Thm 2.4 is
-  about.
-
-WHAT IT DOES NOT DO. Simplicial models are not handled: the right notion there
-is a chromatic simplicial map, not a partition of worlds (doc 12 §4). Translate
-with ``simplicial.to_relational`` first. Minimisation (quotienting a model by
-:func:`bisimilarity_classes`) is the natural next step and is not implemented.
-
-Depends only on ``relational_frame``, ``knowledge_belief`` and ``semantics``.
+Actions are ``("K", a)``, ``("B", a)`` for a knowledge+belief model and
+``("R", a)`` for a bare frame, so stability under every action is the
+back-and-forth clause for every modality. Algorithm, correctness and the
+diagnostic of :func:`_separation`: docs/14. Simplicial models are not handled
+(translate with ``simplicial.to_relational`` first).
 """
 
 from __future__ import annotations
@@ -70,12 +24,7 @@ from typing import (
     Dict, FrozenSet, Hashable, Iterable, List, NamedTuple, Optional, Set, Tuple,
 )
 
-if __name__ == "__main__":  # running the demo at the bottom of this file
-    # This module sits one level below the core modules, so a bare
-    # ``python bisimulation/bisimulation.py`` would not find them. Put the
-    # repository root on sys.path, as every runnable script here does (doc 11).
-    # Skipped on a normal import: then __name__ is "bisimulation.bisimulation"
-    # and whoever imported us has already resolved the core modules.
+if __name__ == "__main__":  # the demo below needs the repo root on sys.path
     import os as _os
     import sys as _sys
 
@@ -99,21 +48,13 @@ __all__ = [
     "explain",
 ]
 
-# An action is a (modality, agent) pair: ("K", a) and ("B", a) for a
-# knowledge+belief model, ("R", a) for a bare relational frame. Keeping the
-# modality in the label is what lets the two families be refined independently.
-Action = Tuple[str, Agent]
+Action = Tuple[str, Agent]   # (modality, agent)
 State = Hashable
 Block = FrozenSet[State]
 
 
 def _key(value) -> str:
-    """Sort key for arbitrary hashable identifiers (worlds, agents, states).
-
-    Everything user-facing in this module is sorted through this so that the
-    same input always produces the same blocks in the same order -- the repo's
-    usual determinism rule, and what makes the messages diffable.
-    """
+    """Sort key for identifiers, so runs and messages are deterministic."""
     return str(value)
 
 
@@ -141,18 +82,9 @@ class LabelledTransitionSystem(NamedTuple):
 def lts_of_model(model, valuation: Optional[Valuation] = None) -> LabelledTransitionSystem:
     """View a relational model as a labelled transition system.
 
-    Accepts a :class:`knowledge_belief.KnowledgeBeliefFrame` (actions
-    ``("K", a)`` and ``("B", a)``) or a :class:`relational_frame.RelationalFrame`
-    (actions ``("R", a)``), recognised by duck typing as everywhere else in the
-    repo. Both relations of the knowledge+belief case become actions of their
-    own, so refining against them is exactly the back-and-forth clause for
-    ``K_a`` and for ``B_a``.
-
-    Args:
-        model: the model to view.
-        valuation: ``v : P -> 2^W``. Omit it to compare frames (every state gets
-            the empty label, so the initial partition is the single block the
-            chapter starts from); pass it to compare models, atoms included.
+    A :class:`KnowledgeBeliefFrame` gives actions ``("K", a)`` and ``("B", a)``,
+    a :class:`RelationalFrame` ``("R", a)``. Without ``valuation`` every state
+    gets the empty label (bisimilarity of frames); with it, its atoms.
 
     Raises:
         TypeError: for a simplicial model, or anything else.
@@ -175,9 +107,6 @@ def lts_of_model(model, valuation: Optional[Valuation] = None) -> LabelledTransi
         }
     elif hasattr(model, "relations"):
         agents = sorted(model.agents, key=_key)
-        # One nameless modality: a bare frame does not say whether its relations
-        # are knowledge or belief, and bisimilarity does not care -- it only
-        # matters that both sides of a comparison use the same tag.
         actions = tuple(("R", a) for a in agents)
         successors = {
             ("R", a): {w: frozenset(model.successors(a, w)) for w in model.worlds}
@@ -210,18 +139,12 @@ def lts_of_model(model, valuation: Optional[Valuation] = None) -> LabelledTransi
 def disjoint_union(
     left: LabelledTransitionSystem, right: LabelledTransitionSystem
 ) -> LabelledTransitionSystem:
-    """Put two transition systems side by side, tagging states ``0``/``1``.
-
-    Bisimilarity *between two models* is bisimilarity *within* their disjoint
-    union: refine the union and read off which left state shares a block with
-    which right state. Tagging is what keeps the two state sets apart when they
-    overlap -- and they do overlap constantly here, since ``to_proper``'s worlds
-    are pairs built from the original ones.
+    """Put two systems side by side, tagging states ``0``/``1``: bisimilarity
+    between two models is bisimilarity within their disjoint union.
 
     Raises:
-        ValueError: if the two systems do not share an action alphabet (that
-            means different agents, or a frame compared against a
-            knowledge+belief model -- the comparison would be meaningless).
+        ValueError: if the action alphabets differ (different agents, or a
+            frame against a knowledge+belief model).
     """
     if left.actions != right.actions:
         raise ValueError(
@@ -254,30 +177,18 @@ def disjoint_union(
 def _signature(
     state: State, successors: Dict[State, FrozenSet[State]], block_of: Dict[State, int]
 ) -> FrozenSet[int]:
-    """The set of blocks this state can reach in one ``a``-labelled step.
-
-    This is the quantity the paper's ``split`` compares (Figure 0.1: "if s and t
-    can reach the same set of blocks in π via a-labelled transitions"). Two
-    states of a block stay together exactly when their signatures agree, for
-    every action. Note an empty signature is a perfectly good value: a state
-    with no successors is distinguished from one with successors, which is how
-    a K45 world with a defunct belief set (``Q_a(w) = ∅``) is kept apart from a
-    world that believes something.
-    """
+    """The blocks ``state`` reaches in one step of this action (the quantity
+    ``split`` compares). An empty signature is a value of its own: a defunct
+    K45 world is kept apart from one that believes something."""
     return frozenset(block_of[target] for target in successors.get(state, ()))
 
 
 def _split(
     block: Block, successors: Dict[State, FrozenSet[State]], block_of: Dict[State, int]
 ) -> Tuple[Block, ...]:
-    """``split(B, a, π)`` of the paper (Figure 0.1), for one action.
-
-    Picks a representative of ``block`` and keeps the states whose signature
-    matches its own; the rest become the second half. Returns one block when
-    nothing splits. The representative is the ``min`` by name rather than an
-    arbitrary element ("choose some state s ∈ B" in the paper) purely so that
-    runs are reproducible -- the resulting partition does not depend on it.
-    """
+    """``split(B, a, π)`` (Kanellakis & Smolka, Fig. 0.1) for one action: the
+    states whose signature matches the representative's, and the rest. The
+    representative is the min by name only for reproducibility."""
     representative = min(block, key=_key)
     target = _signature(representative, successors, block_of)
     keep = frozenset(s for s in block if _signature(s, successors, block_of) == target)
@@ -289,27 +200,10 @@ def coarsest_stable_partition(
     lts: LabelledTransitionSystem,
     initial_partition: Optional[Iterable[Iterable[State]]] = None,
 ) -> Tuple[Block, ...]:
-    """Refine until stable: the Kanellakis-Smolka main loop (Figure 0.2).
-
-    Returns the coarsest partition that refines ``initial_partition`` and is
-    *stable* (Def. 0.2.10): no block has some states reaching a given block
-    under some action while others do not. For an initial partition coarser
-    than bisimilarity -- the single block of a frame, or the partition by atomic
-    theory of a model -- that is precisely bisimilarity, by Thm 0.2.6.
-
-    Why it terminates: a pass either changes nothing and the loop ends, or
-    splits some block and so strictly increases the number of blocks, which is
-    bounded by the number of states. Why it is right: refinement only ever
-    separates states that *must* be separated (their successors already lie in
-    different blocks), so no two bisimilar states are ever split, and the result
-    is stable by construction, which makes it a bisimulation.
-
-    Args:
-        lts: the system to refine.
-        initial_partition: blocks to start from. Defaults to grouping states by
-            their labels -- the single block of the chapter when there are no
-            atoms, the atomic theories when there are.
-    """
+    """The coarsest stable partition refining ``initial_partition`` (Kanellakis &
+    Smolka, Fig. 0.2); for a start coarser than bisimilarity it IS bisimilarity
+    (Thm 0.2.6). The default start groups states by their labels.
+    Termination and correctness: docs/14 §3."""
     if initial_partition is None:
         by_label: Dict[FrozenSet, Set[State]] = {}
         for state in lts.states:
@@ -325,10 +219,7 @@ def coarsest_stable_partition(
     while changed:
         changed = False
         index = 0
-        # `blocks` grows while we walk it; the new halves are visited by this
-        # same pass (they sit at the end) or by the next one, and either way the
-        # loop only stops when a whole pass splits nothing.
-        while index < len(blocks):
+        while index < len(blocks):   # blocks grows while walked; new halves are visited too
             for action in lts.actions:
                 parts = _split(blocks[index], lts.successors[action], block_of)
                 if len(parts) == 2:
@@ -338,8 +229,6 @@ def coarsest_stable_partition(
                     for state in rest:
                         block_of[state] = len(blocks) - 1
                     changed = True
-                    # Carry on with the next action on the (now smaller) block:
-                    # it may still be unstable for a modality we have not tried.
             index += 1
 
     return tuple(sorted(blocks, key=lambda b: tuple(sorted(map(_key, b)))))
@@ -351,14 +240,8 @@ def coarsest_stable_partition(
 def bisimilarity_classes(
     model, valuation: Optional[Valuation] = None
 ) -> Tuple[Block, ...]:
-    """The bisimilarity classes *inside* one model.
-
-    Worlds in the same class satisfy exactly the same formulas, so this is the
-    partition a minimisation would quotient by (not implemented; see the module
-    docstring). A class with more than one world means the model says the same
-    thing twice -- which is exactly what ``to_proper`` produces on purpose, one
-    class per original world.
-    """
+    """The bisimilarity classes inside one model: worlds in a class satisfy the
+    same formulas (``to_proper`` produces one class per original world)."""
     return coarsest_stable_partition(lts_of_model(model, valuation))
 
 
@@ -406,19 +289,10 @@ def are_bisimilar(
 def _separation(
     lts: LabelledTransitionSystem, left: State, right: State
 ) -> Tuple[Optional[Action], int]:
-    """Why two states are not bisimilar: which modality, and how deep.
-
-    Asking the *final* partition is useless for this: once refinement is done
-    almost every modality separates two states, because their successors have
-    themselves been separated. The honest answer is the SHALLOWEST one, so this
-    walks the stratified approximants of Def. 0.2.1 -- ``∼_0`` groups states by
-    their atoms, ``∼_{k+1}`` refines by one back-and-forth round -- and reports
-    the first action that tells the pair apart, together with the ``k`` at which
-    it happens. By Hennessy-Milner (Lemma 0.2.2) that ``k`` is exactly the modal
-    depth a distinguishing formula needs.
-
-    Returns ``(action, depth)``; ``(None, 0)`` when the atoms already differ.
-    """
+    """Why two states are not bisimilar: the first action that tells them apart
+    along the stratified approximants ``∼_k``, and the depth ``k`` (the modal
+    depth of a distinguishing formula, Hennessy-Milner). ``(None, 0)`` when the
+    atoms already differ. See docs/14 §4.7."""
     states = sorted(lts.states, key=_key)
 
     def canonical(valued: Dict[State, Hashable]) -> Dict[State, int]:
@@ -460,34 +334,16 @@ def _separation(
 def projection_violations(
     general, proper, valuation: Optional[Valuation] = None
 ) -> List[str]:
-    """Check that ``to_proper``'s projection really is a bisimulation (Thm 2.4).
-
-    ``to_proper`` returns a model whose ``projection`` maps every new world back
-    to the one it simulates. The theorem says that map is a surjective bounded
-    morphism, so its graph is a bisimulation: every copy is modally
-    indistinguishable from its original. This function verifies that conclusion
-    directly -- it runs :func:`coarsest_stable_partition` over the disjoint
-    union of the two models and reports every copy whose bisimilarity class is
-    not its original's, plus any original left unsimulated.
-
-    The valuation of the proper model is not asked for: it is the lift of the
-    general one along the same projection (``semantics.lift_valuation``, thesis
-    p. 13), which is the only choice that can possibly work and the one the rest
-    of the pipeline uses.
-
-    Args:
-        general: the model handed to ``to_proper``.
-        proper: what it returned (a ``ProperRelationalFrame`` or
-            ``ProperKnowledgeBeliefFrame``).
-        valuation: optional ``v : P -> 2^W`` on the GENERAL model's worlds. With
-            it the check covers atoms too; without it, the frames.
+    """Check that ``to_proper``'s projection is a bisimulation (Thm 2.4): every
+    copy must share its bisimilarity class with the world it simulates, and
+    every original must be simulated. ``valuation`` is the general model's; the
+    proper one gets its lift.
 
     Returns:
         A message per violation; empty iff the projection is a bisimulation.
 
     Raises:
-        ValueError: if ``proper`` carries no projection (it did not come from
-            ``to_proper``), or the valuation mentions unknown worlds.
+        ValueError: ``proper`` carries no projection, or unknown worlds in the valuation.
     """
     projection = dict(getattr(proper, "projection", {}) or {})
     if not projection:
@@ -558,11 +414,8 @@ def explain(general, proper, valuation: Optional[Valuation] = None) -> str:
             lines.append(f"  ... and {len(problems) - 10} more")
         return "\n".join(lines)
 
-    # Both quotients, as a second (redundant but informative) reading: a
-    # surjective bisimulation makes the two models share their quotient, so the
-    # class counts must agree. They are usually FEWER than the number of worlds
-    # on either side -- worlds the language cannot tell apart were already
-    # identified in the general model, and the copies only add more of them.
+    # A surjective bisimulation makes the two models share their quotient, so
+    # the class counts agree.
     lifted = lift_valuation(valuation, dict(proper.projection)) if valuation else None
     general_classes = bisimilarity_classes(general, valuation)
     proper_classes = bisimilarity_classes(proper, lifted)

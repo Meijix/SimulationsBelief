@@ -1,18 +1,20 @@
 """Models bar: the open documents, and saving / opening / downloading them.
 
-One chip per document (click = activate, x = close), buttons to open a blank
-one or duplicate the active one, the persistence buttons (GitHub #18) and,
-with two or more documents, the comparison controls.
+One tab per document (click = activate, x = close), buttons to open a blank
+one or duplicate the active one, the persistence buttons and, with two or
+more documents, the comparison controls.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nicegui import ui
+import copy
 
-from adapters import KINDS
-from theme import CARD, FLAT, KIND_ICON, POSTER, card_title
+from nicegui import run as io, ui
+
+from adapters import KINDS, print_light, run_state
+from theme import KIND_ICON, card, panel_head
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -24,49 +26,52 @@ class DocsBarView:
         self.bar = None
 
     def build(self) -> None:
-        self.bar = ui.row().classes("w-full items-center gap-2 px-4 pt-3")
+        self.bar = ui.row().classes("w-full items-center gap-1 px-4 pt-2 docs-bar")
 
     def paint(self) -> None:
         page, ws = self.page, self.page.ws
         ws.normalise_compare()
         self.bar.clear()
         with self.bar:
-            ui.label("Models").classes("eyebrow")
-            for d in ws.docs:
-                active = d["id"] == ws.active
-                kind = page.state["kind"] if active else d["state"]["kind"]
-                ui.chip(
-                    d["name"], icon="lock" if d["readonly"] else KIND_ICON[kind],
-                    removable=len(ws.docs) > 1,
-                    # The active one in lime (the accent of "what is live");
-                    # the others translucent like the world chips.
-                    color=POSTER["lime"] if active else "rgba(255,255,255,.14)",
-                    text_color=POSTER["surface"] if active else "white",
-                    on_click=lambda _, i=d["id"]: page.activate(i),
-                    on_value_change=lambda e, i=d["id"]: page.close_doc(i),
-                ).tooltip(KINDS[kind])
-            ui.button(icon="add", on_click=lambda: page.add_blank()) \
-                .props("round dense flat").tooltip("New blank model")
-            ui.button(icon="content_copy", on_click=lambda: page.duplicate_active()) \
-                .props("round dense flat").tooltip("Duplicate the active model")
-            # Persistence (GitHub #18): the whole bar to a file, a file back
-            # into the bar, and the active model out as a download.
-            ui.button(icon="save", on_click=lambda: self.save_dialog()) \
-                .props("round dense flat").tooltip("Save all open models")
-            ui.button(icon="folder_open", on_click=lambda: self.open_dialog()) \
-                .props("round dense flat").tooltip("Open a saved workspace")
-            ui.button(icon="download", on_click=lambda: self.export_active()) \
-                .props("round dense flat").tooltip("Download the active model (.json)")
+            # The open documents as tabs: the active one underlined in the
+            # accent, the others in muted ink; a small cross closes.
+            with ui.row().classes("items-end gap-0 no-wrap"):
+                for d in ws.docs:
+                    active = d["id"] == ws.active
+                    kind = d["state"]["kind"]
+                    with ui.element("div").classes("doc-tab" + (" active" if active else "")) \
+                            .on("click", lambda _, i=d["id"]: page.activate(i)) \
+                            .tooltip(KINDS[kind]) as tab:
+                        ui.icon("lock" if d["readonly"] else KIND_ICON[kind]).classes("kind")
+                        ui.label(d["name"])
+                        if len(ws.docs) > 1:
+                            ui.icon("close").on(
+                                "click.stop", lambda _, i=d["id"]: page.close_doc(i))
+            ui.element("div").classes("vsep")
+            # Plain text buttons, quiet until hovered: what each one does is
+            # its name.
+            ui.button("New", icon="add", on_click=lambda: page.add_blank()) \
+                .props("flat dense", remove="color").classes("quiet-btn").tooltip("New blank model")
+            ui.button("Duplicate", icon="content_copy", on_click=lambda: page.duplicate_active()) \
+                .props("flat dense", remove="color").classes("quiet-btn").tooltip("Duplicate the active model")
+            ui.element("div").classes("vsep")
+            # Persistence: the whole bar to a file, a file back into the
+            # bar, and the active model out as a download.
+            ui.button("Save", icon="save", on_click=lambda: self.save_dialog()) \
+                .props("flat dense", remove="color").classes("quiet-btn").tooltip("Save all open models")
+            ui.button("Open", icon="folder_open", on_click=lambda: self.open_dialog()) \
+                .props("flat dense", remove="color").classes("quiet-btn").tooltip("Open a saved workspace")
+            ui.button("Download", icon="download", on_click=lambda: self.export_active()) \
+                .props("flat dense", remove="color").classes("quiet-btn").tooltip("Download the active model (.json)")
             if len(ws.docs) >= 2:
-                # The comparison controls go on their own line: with long
-                # names they got mixed up with the model chips.
-                ui.element("div").classes("w-full")
+                # The comparison controls at the far right of the bar.
+                ui.element("div").classes("grow")
                 ui.select(
                     {d["id"]: d["name"] for d in ws.docs}, multiple=True,
                     value=ws.compare, label="compare (2 to 4)",
                     on_change=lambda e: setattr(ws, "compare", list(e.value)),
                 ).props("dense outlined use-chips options-dense") \
-                    .classes("min-w-[280px] max-w-[560px]")
+                    .classes("min-w-[260px] max-w-[520px]")
                 if ws.comparing:
                     ui.button("Back to editor", icon="edit",
                               on_click=lambda: page.compare.exit()).props("outline dense")
@@ -74,19 +79,14 @@ class DocsBarView:
                           on_click=lambda: page.compare.open()) \
                     .props("color=primary text-color=dark unelevated dense")
 
-    # ---- Save / open workspaces (GitHub #18) ------------------------------- #
-    # Everything open (names, states, read-only flags, provenance) goes to
-    # one JSON file in saved_models/; opening one adds its models to the bar
-    # or replaces what is open. A single model can also be downloaded as a
-    # one-model workspace, which is the unit to share or to hand to a script.
+    # ---- Save / open workspaces (saved_models/README.md) ------------------- #
     def save_dialog(self) -> None:
         page, ws = self.page, self.page.ws
-        ws.store_active(page.live_state())
-        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[460px]").props(FLAT):
-            card_title("Save workspace")
+        with ui.dialog() as dlg, card("min-w-[460px]"):
+            panel_head("Save workspace")
             ui.label("The DEFINITION of each model (what you see in the editor) is saved "
                      "to saved_models/<name>.json; the figures are regenerated on a run. "
-                     "See saved_models/README.md.").classes("text-xs text-grey-5")
+                     "See saved_models/README.md.").classes("text-xs muted")
             name_box = ui.input("name", value=page.current()["name"] if len(ws.docs) == 1
                                 else f"workspace {len(ws.docs)} models") \
                 .props("dense outlined").classes("w-full")
@@ -104,19 +104,43 @@ class DocsBarView:
                 f"include the {len(ws.actions)} action(s)", value=True,
             ).props("dense") if ws.actions else None
             with_figures = ui.checkbox(
-                "include the figures of the last run "
-                "(one folder per model in saved_models/<name>/)", value=False,
+                "include the figures of the last run, rendered for print "
+                "(light background, PNG; one folder per model in saved_models/<name>/)", value=False,
             ).props("dense")
 
-            def do_save() -> None:
+            async def do_save() -> None:
                 chosen = [i for i, box in picks.items() if box.value]
                 if not chosen:
                     ui.notify("Choose at least one model.", type="warning")
                     return
+                # The saved figures are for print: light ink, white page,
+                # PNG, whatever the screen shows. Each chosen model with a
+                # run is rendered once more that way (a few seconds each).
+                printed = {}
+                if with_figures.value:
+                    save_btn.props("loading")
+                    try:
+                        for d in ws.docs:
+                            if d["id"] not in chosen or not d["outcome"] \
+                                    or d["outcome"].get("status") != "ok":
+                                continue
+                            tag = f"print_{d['id']}"
+                            try:
+                                out = await io.io_bound(print_light, run_state,
+                                                        copy.deepcopy(d["state"]), tag)
+                            except Exception as exc:  # noqa: BLE001 -- fall back to the screen's figures
+                                ui.notify(f"{d['name']}: could not render for print "
+                                          f"({str(exc).splitlines()[0]}); saving the on-screen figures.",
+                                          type="warning")
+                                continue
+                            if out is not None:
+                                printed[d["id"]] = (out, tag)
+                    finally:
+                        save_btn.props(remove="loading")
                 try:
                     path, copied = ws.save(name_box.value or "workspace", chosen,
                                            include_actions=bool(with_actions and with_actions.value),
-                                           include_figures=with_figures.value)
+                                           include_figures=with_figures.value, printed=printed)
                 except OSError as exc:
                     ui.notify(f"Could not save: {exc}", type="negative")
                     return
@@ -128,7 +152,7 @@ class DocsBarView:
 
             name_box.on("keydown.enter", lambda: do_save())
             with ui.row().classes("gap-2"):
-                ui.button("Save", icon="save", on_click=do_save) \
+                save_btn = ui.button("Save", icon="save", on_click=do_save) \
                     .props("unelevated dense color=primary text-color=dark")
                 ui.button("Cancel", on_click=dlg.close).props("flat dense")
         dlg.open()
@@ -136,8 +160,6 @@ class DocsBarView:
     def open_saved(self, path, replace: bool, dlg=None) -> None:
         """Open a saved workspace, adding to the bar or replacing it."""
         page, ws = self.page, self.page.ws
-        if not replace:
-            ws.store_active(page.live_state())
         try:
             opened = ws.open(path, replace)
         except (OSError, ValueError) as exc:
@@ -157,11 +179,11 @@ class DocsBarView:
     def open_dialog(self) -> None:
         ws = self.page.ws
         saved = ws.saved_files()
-        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[520px]").props(FLAT):
-            card_title("Open workspace")
+        with ui.dialog() as dlg, card("min-w-[520px]"):
+            panel_head("Open workspace")
             if not saved:
                 ui.label("No saved workspaces yet (saved_models/ is empty).") \
-                    .classes("text-sm text-grey-5")
+                    .classes("text-sm muted")
             for path in saved:
                 try:
                     counts = ws.peek(path)
@@ -170,10 +192,10 @@ class DocsBarView:
                 except (OSError, ValueError):
                     detail = "unreadable file"
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
-                    ui.icon("folder").classes("text-grey-5")
+                    ui.icon("folder").classes("muted")
                     with ui.column().classes("gap-0 grow min-w-0"):
-                        ui.label(path.stem).classes("text-sm text-white")
-                        ui.label(detail).classes("text-xs text-grey-5")
+                        ui.label(path.stem).classes("text-sm ink")
+                        ui.label(detail).classes("text-xs muted")
                     ui.button("add", on_click=lambda _, p=path: self.open_saved(p, False, dlg)) \
                         .props("outline dense").tooltip("Open alongside the current models")
                     ui.button("replace", on_click=lambda _, p=path: self.open_saved(p, True, dlg)) \
@@ -186,6 +208,5 @@ class DocsBarView:
         import json
 
         page, ws = self.page, self.page.ws
-        ws.store_active(page.live_state())
         data = json.dumps(ws.export_payload(), ensure_ascii=False, indent=1).encode("utf-8")
         ui.download.content(data, f"{page.current()['name']}.json")

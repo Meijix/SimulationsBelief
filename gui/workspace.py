@@ -1,15 +1,7 @@
 """The GUI's workspace: open documents, comparison selection, action specs.
 
-No NiceGUI here. This is the part of the page that is pure bookkeeping --
-which models are open, which one is active, which ones are selected for
-comparison, which action specs exist, how all of it is saved and reopened --
-and it used to live as closures over two dicts inside the page function,
-where nothing could be tested without a browser. As a class it is testable
-with pytest (``tests/test_workspace.py``) and every view module talks to the
-same object instead of to shared local variables.
-
-A DOCUMENT is still a plain dict, the shape every other module (and the
-saved files) already use::
+No NiceGUI here: pure bookkeeping, tested without a browser
+(``tests/test_workspace.py``). A DOCUMENT is a plain dict::
 
     {"id": "d3",            identifier; also tags the output files
      "name": "...",         name shown in the models bar
@@ -29,7 +21,6 @@ from __future__ import annotations
 
 import copy
 import datetime
-import re
 import shutil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -38,6 +29,8 @@ from adapters import (
     EXAMPLES,
     blank_action,
     blank_state,
+    figure_bundle,
+    file_name,
     list_saved,
     load_workspace_full,
     save_workspace,
@@ -47,17 +40,6 @@ from adapters import (
 
 # The comparison view fits at most this many panels side by side.
 MAX_COMPARE = 4
-
-
-def _slug(name: str) -> str:
-    """A folder-safe version of a model name: only path separators and control
-    characters are replaced, so "Tesis · Figuras 1 → 3" keeps its name."""
-    return re.sub(r'[\\/:*?"<>|\x00-\x1f]+', "_", name).strip() or "model"
-
-
-def _stable_name(file_name: str, doc_id: str) -> str:
-    """``gui_fig1_general_d3.svg`` -> ``gui_fig1_general.svg``: drop the session tag."""
-    return re.sub(rf"_{re.escape(doc_id)}(?=\.[A-Za-z0-9]+$)", "", file_name)
 
 
 class Workspace:
@@ -97,11 +79,9 @@ class Workspace:
                 origin: dict | None = None) -> dict:
         """Open a new document (without activating it) and return it.
 
-        HOOK FOR ACTION MODELS: the result of applying an action to a model
-        is another state; adding it with ``readonly=True`` and an
-        ``origin={"label": "action X on model Y"}`` is enough for it to show
-        up in the bar, be runnable, evaluable and comparable, and offer
-        "duplicate as new model" instead of direct editing.
+        The result of an action is added with ``readonly=True`` and an
+        ``origin={"label": ...}``: it then shows in the bar, runs, evaluates
+        and compares like any other, and offers "duplicate" instead of editing.
         """
         doc = {"id": f"d{self._next}", "name": name, "state": copy.deepcopy(state),
                "outcome": None, "dirty": False, "readonly": readonly,
@@ -113,10 +93,6 @@ class Workspace:
         if len(self.compare) < MAX_COMPARE:
             self.compare.append(doc["id"])
         return doc
-
-    def store_active(self, state: dict) -> None:
-        """Keep a copy of the live editor state in the active document."""
-        self.current()["state"] = copy.deepcopy(state)
 
     def close(self, doc_id: str) -> Optional[str]:
         """Close a document; return the id to show next, or None.
@@ -196,25 +172,29 @@ class Workspace:
         self.action = index if 0 <= index < len(self.actions) else None
 
     # ------------------------------------------------------------------ #
-    # Persistence (GitHub #18)
+    # Persistence (saved_models/README.md)
     # ------------------------------------------------------------------ #
     def save(self, name: str, doc_ids: Optional[List[str]] = None,
-             include_actions: bool = True, include_figures: bool = False) -> Tuple[Path, int]:
+             include_actions: bool = True, include_figures: bool = False,
+             printed: Optional[Dict[str, tuple]] = None) -> Tuple[Path, int]:
         """Write the chosen documents (default: all) to ``saved_models/<name>.json``.
 
         ``include_figures`` also copies, for every chosen document that has a
         finished run, the figures of that run into ``saved_models/<name>/<model>/``
         -- one folder per model, so the inputs and the results of an action
-        never share one (see :meth:`export_figures`). Returns the JSON path
-        and how many figure files were copied.
+        never share one (see :meth:`export_figures`). ``printed`` maps a
+        document id to ``(result, tag)``: a result rendered for print (light
+        ink, PNG) that is copied INSTEAD of the on-screen run's figures.
+        Returns the JSON path and how many figure files were copied.
         """
         docs = [d for d in self.docs if doc_ids is None or d["id"] in doc_ids]
         path = save_workspace(docs, name, self.actions if include_actions else [])
-        copied = self.export_figures(path.with_suffix(""), docs) if include_figures else 0
+        copied = self.export_figures(path.with_suffix(""), docs, printed) if include_figures else 0
         return path, copied
 
     @staticmethod
-    def export_figures(root: Path, docs: List[dict]) -> int:
+    def export_figures(root: Path, docs: List[dict],
+                       printed: Optional[Dict[str, tuple]] = None) -> int:
         """Copy the last-run figures of ``docs`` under ``root/<model name>/``.
 
         The files in ``outputs/`` are named by SESSION document id
@@ -223,6 +203,8 @@ class Workspace:
         ``README.md`` per folder that maps each file to its caption. Models
         without a finished run contribute nothing; two models with the same
         name get the document id appended so they never share a folder.
+        With ``printed`` (``doc id -> (result, tag)``), that result's files
+        are copied for the document instead of its on-screen run's.
         Returns the number of files copied.
         """
         copied = 0
@@ -231,8 +213,10 @@ class Workspace:
             outcome = d.get("outcome")
             if not outcome or outcome.get("status") != "ok":
                 continue
-            out = outcome["out"]
-            folder_name = _slug(d["name"])
+            out, tag = outcome["out"], d["id"]
+            if printed and d["id"] in printed:
+                out, tag = printed[d["id"]]
+            folder_name = file_name(d["name"])
             if folder_name in taken:
                 folder_name = f"{folder_name}-{d['id']}"
             taken.add(folder_name)
@@ -244,17 +228,10 @@ class Workspace:
                      + (f" — result of {d['origin']['label']}" if d.get("origin")
                         and d["origin"].get("label") else "") + ".",
                      "", "| file | figure |", "|---|---|"]
-            files = list(out.figures)
-            if out.html_3d is not None:
-                files.append(("Interactive 3D view (open in the browser)", out.html_3d))
-            for caption, src in files:
-                src = Path(src)
-                if not src.exists():
-                    continue
-                target = folder / _stable_name(src.name, d["id"])
-                shutil.copy2(src, target)
+            for stable, src, caption in figure_bundle(out, tag):
+                shutil.copy2(src, folder / stable)
                 copied += 1
-                lines.append(f"| `{target.name}` | {caption} |")
+                lines.append(f"| `{stable}` | {caption} |")
             (folder / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
         return copied
 

@@ -32,9 +32,9 @@ semantics, and the K45/KD45 machinery).
   ```
 
   Run it after any change to the renderers or to the example models, then
-  recompile. The old hand-saved previews that used to sit in this folder
-  (`HasseExample1.png`, `Poster Example N ... .png`) were replaced by these
-  figures and removed.
+  recompile. The hand-saved previews still sitting in this folder
+  (`HasseExample*.png`, `SimplicialExample*.png`) predate `make_figures.py`;
+  the `.tex` only includes `SimplicialExample1.png` from them.
 - Everything else (`.aux`, `.bbl`, `.blg`, `.fls`, `.fdb_latexmk`, `.log`,
   `.out`, `.synctex.gz`, the compiled `SimulationsBelief.pdf`) is a build
   artifact, regenerated on every compile and git-ignored by `paper/.gitignore`.

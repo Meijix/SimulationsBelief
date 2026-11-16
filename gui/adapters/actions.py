@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 
 from . import base  # noqa: F401  (puts the repository root on sys.path first)
 from simplicial import Node, SimplicialBeliefModel
-from .base import OUTPUTS, _fname, _geometric_ok, _knowledge_only, blank_state, show
+from .base import OUTPUTS, _fname, _geometric_ok, _knowledge_only, show
 from .complex import (
     _consistent_part,
     build_simplicial,
@@ -347,14 +347,10 @@ def apply_action(state: dict, spec: dict, model_name: str = "model") -> dict:
         raise ValueError(f"unknown update kind: {update!r}")
     label, fn = UPDATE_KINDS[update]
     if state["kind"] != "simplicial":
-        vertices, facets, vatoms = simplicial_state_from_editor(
+        state = simplicial_state_from_editor(
             state["kind"], state["agents"], state["worlds"], state["per_agent"],
             state["atoms"], state["axiom_d"], not state.get("silent_defunct", False),
         )
-        state = {**blank_state("simplicial"), "agents": list(state["agents"]),
-                 "vertices": vertices, "facets": facets, "vatoms": vatoms,
-                 "axiom_d": state["axiom_d"],
-                 "complex_kind": "knowledge" if state["kind"] == "knowledge" else "kb"}
     agents = list(state["agents"])
     model, by_name, _ = build_simplicial(agents, state["vertices"], state["facets"],
                                          state["axiom_d"], validate=False,

@@ -1,0 +1,90 @@
+name: Build GUI executable
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  GRAPHVIZ_VERSION: "12.2.1"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: SimulationsBelief-windows
+            binary: dist/SimulationsBelief.exe
+          - os: macos-latest
+            artifact: SimulationsBelief-macos
+            binary: dist/SimulationsBelief
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the project and PyInstaller
+        run: python -m pip install -e ".[build]"
+
+      - name: Download Graphviz (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $zip = "windows_10_cmake_Release_Graphviz-$env:GRAPHVIZ_VERSION-win64.zip"
+          $url = "https://gitlab.com/api/v4/projects/4207231/packages/generic/graphviz-releases/$env:GRAPHVIZ_VERSION/$zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath graphviz-dl
+          $dot = Get-ChildItem -Path graphviz-dl -Recurse -Filter dot.exe | Select-Object -First 1
+          "GRAPHVIZ_BIN=$($dot.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Build (Windows, Graphviz bundled)
+        if: runner.os == 'Windows'
+        run: python packaging/build_gui.py --graphviz "$env:GRAPHVIZ_BIN"
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: python packaging/build_gui.py
+
+      - name: Smoke test
+        shell: bash
+        env:
+          SIMULATIONSBELIEF_PORT: "8765"
+        run: |
+          "${{ matrix.binary }}" &
+          pid=$!
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8765/ > /dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8765/ | grep -qi "<html"
+          kill $pid
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.binary }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Name the files by platform
+        run: |
+          mv artifacts/SimulationsBelief-windows/SimulationsBelief.exe SimulationsBelief-windows.exe
+          mv artifacts/SimulationsBelief-macos/SimulationsBelief SimulationsBelief-macos
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            SimulationsBelief-windows.exe
+            SimulationsBelief-macos

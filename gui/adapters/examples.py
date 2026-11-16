@@ -9,28 +9,25 @@ from typing import Dict, List, Optional
 from . import base  # noqa: F401  (puts the repository root on sys.path first)
 from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes
 from relational_frame import RelationalFrame
-from .base import DEFAULT_EDITOR
 
 
-# ---------------------------------------------------------------------------
-# Example library. Each entry is a COMPLETE editor state (agents, worlds,
-# classes/beliefs, atoms, belief logic), so loading one is a plain state
-# swap in the GUI -- no special-casing per example. They mirror scripts that
-# already live in the repo, so the GUI doubles as a browsable gallery of them.
-# 'atoms' is the Kripke valuation v : P -> worlds where the atom is TRUE; the
-# figures label worlds/vertices with their literals when atoms are present.
-# ---------------------------------------------------------------------------
+# Each entry is a complete editor state (see ``base.blank_state``); 'atoms'
+# is the valuation v : P -> worlds where the atom is TRUE. The entries mirror
+# the repo's scripts, so the GUI doubles as a gallery of them.
 _NASA_W = ["TTT", "TTX", "TXT", "TXX", "XTT", "XTX", "XXT", "XXX"]
 
-# Muddy children with two children: one world per distribution of mud, and
-# each child cannot tell apart the two worlds that differ only in HIS own state.
-_MUDDY_W = ["limpios", "a", "b", "ab"]
 EXAMPLES = {
     "tesis": {
+        # Thesis Fig. 1 in the editor's shape: per agent, one knowledge class
+        # with the worlds believed inside it.
         "label": "Thesis · Figures 1 → 3",
         "agents": ["a", "b", "c"],
         "worlds": ["w0", "w1", "w2"],
-        "per_agent": DEFAULT_EDITOR,
+        "per_agent": {
+            "a": [{"cls": ["w0", "w1", "w2"], "bel": ["w1", "w2"]}],
+            "b": [{"cls": ["w0", "w1", "w2"], "bel": ["w1"]}],
+            "c": [{"cls": ["w0", "w1", "w2"], "bel": ["w2"]}],
+        },
         # p holds where SOMEONE dares to believe: B_a p holds but K_a p does
         # not -- the knowledge/belief contrast in a single formula.
         "atoms": {"p": ["w1", "w2"]},

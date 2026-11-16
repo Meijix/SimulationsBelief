@@ -40,16 +40,18 @@ from assignment import (
     node_value,
     require_consistent,
 )
-from knowledge_belief import KnowledgeBeliefFrame
+from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes
 from relational_frame import RelationalFrame
 from semantics import holds_kripke
-from simplicial import Facet, Node, SimplicialBeliefModel, label_facet, label_node
+from simplicial import (
+    Facet, Node, SimplicialBeliefModel, label_facet, label_node, pi,
+    shared_vertex_groups, unique_names,
+)
 
 Agent = Hashable
 Formula = tuple   # assignment.holds syntax: ("atom", P), ("K", a, f), ("imp", f, g)...
-# Node-pairing modes, numbered AS IN THE THESIS (p. 51): mode 2 is the clause of
-# Def. 4.5 ("no clash") and the default; 0 and 1 are the stricter one-directional
-# readings listed there.
+# Node-pairing modes, numbered as in the thesis (p. 51): mode 2 is the "no
+# clash" clause of Def. 4.5 and the default; 0 and 1 are the one-directional readings.
 MODES = (0, 1, 2)
 DEFAULT_MODE = 2
 
@@ -59,23 +61,23 @@ def action_node(agent: Agent, name: Hashable) -> Node:
 
 
 def node_name(node: Node) -> str:
-    # display name so "as" or "⟨a0,as⟩" 
-    # nodes coming from to_simplicial() print as "{w0,w1}".
+    """Display name: the single member of an action or product node, else the class."""
     if len(node.cls) == 1:
         return str(next(iter(node.cls)))
     return "{" + ",".join(sorted(map(str, node.cls))) + "}"
 
 
 class Pair(NamedTuple):
-    # it will be used a dict key in update_model() to look nodes up by their components
+    """An output node's origin: ``(input node, action node)``; the member of its class."""
     input: Node
     action: Node
+
     def __str__(self) -> str:
         return f"⟨{node_name(self.input)},{node_name(self.action)}⟩"
 
 
 def pair_of(node: Node) -> Pair:
-    # unpack an output node back into (input node, action node)
+    """The :class:`Pair` behind a product node."""
     (member,) = node.cls
     if not isinstance(member, Pair):
         raise ValueError(f"{label_node(node)} is not a product node")
@@ -83,13 +85,12 @@ def pair_of(node: Node) -> Pair:
 
 
 def facet_name(facet: Facet, names: Dict[Facet, Hashable]) -> Hashable:
-    # name lookup 
+    """The facet's name in ``names``, else its node names in agent order."""
     if facet in names:
         return names[facet]
     return "{" + ",".join(node_name(n) for n in sorted(facet, key=lambda n: str(n.agent))) + "}"
 
 
-# (shallow) copying 
 class SimplicialAction:
     """A simplicial action (thesis Def. 4.5 and 4.6).
 
@@ -122,22 +123,16 @@ class SimplicialAction:
         self.agents: Set[Agent] = set(agents)
         self.nodes: Set[Node] = set(nodes)
         self.facets: Set[Facet] = set(facets)
-        # S_{a,A} per agent. Silence means "every event": the same convention
-        # as a silent belief relation on the relational side (believe what
-        # you know), so an action built without it is a knowledge action.
+        # S_{a,A}: an agent left out considers every event possible (a knowledge action).
         given = {a: set(fs) for a, fs in (belief_facets or {}).items()}
         self.belief_facets: Dict[Agent, Set[Facet]] = {
             a: given.get(a, set(self.facets)) for a in self.agents
         }
         self.pre: Assignment = {n: dict(v) for n, v in (pre or {}).items()}
         self.post: Assignment = {n: dict(v) for n, v in (post or {}).items()}
-        # Per node, a formula the input world must satisfy for the event to
-        # happen there (see the module docstring); evaluated at facets.
         self.pre_formula: Dict[Node, Formula] = dict(pre_formula or {})
-        # Per EVENT, a formula the input world must satisfy (the precondition
-        # of a Kripke action model, Def. 4.4, attached to the whole event the
-        # way Goubault, Ledent & Rajsbaum attach it to the facet). Checked at
-        # facet level only; node-level pairing is unaffected.
+        # pre_event: the precondition of a Kripke action model (Def. 4.4) on the
+        # whole event; checked at facet level only, node pairing is unaffected.
         self.pre_event: Dict[Facet, Formula] = dict(pre_event or {})
         self.event_of_facet: Dict[Facet, Hashable] = dict(event_of_facet or {})
         if validate:
@@ -160,32 +155,26 @@ class SimplicialAction:
         pre_event: Dict[Hashable, Formula] | None = None,
         belief: Dict[Agent, Iterable[Hashable]] | None = None,
     ) -> "SimplicialAction":
-        # Input format:
-        #   events      = {"k": {"a": "as", "b": "b not r", "c": "c"}, ...}
-        #   pre         = {"as": {"Pa": 1}}
-        #   isolated    = {"a": ["a?"]}
-        #   pre_formula = {"as": ("K", "a", ("atom", "Pa"))}   a formula per node name
-        #   pre_event   = {"k": ("K", "a", ("atom", "Pa"))}    a formula per EVENT name
-        #   belief      = {"b": ["k", "m"]}   per agent, the events of S_{b,A} by name;
-        #                                     an agent left out considers every event possible
-        # names to Nodes and call the constructor 
+        """Build an action from names (docs/05 §4, docs/13)::
+
+            events      = {"k": {"a": "as", "b": "b not r", "c": "c"}, ...}
+            pre         = {"as": {"Pa": 1}}                      literals per node name
+            isolated    = {"a": ["a?"]}                          nodes in no event
+            pre_formula = {"as": ("K", "a", ("atom", "Pa"))}     a formula per node name
+            pre_event   = {"k": ("K", "a", ("atom", "Pa"))}      a formula per event name
+            belief      = {"b": ["k", "m"]}                      S_{b,A} by event name
+        """
         agents = set(agents)
-        by_name: Dict[Hashable, Node] = {}  # node name -> its Node
-        event_of_facet: Dict[Facet, Hashable] = {}  # facet -> event name
+        by_name: Dict[Hashable, Node] = {}
+        event_of_facet: Dict[Facet, Hashable] = {}
         for event, perspectives in events.items():
-            # one Node per (agent, name) in this event
-            # frozenset of Nodes is the event's facet
             facet = frozenset(action_node(a, nm) for a, nm in perspectives.items())
             for n in facet:
                 (nm,) = n.cls
-                # setdefault stores the node the first time a name is seen and
-                # returns the stored one afterwards. If it differs from n, there was an error
                 if by_name.setdefault(nm, n) != n:
                     raise ValueError(f"Node name {nm!r} is used by more than one agent.")
             event_of_facet[facet] = event
         facet_of_event = {ev: F for F, ev in event_of_facet.items()}
-
-        # isolated nodes
         for a, names in (isolated or {}).items():
             for nm in names:
                 n = action_node(a, nm)
@@ -193,8 +182,7 @@ class SimplicialAction:
                     raise ValueError(f"Node name {nm!r} is used by more than one agent.")
 
         def resolve(table, what, copy=dict):
-            # name-keyed table -> Node-keyed table; ``copy`` shapes the value
-            # (a dict of literals, or one formula kept as it is).
+            """Name-keyed table -> Node-keyed table."""
             out = {}
             for nm, value in (table or {}).items():
                 if nm not in by_name:
@@ -202,7 +190,6 @@ class SimplicialAction:
                 out[by_name[nm]] = copy(value)
             return out
 
-        # S_{a,A}: event names -> facets, per agent
         belief_facets: Dict[Agent, Set[Facet]] = {}
         for a, names in (belief or {}).items():
             belief_facets[a] = set()
@@ -211,7 +198,6 @@ class SimplicialAction:
                     raise ValueError(f"S_{{{a},A}} names unknown event {ev!r}.")
                 belief_facets[a].add(facet_of_event[ev])
 
-        # the keys of event_of_facet are the facets
         return cls(
             agents,
             by_name.values(),
@@ -231,11 +217,11 @@ class SimplicialAction:
         return all(self.belief_facets[a] == self.facets for a in self.agents)
 
     def pi(self, agent: Agent, facet: Facet) -> Node:
-        """``π_a(facet)``: the unique ``agent``-coloured node of an event (UCF)."""
-        return _pi(agent, facet)
+        """``π_a(facet)``, see :func:`simplicial.pi`."""
+        return pi(agent, facet)
 
     def violations(self) -> List[str]:
-        # best case scenario: empty list
+        """Every structural violation (empty if well-formed)."""
         problems: List[str] = []
         if not self.facets:
             problems.append("The action has no facets (S_A is empty).")
@@ -243,10 +229,8 @@ class SimplicialAction:
             if n.agent not in self.agents:
                 problems.append(f"Action node {label_node(n)} has unknown agent {n.agent!r}.")
         for facet in sorted(self.facets, key=label_facet):
-            # subset test
             if not facet <= self.nodes:
                 problems.append(f"Action facet {label_facet(facet)} uses nodes outside N_A.")
-            # each agent must appear exactly once per facet
             for a in sorted(self.agents, key=str):
                 count = sum(1 for n in facet if n.agent == a)
                 if count != 1:
@@ -254,7 +238,6 @@ class SimplicialAction:
                         f"UCF violated in S_A: facet {label_facet(facet)} has {count} "
                         f"node(s) of agent {a!r} (expected exactly 1)."
                     )
-            # assignment.py clash finder on the preconditions
             for atom, t, f in facet_inconsistencies(facet, self.pre):
                 problems.append(
                     f"Action facet {label_facet(facet)} is inconsistent on {atom!r}: "
@@ -309,11 +292,9 @@ class SimplicialAction:
                 event = f"{event}({formula_text(self.pre_event[facet])})"
             line = f"  event {event}: {nodes}"
             if not self.is_knowledge_action:
-                # who considers the event possible, like "[S_a S_b]" on a facet
                 who = [str(a) for a in sorted(self.agents, key=str) if facet in self.belief_facets[a]]
                 line += "  [" + ("S_{" + ",".join(who) + "}" if who else "only S_A") + "]"
             lines.append(line)
-        # nodes in no events
         in_events = {n for F in self.facets for n in F}
         loose = sorted(self.nodes - in_events, key=label_node)
         if loose:
@@ -329,8 +310,7 @@ class SimplicialAction:
 
 
 def _literals(values: Dict[Hashable, int]) -> List[str]:
-    # {atom: value} -> ["P", "not Q"]
-    # nothing is printed for value 2
+    """``{atom: value}`` -> ``["P", "not Q"]``; value 2 prints nothing."""
     out = []
     for atom, v in sorted(values.items(), key=lambda kv: str(kv[0])):
         if v == TRUE:
@@ -406,20 +386,16 @@ class _Sat:
 def compatible(
     x: Node, y: Node, assignment: Assignment, pre: Assignment, mode: int = DEFAULT_MODE
 ) -> bool:
-    # decide whether input node x and action node y become an output node;
-    # the three modes are the three definitions of N[A] on p. 51 of the thesis
+    """Whether input node ``x`` and action node ``y`` form an output node: same
+    agent, and their literals related as the chosen definition of ``N[A]``
+    (thesis p. 51) requires, atom by atom."""
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}.")
-    # check agent pairing 
     if x.agent != y.agent:
         return False
-    # loop over atoms that appear in x's or y's dict (the union of their keys) 
-    # avoid exponential 
     atoms = set(assignment.get(x, {})) | set(pre.get(y, {}))
     for p in atoms:
-        # node_value returns 2 when the atom is missing
         lx, ly = node_value(assignment, x, p), node_value(pre, y, p)
-        # implication "A -> B" is written "(not A) or B"
         if mode == 0:    # whatever x observes, the precondition states
             ok = (lx != TRUE or ly == TRUE) and (lx != FALSE or ly == FALSE)
         elif mode == 1:  # the precondition is observed by x
@@ -434,16 +410,12 @@ def compatible(
 def updated_values(
     x: Node, y: Node, assignment: Assignment, pre: Assignment, post: Assignment
 ) -> Dict[Hashable, int]:
-    """Label of the output node ``(x, y)``: the label clause of thesis Def. 4.5
-    (p. 50), applied exactly as written, atom by atom:
+    """Label of the output node ``(x, y)``, the label clause of thesis Def. 4.5 (p. 50):
 
         L[A](x, y)(P) = Post(y)(P)   if Post(y)(P) != 2   (the event overwrites it)
                       = L_A(y)(P)    if L(x)(P) = 2       (x silent: the precondition is recorded)
                       = L(x)(P)      otherwise            (the input is kept)
 
-    So a postcondition overrides the input even where the precondition is 2,
-    and an input node silent on ``P`` that passes an event requiring ``P``
-    comes out labelled with ``P`` (the middle case; discussed in GitHub #25).
     Only 0/1 are stored; 2 stays implicit.
     """
     out: Dict[Hashable, int] = {}
@@ -592,11 +564,10 @@ class UpdateModel(NamedTuple):
         assignment: the new vertex labels ``L[A]``.
         product_nodes: every output node (``model.nodes``).
         isolated: output nodes in no facet of ``S`` at all.
-        collapsed: output nodes that lie in some world but in no facet of their
-            agent's ``S_a``: the agent's belief is DEFUNCT there (``B_a ⊥``).
-            Always empty for the knowledge product; what revision repairs.
-        revisions: for ``revision_update_model`` only, one :class:`Imaging`
-            per intended facet that could not be kept as it was.
+        collapsed: output nodes in some world but in no facet of their agent's
+            ``S_a`` (defunct belief, ``B_a ⊥``); empty for the knowledge product.
+        revisions: ``revision_update_model`` only, one :class:`Imaging` per
+            intended facet that could not be kept.
     """
 
     model: SimplicialBeliefModel
@@ -624,9 +595,7 @@ def _finish(model: SimplicialBeliefModel, prod: _Product, facets: Set[Facet],
         belief_facets=belief_facets,
         world_of_facet=world_of_facet,
         projection={F: w for F, w in prod.projection.items() if F in facets},
-        # K45 is declared, not inferred: the output must be accepted and
-        # REPORTED even when some perspective is left without a world.
-        axiom_d=False,
+        axiom_d=False,                  # declared K45: lost perspectives are reported, not refused
     )
     return UpdateModel(out, prod.assignment, product_nodes, isolated, collapsed, revisions)
 
@@ -825,25 +794,11 @@ def describe_revisions(result: UpdateModel) -> str:
     return "\n".join(lines) if lines else "  no revision was needed"
 
 
-def _pi(agent: Agent, facet: Facet) -> Node:
-    for n in facet:
-        if n.agent == agent:
-            return n
-    raise ValueError(f"Facet {label_facet(facet)} has no {agent!r}-coloured node.")
-
-
 # --------------------------------------------------------------------------- #
-# Kripke action models and the translation in both directions (docs/12 §4).
-#
-# A simplicial action IS a chromatic complex over events, so the functor G of
-# Goubault, Ledent & Rajsbaum applies to it unchanged: one Kripke "world" per
-# event, two events indistinguishable for ``a`` iff they share ``a``'s node.
-# The preconditions, which live on nodes here, become the conjunction, per
-# event, of its nodes' literals and formulas (plus the event's own formula);
-# the postconditions, the union of its nodes' literals. In the other
-# direction a Kripke action model must be PROPER (two distinct events are
-# told apart by some agent), exactly as a Kripke model must be to become a
-# complex; nodes are then the classes (agent, {events}).
+# Kripke action models and the translation in both directions (docs/12 §4): a
+# simplicial action is a chromatic complex over events, so the functor G applies
+# to it as to a model; in the other direction the Kripke action model must be
+# proper, and nodes are the classes (agent, {events}).
 # --------------------------------------------------------------------------- #
 TOP: Formula = ("not", ("bot",))
 
@@ -897,23 +852,12 @@ def to_relational_action(action: SimplicialAction) -> RelationalAction:
             every output facet of that event; a Kripke event cannot say both).
     """
     agents = sorted(action.agents, key=str)
-    names: Dict[Facet, Hashable] = {}
-    seen: Dict[Hashable, Facet] = {}
-    for F in sorted(action.facets, key=label_facet):
-        w = action.event_of_facet.get(F, facet_name(F, {}))
-        if w in seen:
-            names[seen[w]] = facet_name(seen[w], {})
-            w = facet_name(F, {})
-        names[F], seen[w] = w, F
-    relations: Dict[Agent, Set[Tuple[Hashable, Hashable]]] = {a: set() for a in agents}
-    for a in agents:
-        by_node: Dict[Node, List[Facet]] = {}
-        for F in action.facets:
-            by_node.setdefault(_pi(a, F), []).append(F)
-        for group in by_node.values():
-            for X in group:
-                for Y in group:
-                    relations[a].add((names[X], names[Y]))
+    facets = sorted(action.facets, key=label_facet)
+    names = unique_names(facets, action.event_of_facet, lambda F: facet_name(F, {}))
+    relations: Dict[Agent, Set[Tuple[Hashable, Hashable]]] = {
+        a: {(names[X], names[Y]) for group in groups for X in group for Y in group}
+        for a, groups in shared_vertex_groups(agents, facets).items()
+    }
     pre: Dict[Hashable, Formula] = {}
     post: Dict[Hashable, Dict[Hashable, int]] = {}
     for F in action.facets:
@@ -958,8 +902,6 @@ def action_from_relational(rel: RelationalAction) -> SimplicialAction:
         ValueError: the model is not proper (two events nobody tells apart),
             or a postcondition literal cannot be placed on any node.
     """
-    from knowledge_belief import knowledge_classes
-
     frame = rel.frame
     agents = sorted(frame.agents, key=str)
     events = sorted(frame.worlds, key=str)
@@ -998,23 +940,21 @@ def action_from_relational(rel: RelationalAction) -> SimplicialAction:
 
 
 class KripkeProduct(NamedTuple):
-    """``M[A]`` on the Kripke side: the frame, its valuation, and the pairs behind the worlds."""
+    """``M[A]`` on the Kripke side: the frame (same class as the input) and its valuation."""
 
-    frame: object                      # RelationalFrame or KnowledgeBeliefFrame, like the input
+    frame: object
     valuation: Dict[Hashable, Set]
-    pair_of_world: Dict[Hashable, Tuple[Hashable, Hashable]]
 
 
 def kripke_product(model, valuation: Dict[Hashable, Set], action: RelationalAction) -> KripkeProduct:
     """The product update of a Kripke model with a Kripke action model (Def. 4.4).
 
     Worlds are the pairs ``(x, y)`` with ``M, x ⊨ pre(y)``; ``(x, y) R_a (x', y')``
-    iff ``x R_a x'`` and ``y R_{A,a} y'`` (the same for ``Q_a`` when the model
-    has belief relations, the action being a knowledge action); the valuation
-    is inherited from ``x`` and then overwritten by ``post(y)``. The world
-    names are the pairs ``(x, y)`` themselves, which is what ``to_relational``
-    names the facets of the simplicial product, so the two sides can be
-    compared world by world (docs/12 §4).
+    iff ``x R_a x'`` and ``y R_{A,a} y'`` (likewise for ``Q_a``); the valuation
+    is inherited from ``x`` and overwritten by ``post(y)``. The worlds are
+    named by the pairs, as ``to_relational`` names the facets of the simplicial
+    product, so both sides compare world by world (docs/12 §4). The result is
+    declared K45 (a belief product can lose seriality) and validated.
     """
     kb = isinstance(model, KnowledgeBeliefFrame)
     kframe = model.knowledge if kb else model
@@ -1042,11 +982,10 @@ def kripke_product(model, valuation: Dict[Hashable, Set], action: RelationalActi
                       if action.post.get(y, {}).get(p, TRUE if x in valuation.get(p, ()) else FALSE) == TRUE}
     if kb:
         belief = product_relation(lambda a, x: model.believes(a, x))
-        frame = KnowledgeBeliefFrame(agents, worlds, knowledge, belief, validate=False,
-                                     axiom_d=False)
+        frame = KnowledgeBeliefFrame(agents, worlds, knowledge, belief, axiom_d=False)
     else:
-        frame = RelationalFrame(agents, worlds, knowledge, validate=False, axiom_d=False)
-    return KripkeProduct(frame, new_val, {w: w for w in worlds})
+        frame = RelationalFrame(agents, worlds, knowledge, axiom_d=False)
+    return KripkeProduct(frame, new_val)
 
 
 def describe_relational_action(rel: RelationalAction) -> str:

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import KINDS
-from theme import CARD, FLAT, POSTER, chip
+from theme import card, pre, status
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -37,34 +37,31 @@ class CompareView:
         results = self.page.results
         outcome = doc["outcome"]
         with ui.column().classes("gap-3 min-w-0").style("flex:1 1 0"):
-            with ui.card().classes(CARD).props(FLAT):
+            with card():
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
                     if doc["readonly"]:
-                        ui.icon("lock").style(f"color:{POSTER['yellow']}")
-                    ui.label(doc["name"]).classes("font-bold text-white grow")
+                        ui.icon("lock").style("color:var(--p-warn)")
+                    ui.label(doc["name"]).classes("font-bold ink grow")
                 ui.label(KINDS[doc["state"]["kind"]]).classes("eyebrow")
                 if doc["origin"] and doc["origin"].get("label"):
                     ui.label("Result of " + doc["origin"]["label"]) \
-                        .classes("text-xs italic text-grey-5")
+                        .classes("text-xs italic muted")
                 if outcome["status"] == "ok":
                     out = outcome["out"]
-                    with ui.row().classes("w-full gap-1"):
-                        for text, color in out.badges:
-                            tone = {"positive": "ok", "negative": "bad"}.get(color, "info")
-                            chip(text, tone).props("dense")
-                    with ui.row().classes("w-full gap-5 mt-1"):
+                    with ui.row().classes("w-full gap-3"):
+                        for text, tone in out.badges:
+                            status(text, tone)
+                    with ui.element("div").classes("w-full metrics mt-1"):
                         for value, label in out.stats:
-                            with ui.column().classes("gap-0 items-center"):
-                                ui.label(value).classes("text-lg font-bold text-white")
-                                ui.label(label).classes("text-xs text-grey-5")
+                            ui.html(f"<b>{html.escape(str(value))}</b> "
+                                    f"<span>{html.escape(str(label))}</span>")
                     # From the log, only what stopped the pipeline: the full
                     # detail is in that model's editor.
                     for step in out.steps:
                         for text in step.failed:
                             ui.label(f"{step.name}: failed").classes(
-                                "text-xs font-semibold text-pink-3 mt-2")
-                            ui.html(f"<pre style='white-space:pre-wrap' "
-                                    f"class='text-xs'>{html.escape(text)}</pre>")
+                                "text-xs font-semibold bad-text mt-2")
+                            pre(text)
             if outcome["status"] != "ok":
                 results.render_failure(outcome)
                 return
@@ -72,7 +69,7 @@ class CompareView:
                 results.figure_card(caption, path)
             if outcome["out"].html_3d is not None:
                 ui.label("Interactive 3D view: open it from this model's "
-                         "editor.").classes("text-xs italic text-grey-5")
+                         "editor.").classes("text-xs italic muted")
 
     async def open(self) -> None:
         page, ws = self.page, self.page.ws
@@ -80,16 +77,15 @@ class CompareView:
         if not 2 <= len(chosen) <= 4:
             ui.notify("Choose 2 to 4 models to compare.", type="warning")
             return
-        ws.store_active(page.live_state())      # the active one, up to date
         ws.comparing = True
         page.editor_row.set_visibility(False)
         self.box.set_visibility(True)
         page.docs_bar.paint()
         self.box.clear()
-        with self.box, ui.card().classes(CARD).props(FLAT):
+        with self.box, card():
             with ui.column().classes("w-full items-center py-10 gap-2"):
                 ui.spinner(size="lg")
-                ui.label(f"Preparing {len(chosen)} models…").classes("text-grey-5")
+                ui.label(f"Preparing {len(chosen)} models…").classes("muted")
         for doc in chosen:
             if doc["outcome"] is None or doc["dirty"]:
                 doc["outcome"] = await page.results.compute(copy.deepcopy(doc["state"]), doc["id"])

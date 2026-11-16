@@ -20,7 +20,7 @@ the poster claims.
 
     python poster/poster-code/make_figs_3agentes.py
 
-Requires Graphviz (``dot``) on the PATH and the dependencies in requirements.txt.
+Requires Graphviz (``dot``) on the PATH and the dependencies of pyproject.toml (pip install -e .).
 """
 import os
 import sys
