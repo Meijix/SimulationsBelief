@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import agent_color_map, maximal_facets, new_facet
-from theme import CARD, FLAT, panel_head, swatch, take
+from theme import add_field, card, panel_head, take
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -116,19 +116,12 @@ class SimplicialEditorView:
         colors = agent_color_map(state["agents"])
         container.clear()
         with container:
-            with ui.card().classes(CARD).props(FLAT):
+            with card():
                 panel_head("Vertices (each agent's perspectives)")
                 for agent in state["agents"]:
                     names = state["vertices"].setdefault(agent, [])
-                    with ui.row().classes("w-full no-wrap items-center gap-2"):
-                        swatch(colors[agent])
-                        v_in = ui.input(f"new vertex for {agent}") \
-                            .props("dense outlined").classes("grow")
-                        ui.button(icon="add",
-                                  on_click=lambda _, a=agent, w=v_in: self.add_vertex(a, w)) \
-                            .props("flat dense").classes("add-btn")
-                        v_in.on("keydown.enter",
-                                lambda _, a=agent, w=v_in: self.add_vertex(a, w))
+                    add_field(f"new vertex for {agent}",
+                              lambda w, a=agent: self.add_vertex(a, w), color=colors[agent])
                     with ui.row().classes("w-full gap-2"):
                         for v in names:
                             ui.chip(v, removable=True, color=colors[agent],
@@ -137,7 +130,7 @@ class SimplicialEditorView:
                                         self.remove_vertex(a, n))
                 if not state["agents"]:
                     ui.label("Add the agents first.").classes("muted")
-            with ui.card().classes(CARD).props(FLAT):
+            with card():
                 panel_head("Facets (one vertex per agent)")
                 # Which of the two readings of the complex is being declared.
                 # Mirrors the model-kind selector of the relational editor,

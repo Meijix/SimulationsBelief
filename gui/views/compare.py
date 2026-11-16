@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import KINDS
-from theme import CARD, FLAT, status
+from theme import card, pre, status
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -37,7 +37,7 @@ class CompareView:
         results = self.page.results
         outcome = doc["outcome"]
         with ui.column().classes("gap-3 min-w-0").style("flex:1 1 0"):
-            with ui.card().classes(CARD).props(FLAT):
+            with card():
                 with ui.row().classes("w-full items-center gap-2 no-wrap"):
                     if doc["readonly"]:
                         ui.icon("lock").style("color:var(--p-warn)")
@@ -49,8 +49,7 @@ class CompareView:
                 if outcome["status"] == "ok":
                     out = outcome["out"]
                     with ui.row().classes("w-full gap-3"):
-                        for text, color in out.badges:
-                            tone = {"positive": "ok", "negative": "bad"}.get(color, "info")
+                        for text, tone in out.badges:
                             status(text, tone)
                     with ui.element("div").classes("w-full metrics mt-1"):
                         for value, label in out.stats:
@@ -62,8 +61,7 @@ class CompareView:
                         for text in step.failed:
                             ui.label(f"{step.name}: failed").classes(
                                 "text-xs font-semibold bad-text mt-2")
-                            ui.html(f"<pre style='white-space:pre-wrap' "
-                                    f"class='text-xs'>{html.escape(text)}</pre>")
+                            pre(text)
             if outcome["status"] != "ok":
                 results.render_failure(outcome)
                 return
@@ -79,13 +77,12 @@ class CompareView:
         if not 2 <= len(chosen) <= 4:
             ui.notify("Choose 2 to 4 models to compare.", type="warning")
             return
-        ws.store_active(page.live_state())      # the active one, up to date
         ws.comparing = True
         page.editor_row.set_visibility(False)
         self.box.set_visibility(True)
         page.docs_bar.paint()
         self.box.clear()
-        with self.box, ui.card().classes(CARD).props(FLAT):
+        with self.box, card():
             with ui.column().classes("w-full items-center py-10 gap-2"):
                 ui.spinner(size="lg")
                 ui.label(f"Preparing {len(chosen)} models…").classes("muted")

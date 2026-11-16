@@ -12,14 +12,13 @@ from . import base  # noqa: F401  (puts the repository root on sys.path first)
 from assignment import assignment_from_model, nu_violations
 import hasse
 from knowledge_belief import KnowledgeBeliefFrame, knowledge_classes
-from properness import (cheapest_distinguished_agent, equivalence_violations, is_proper as frame_is_proper,
+from properness import (cheapest_distinguished_agent, is_proper as frame_is_proper,
     to_proper as frame_to_proper)
 from relational_frame import RelationalFrame
 from semantics import lift_valuation
 from simplicial import to_simplicial
 from visualization import visualize
 from .base import (
-    FIGURE_FORMAT,
     OUTPUTS,
     PipelineResult,
     StepReport,
@@ -173,70 +172,6 @@ def state_from_relational(rel, knowledge_only: bool = False) -> dict:
     return state
 
 
-def parse_names(text: str) -> List[str]:
-    """Parse a comma-separated list of identifiers ('a, b, c' -> ['a','b','c'])."""
-    return [token.strip() for token in text.split(",") if token.strip()]
-
-
-def parse_relation(
-    text: str,
-    agents: List[str],
-    worlds: List[str],
-    directed: bool,
-) -> Dict[str, Set[Tuple[str, str]]]:
-    """Parse per-agent edge seeds written one agent per line.
-
-    Format (chosen to be the smallest thing a thesis reader can type):
-
-        a: w0-w1, w1-w2      knowledge -- '-' is undirected, both (x,y),(y,x) added
-        b: w0>w1             belief    -- '>' is directed, only (x,y) added
-
-    Why two separators: knowledge relations are symmetric (S5) so forcing the
-    user to type both directions would be noise, while for belief the direction
-    IS the information (KD45 arrows), so it must be explicit.
-
-    An agent with no line contributes an EMPTY seed (not a missing key): the
-    core's ``from_partial`` requires every agent in both mappings whenever any
-    belief seed exists, and an explicit empty set is its documented way to say
-    "no seed, use the default closure". A fully blank text returns ``{}``,
-    which ``from_partial`` reads as case-3 input (knowledge only).
-
-    Raises:
-        ValueError: on a malformed line, an unknown agent, or an unknown world,
-            with a message naming the offending text (the GUI shows it as-is).
-    """
-    if not text.strip():
-        return {}
-    sep = ">" if directed else "-"
-    relation: Dict[str, Set[Tuple[str, str]]] = {a: set() for a in agents}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        head, colon, tail = line.partition(":")
-        agent = head.strip()
-        if not colon or agent not in relation:
-            raise ValueError(
-                f"invalid line: '{line}' (expected 'agent: pair, pair' "
-                f"with agent in {agents})"
-            )
-        for pair in tail.split(","):
-            pair = pair.strip()
-            if not pair:
-                continue
-            left, arrow, right = pair.partition(sep)
-            x, y = left.strip(), right.strip()
-            if not arrow or x not in worlds or y not in worlds:
-                raise ValueError(
-                    f"invalid pair for '{agent}': '{pair}' (expected "
-                    f"'w{sep}w' with worlds in {worlds})"
-                )
-            relation[agent].add((x, y))
-            if not directed:
-                relation[agent].add((y, x))  # symmetry is free for the user
-    return relation
-
-
 def _valuation_of(atoms: Optional[Dict[str, List[str]]]):
     """Editor atoms -> Kripke valuation for the renderers; None when empty.
 
@@ -312,7 +247,7 @@ def preview_figure(
         path = Path(show(frame, _fname("gui_preview", tag), "Model as entered",
                          output_dir=str(OUTPUTS), valuation=valuation,
                          logic="S5", **edge_style(explicit_edges)))
-        return path, equivalence_violations(frame)
+        return path, frame.s5_violations()
     if kind == "belief":
         frame = RelationalFrame(agents, worlds, belief, validate=False,
                                 axiom_d=axiom_d)
@@ -483,26 +418,6 @@ def diagnose_simplicial(proper, sm, valuation) -> StepReport:
     return step
 
 
-def run_pipeline(
-    agents_text: str,
-    worlds_text: str,
-    knowledge_text: str,
-    belief_text: str,
-    axiom_d: bool,
-) -> PipelineResult:
-    """Text-input variant: parse the seed format, then run the pipeline.
-
-    Kept as the head of the original text-based flow (and as the headless way
-    to exercise the bridge); the GUI's visual editor goes through
-    :func:`seeds_from_editor` + :func:`run_pipeline_from_seeds` instead.
-    """
-    agents = parse_names(agents_text)
-    worlds = parse_names(worlds_text)
-    knowledge = parse_relation(knowledge_text, agents, worlds, directed=False)
-    belief = parse_relation(belief_text, agents, worlds, directed=True)
-    return run_pipeline_from_seeds(agents, worlds, knowledge, belief, axiom_d)
-
-
 def run_pipeline_from_seeds(
     agents: List[str],
     worlds: List[str],
@@ -577,36 +492,29 @@ def run_pipeline_from_seeds(
         step = StepReport("1 · General model (closures)")
         step.failed.append(str(exc))
         result.steps.append(step)
-        result.badges.append(("rejected at step 1", "negative"))
+        result.badges.append(("rejected at step 1", "bad"))
         return result
     if kind == "kb":
         result.steps.append(diagnose_general(
             agents, worlds, knowledge, belief, kb, believe_all_when_silent
         ))
         logic = "KD45" if axiom_d else "K45"
-        proper_now = kb.is_proper()
         fig1_caption = "Fig. 1 · general model (knowledge thin, belief thick)"
         fig1_style = edge_style(explicit_edges)
     elif kind == "knowledge":
         result.steps.append(diagnose_general_frame(agents, worlds, knowledge, kb, kind))
         logic = "S5"
-        proper_now = frame_is_proper(kb)
         fig1_caption = "Fig. 1 · general knowledge model (S5)"
         fig1_style = edge_style(explicit_edges)
     else:
         result.steps.append(diagnose_general_frame(agents, worlds, belief, kb, kind))
         logic = "KD45" if axiom_d else "K45"
-        proper_now = False  # properness is a knowledge notion
         fig1_caption = f"Fig. 1 · general belief model ({logic})"
         fig1_style = {"omit_self_loops": False, "undirected_symmetric": False}
-    result.log.append(
-        f"General model: {len(kb.worlds)} worlds, valid: {kb.is_valid()}, "
-        f"proper: {proper_now}, logic: {logic}"
-    )
     result.badges.append(
-        ("valid", "positive") if kb.is_valid() else ("invalid", "negative")
+        ("valid", "ok") if kb.is_valid() else ("invalid", "bad")
     )
-    result.badges.append((logic, "primary"))
+    result.badges.append((logic, "info"))
     result.stats.append((str(len(kb.worlds)), "worlds · general"))
     result.figures.append((
         fig1_caption,
@@ -634,15 +542,12 @@ def run_pipeline_from_seeds(
         step = StepReport("2 · Proper model (copies + skew)")
         step.failed.append(str(exc))
         result.steps.append(step)
-        result.badges.append(("rejected at step 2", "negative"))
+        result.badges.append(("rejected at step 2", "bad"))
         return result
     result.steps.append(diagnose_proper(kb, proper))
     proper_ok = proper.is_proper() if kind == "kb" else frame_is_proper(proper)
-    result.log.append(
-        f"to_proper → {len(proper.worlds)} worlds, proper: {proper_ok}"
-    )
     if proper_ok:
-        result.badges.append(("proper", "positive"))
+        result.badges.append(("proper", "ok"))
     result.stats.append((str(len(proper.worlds)), "worlds · proper"))
     # The valuation follows the worlds: each copy inherits its original's
     # atoms via the projection ρ (thesis p. 13). An already-proper model comes
@@ -682,7 +587,7 @@ def run_pipeline_from_seeds(
         step = StepReport("3 · Simplicial model (worlds → facets)")
         step.failed.append(str(exc))
         result.steps.append(step)
-        result.badges.append(("rejected at step 3", "negative"))
+        result.badges.append(("rejected at step 3", "bad"))
         return result
     # `lifted`, NOT `valuation`: sm is built from the PROPER model, whose worlds
     # are copies (w, u). Comparing against the original world names would never
@@ -691,10 +596,6 @@ def run_pipeline_from_seeds(
     geometric = _geometric_ok(sm)
     if not geometric:
         result.steps[-1].missing.append(_dimension_note(sm))
-    sizes = ", ".join(f"S_{a}={len(sm.belief_facets[a])}" for a in sorted(sm.agents))
-    result.log.append(
-        f"to_simplicial → {len(sm.facets)} facets; belief subcomplexes: {sizes}"
-    )
     result.stats.append((str(len(sm.facets)), "facets"))
     for a in sorted(sm.agents, key=str):
         result.stats.append((str(len(sm.belief_facets[a])), f"S_{a}"))

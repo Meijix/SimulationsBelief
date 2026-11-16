@@ -1,13 +1,11 @@
-"""Identifiers, switches and the relational editor (the "Modelo" tab).
+"""Identifiers, switches and the relational editor (the "Model" tab).
 
 The identifier card holds the document name, the model kind, the agent and
-world chips and the logic switches; below it, ``editor_box`` is painted with
-one card per agent (knowledge classes and believed worlds) -- or, for a
-direct complex, by :class:`views.simplicial_editor.SimplicialEditorView`.
-Deliberately simple strategy: any structural change REPAINTS the whole
-editor from ``page.state`` and schedules the preview. At this scale (a few
-agents/worlds) that is instantaneous and removes all partial-widget
-bookkeeping.
+world chips and the switches; below it, ``editor_box`` is painted with one
+section per agent (knowledge classes and believed worlds) or, for a direct
+complex, by :class:`views.simplicial_editor.SimplicialEditorView`. Any
+structural change repaints the whole editor from ``page.state`` and
+schedules the preview: at this scale that is instantaneous.
 """
 
 from __future__ import annotations
@@ -17,7 +15,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import KINDS, agent_color_map, simplicial_state_from_editor
-from theme import CARD, FLAT, panel_head, swatch, take
+from theme import add_field, card, panel_head, swatch, take
 
 # Label sizes offered for the complex figures: the factor is what
 # ``visualization.show(font_scale=...)`` receives, the text is what the user
@@ -57,7 +55,7 @@ class EditorView:
     def build(self) -> None:
         page = self.page
         # ---- Identifiers ------------------------------------------------- #
-        with ui.card().classes(CARD).props(FLAT) as self.ident_card:
+        with card() as self.ident_card:
             panel_head("Agents and worlds")
             # Document name: the one shown in the models bar and in the
             # comparison panels.
@@ -72,105 +70,69 @@ class EditorView:
                 KINDS, value="kb", label="model kind",
                 on_change=lambda e: self.set_kind(e.value),
             ).props("dense outlined options-dense").classes("w-full")
-            with ui.row().classes("w-full no-wrap items-center gap-2"):
-                self.agent_input = ui.input("new agent") \
-                    .props("dense outlined").classes("grow")
-                ui.button(icon="add", on_click=lambda: self.add_agent()) \
-                    .props("flat dense").classes("add-btn")
+            self.agent_input = add_field("new agent", lambda _: self.add_agent())
             self.agent_chips = ui.row().classes("w-full gap-2")
-            self.agent_input.on("keydown.enter", lambda: self.add_agent())
 
             # Worlds go in their own container: a direct complex has no
             # worlds (it has facets, declared in their own card), so for that
             # kind the whole block is hidden.
-            with ui.column().classes("w-full gap-2") as self.worlds_box:
-                with ui.row().classes("w-full no-wrap items-center gap-2 mt-2"):
-                    self.world_input = ui.input("new world") \
-                        .props("dense outlined").classes("grow")
-                    ui.button(icon="add", on_click=lambda: self.add_world()) \
-                        .props("flat dense").classes("add-btn")
+            with ui.column().classes("w-full gap-2 mt-2") as self.worlds_box:
+                self.world_input = add_field("new world", lambda _: self.add_world())
                 self.world_chips = ui.row().classes("w-full gap-2")
-                self.world_input.on("keydown.enter", lambda: self.add_world())
 
-            # The core's KD45/K45 switch (axiom_d), exposed as is: turning it
-            # off legalizes defunct beliefs (Q_a(w) = ∅).
-            self.axiom_d_in = ui.switch("Axiom D (KD45; off = K45)", value=True).tooltip(
+            # The switches write straight into ``page.state``; while a
+            # document is being loaded (``ws.loading``) the assignment of a
+            # widget's value is a no-op write of the same value.
+            # Axiom D: the core's KD45/K45 switch; off, defunct belief
+            # (Q_a(w) = ∅) is legal.
+            self.axiom_d_in = ui.switch(
+                "Axiom D (KD45; off = K45)", value=True,
+                on_change=lambda e: self.axiom_d_changed(e.value),
+            ).tooltip(
                 "KD45 requires every agent to believe something in every world (seriality). "
                 "Off (K45), an empty belief is legal: there the agent believes "
                 "everything, ⊥ included.")
-
-            # Turning Axiom D off only LEGALIZES defunct belief; it does not
-            # produce it. The project convention is that silence about belief
-            # means "believe exactly what you know" (Q = R), in both logics,
-            # and that defunct belief is an explicit opt-in. Without this box
-            # the opt-in did not exist in the GUI: K45 was indistinguishable
-            # from KD45 and B_a ⊥ was unreachable. It is global (so is the
-            # core flag): it affects EVERY class with no belief marked.
+            # Silence about belief means "believe what you know" (Q = R) in
+            # both logics; defunct belief is this explicit opt-in (K45 only).
             self.silent_defunct_in = ui.switch(
                 "Empty belief when nothing is marked (Q = ∅)", value=False,
+                on_change=lambda e: self.switch_changed("silent_defunct", e.value, preview=True),
             ).tooltip("Only with K45. Off, a class with no belief marked "
                       "believes what it knows (Q = R).")
 
-            def _reset_silent_defunct() -> None:
-                """KD45 forbids Q = ∅: going back to KD45 clears the box.
-
-                Leaving it checked but disabled would send the core a
-                combination it rejects, and the user would see a validation
-                error caused by a box they can no longer see active.
-                """
-                if self.axiom_d_in.value:
-                    self.silent_defunct_in.value = False
-
-            # Changing the logic repaints the preview: the "to be completed"
-            # list and the red worlds come from the frame's contract (KD45
-            # demands seriality, K45 does not), so without a repaint the
-            # preview kept judging with the previous axiom.
-            self.axiom_d_in.on_value_change(lambda _: _reset_silent_defunct())
-            self.axiom_d_in.on_value_change(lambda _: self.sync_switches())
-            self.axiom_d_in.on_value_change(lambda _: page.preview.update())
-
-            # Drawing options, collapsed: they change figures, not the model,
-            # so they need not be in sight all the time.
+            # Drawing options, collapsed: they change figures, not the model.
+            # Each one redraws what it affects: the preview, and the results
+            # if there was a run.
             with ui.expansion("Drawing options", icon="brush") \
                     .classes("w-full text-sm").props("dense"):
-                # The relational figures omit what the logic already implies:
-                # reflexive loops and the second arrow of each symmetric pair
-                # (S5 is drawn undirected). This switch draws them all, as
-                # they are in the relation: it is the way to SEE what the
-                # closures added. It repaints the preview at once and, if
-                # there are results already, reruns the pipeline so that
-                # Figures 1 and 2 agree.
+                # Loops and the second arrow of symmetric pairs are implied by
+                # the logic and omitted; on, they are drawn (what the closures added).
                 self.explicit_in = ui.switch(
                     "Show implicit edges (loops and symmetry)",
-                    value=False, on_change=lambda _: self.explicit_changed(),
+                    value=False,
+                    on_change=lambda e: self.switch_changed("explicit", e.value, preview=True, rerun=True),
                 ).tooltip("Draw the reflexive loops and both directions of each "
                           "symmetric pair instead of taking them for granted.")
-                # The lattice figure shows only vertices and facets by default
-                # (issue #7): perspectives below, worlds above. The full
-                # lattice, with every intermediate face, is optional: with
-                # three agents it is already hundreds of boxes. Since it only
-                # changes one figure of the result, touching it reruns the
-                # pipeline if there were results already.
+                # The lattice figure shows vertices and facets only by default.
                 self.hasse_full_in = ui.switch(
                     "Full face lattice (all dimensions)",
-                    value=False, on_change=lambda _: self.hasse_full_changed(),
+                    value=False,
+                    on_change=lambda e: self.switch_changed("hasse_full", e.value, rerun=True),
                 ).tooltip("Off, the Hasse diagram draws only the perspectives "
                           "and the worlds, joined when one is part of the other.")
-                # The interactive 3-D page is the heavy output of a run (~3 MB
-                # of embedded Plotly) and the slowest to write; off, a run
-                # produces the SVG figures only.
+                # The 3-D page is the heavy output of a run (~3 MB of Plotly).
                 self.make_3d_in = ui.switch(
                     "Generate interactive 3D view",
-                    value=True, on_change=lambda _: self.make_3d_changed(),
+                    value=True,
+                    on_change=lambda e: self.switch_changed("make_3d", e.value, rerun=True),
                 ).tooltip("Off, the run does not write the 3D page (~3 MB): "
                           "only the SVG figures.")
-                # Label size of the complex figures (preview, Fig. 3 and the
-                # 3-D page). The paper figures are drawn at 1.0; a class on a
-                # projector or a crowded complex wants other sizes. Stored in
-                # the document, so a saved model reopens with its own size.
+                # Label size of the complex figures; 1.0 is the paper's.
                 self.font_scale_in = ui.select(
                     LABEL_SIZES, value=1.0, label="Label size in the complex figures",
-                    on_change=lambda _: self.font_scale_changed(),
+                    on_change=lambda e: self.switch_changed(
+                        "font_scale", float(e.value or 1.0),
+                        preview=page.state["kind"] == "simplicial", rerun=True),
                 ).classes("w-72").props("dense options-dense").tooltip(
                     "Agent letters, vertex names, literals and facet names of "
                     "the simplicial drawings. 1.0 is the size used in the paper.")
@@ -179,16 +141,33 @@ class EditorView:
         self.editor_box = ui.column().classes("w-full gap-4")
 
     # ------------------------------------------------------------------ #
-    # Switches <-> state
+    # Switches -> state
     # ------------------------------------------------------------------ #
-    def read_switches_into(self, state: dict) -> None:
-        """The switch values live in the widgets; copy them into the state."""
-        state["axiom_d"] = self.axiom_d_in.value
-        state["silent_defunct"] = self.silent_defunct_in.value
-        state["explicit"] = self.explicit_in.value
-        state["hasse_full"] = self.hasse_full_in.value
-        state["make_3d"] = self.make_3d_in.value
-        state["font_scale"] = float(self.font_scale_in.value or 1.0)
+    async def switch_changed(self, key: str, value, preview: bool = False,
+                             rerun: bool = False) -> None:
+        """A switch was flipped: store it; redraw the preview and rerun the
+        pipeline (if there were results) as asked. Nothing happens for the
+        assignments made while a document is loaded."""
+        page = self.page
+        if page.ws.loading or value == page.state.get(key):
+            return
+        page.state[key] = value
+        if preview:
+            page.preview.update()
+        if rerun and page.current()["outcome"] is not None:
+            await page.results.run()
+
+    def axiom_d_changed(self, value: bool) -> None:
+        """KD45 forbids Q = ∅, so going back to KD45 clears that box; the
+        preview is redrawn because its judge (seriality or not) changed."""
+        page = self.page
+        if page.ws.loading or value == page.state["axiom_d"]:
+            return
+        page.state["axiom_d"] = value
+        if value:
+            self.silent_defunct_in.value = False
+        self.sync_switches()
+        page.preview.update()
 
     def show_document(self, state: dict, name: str) -> None:
         """Set the kind, the switches and the name from a document's state."""
@@ -236,20 +215,17 @@ class EditorView:
         previous = state["kind"]
         state["kind"] = kind
         if kind == "simplicial" and not state["facets"]:
-            # Start-up: instead of an empty editor, the complex that results
-            # from translating the model already drawn. From there it is
-            # edited freely. If there is no translation (pure belief, invalid
-            # model), it starts blank and says why.
+            # Start from the translation of the model already drawn instead
+            # of an empty editor; if there is none (pure belief, invalid
+            # model), start blank and say why.
             try:
-                (state["vertices"], state["facets"],
-                 state["vatoms"]) = simplicial_state_from_editor(
+                translated = simplicial_state_from_editor(
                     previous, state["agents"], state["worlds"],
-                    state["per_agent"], state["atoms"], self.axiom_d_in.value,
-                    not self.silent_defunct_in.value,
+                    state["per_agent"], state["atoms"], state["axiom_d"],
+                    not state["silent_defunct"],
                 )
-                # A knowledge-only relational model translates to a knowledge
-                # complex (S_a = S); anything else carries belief data.
-                state["complex_kind"] = "knowledge" if previous == "knowledge" else "kb"
+                for key in ("vertices", "facets", "vatoms", "complex_kind"):
+                    state[key] = translated[key]
                 ui.notify("Initial complex: the translation of the model that "
                           "was drawn. Edit it freely.", type="info")
             except ValueError as exc:
@@ -266,50 +242,6 @@ class EditorView:
                     row["bel"] = []
         self.sync_switches()
         page.repaint_all()
-
-    async def explicit_changed(self) -> None:
-        """Implicit-edges switch: preview now, pipeline if there was a run."""
-        page = self.page
-        if self.explicit_in.value == page.state.get("explicit"):
-            return   # assignment while loading a document, not a click
-        page.preview.update()
-        if page.current()["outcome"] is not None:
-            await page.results.run()
-
-    async def hasse_full_changed(self) -> None:
-        """Full-lattice switch: it only affects one figure of the result, so
-        there is no preview to repaint; if there were results already they are
-        recomputed so that Fig. 4 matches."""
-        page = self.page
-        if self.hasse_full_in.value == page.state.get("hasse_full", False):
-            return   # assignment while loading a document, not a click
-        if page.current()["outcome"] is not None:
-            await page.results.run()
-        else:
-            page.state["hasse_full"] = self.hasse_full_in.value
-
-    async def make_3d_changed(self) -> None:
-        """3-D switch: like the lattice one, it only changes what a run writes."""
-        page = self.page
-        if self.make_3d_in.value == page.state.get("make_3d", True):
-            return   # assignment while loading a document, not a click
-        if page.current()["outcome"] is not None:
-            await page.results.run()
-        else:
-            page.state["make_3d"] = self.make_3d_in.value
-
-    async def font_scale_changed(self) -> None:
-        """Label size: the complex preview is redrawn at once (a direct
-        complex shows it before any run) and, if there were results already,
-        the pipeline reruns so that Fig. 3 and the 3-D page follow."""
-        page = self.page
-        if self.font_scale_in.value == page.state.get("font_scale", 1.0):
-            return   # assignment while loading a document, not a click
-        page.state["font_scale"] = float(self.font_scale_in.value or 1.0)
-        if page.state["kind"] == "simplicial":
-            page.preview.update()
-        if page.current()["outcome"] is not None:
-            await page.results.run()
 
     # ------------------------------------------------------------------ #
     # Agents and worlds
@@ -412,7 +344,7 @@ class EditorView:
         colors = agent_color_map(state["agents"])
         kind = state["kind"]
         self.editor_box.clear()
-        with self.editor_box, ui.card().classes(CARD).props(FLAT):
+        with self.editor_box, card():
             # One panel for the whole relation, one SECTION per agent (a
             # hairline between them), instead of a stack of cards: the
             # agents are rows of one table, not separate documents.

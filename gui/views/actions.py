@@ -1,28 +1,20 @@
-"""Simplicial actions: editor + "apply to the active model" (GitHub #6/#13/#18).
+"""Simplicial actions: editor + "apply to the active model".
 
-Workspace-level card: actions are edited here and APPLIED to the active
-model; each result opens as a read-only document (drawn, evaluated, saved
-and compared like any other). The editor mirrors the complex editor on
-purpose: an event IS a facet of action nodes (one per agent), pre/post ARE
-vertex atoms on those nodes, and each event lists the agents whose
-``S_{a,A}`` contains it exactly as a facet lists its ``S_a``, so whoever can
-declare a complex can declare an action. The "update kind" select chooses
-the product (``adapters.UPDATE_KINDS``: knowledge M[A], belief M[A]_B,
-belief with revision M[A]_BR with or without memory), and what the product
-reports -- isolated vertices, collapsed perspectives, revisions -- shows on
-the result's read-only banner.
+Actions are workspace-level; each result opens as a read-only document. The
+editor mirrors the complex editor: an event is a facet of action nodes (one
+per agent), pre/post conditions are vertex atoms on those nodes, and each
+event lists the agents whose ``S_{a,A}`` contains it, as a facet lists its
+``S_a``. The "update kind" select chooses the product (``adapters.UPDATE_KINDS``;
+thesis ch. 4, docs/05 and docs/13); what the product reports shows on the
+result's read-only banner.
 """
 
 from __future__ import annotations
 
 import copy
-import hashlib
-import html
-import json
-import logging
 from typing import TYPE_CHECKING
 
-from nicegui import run as io, ui
+from nicegui import ui
 
 from adapters import (
     ACTION_EXAMPLES,
@@ -38,9 +30,9 @@ from adapters import (
     describe_action_kripke,
     event_belief,
     preview_action,
-    styled,
 )
-from theme import CARD, FLAT, panel_head, figure_img, take
+from theme import add_field, card, figure_img, panel_head, pre, take
+from views.live_figure import LiveFigure
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -51,11 +43,10 @@ class ActionsView:
         self.page = page
         self.box = None
         self._fig_box = None        # the live drawing of the action
-        self._seq = 0
-        self._cache: dict = {}      # spec hash -> figure path | message
+        self.live = LiveFigure(page, "action", size=32)
 
     def build(self) -> None:
-        with ui.card().classes(CARD).props(FLAT):
+        with card():
             panel_head("Simplicial actions")
             self.box = ui.column().classes("w-full gap-2")
 
@@ -148,11 +139,10 @@ class ActionsView:
             ui.notify("The action is not complete: " + problems[0], type="warning")
             return
         try:
-            doc_spec = apply_action(page.live_state(), spec, model_name=page.current()["name"])
+            doc_spec = apply_action(page.state, spec, model_name=page.current()["name"])
         except ValueError as exc:
             ui.notify(str(exc).splitlines()[0], type="negative", timeout=6000)
             return
-        ws.store_active(page.live_state())
         doc = ws.new_doc(doc_spec["name"], doc_spec["state"], readonly=True,
                          origin=doc_spec["origin"])
         notes = doc_spec["origin"].get("notes") or []
@@ -165,45 +155,21 @@ class ActionsView:
         page.activate(doc["id"])
 
     # ---- live drawing of the action, like the model preview ---------------- #
-    def _schedule_preview(self, spec: dict, agents: list) -> None:
-        """Debounced, off the event loop, cached by the spec's content."""
-        self._seq += 1
-        seq = self._seq
-        # The timer lives in the figure box, which is cleared but never
-        # deleted between renders, so it survives the widget that fired it.
-        with self._fig_box:
-            ui.timer(0.25, lambda: self._render_preview(seq, spec, agents), once=True)
-
     def clear_cache(self) -> None:
-        """Forget the drawn actions (they were drawn in another ink)."""
-        self._cache.clear()
+        self.live.clear_cache()
 
     def refresh_preview(self, spec: dict) -> None:
-        """Redraw after an edit that keeps the card as it is (a select, a name)."""
-        if self._fig_box is not None:
-            self._schedule_preview(copy.deepcopy(spec), list(self.page.state["agents"]))
+        """Redraw the action as it stands (debounced, cached; see LiveFigure).
+        The timer lives in the figure box, which outlives the widget that fired it."""
+        if self._fig_box is None:
+            return
+        payload = [copy.deepcopy(spec), list(self.page.state["agents"])]
+        self.live.schedule(self._fig_box, payload,
+                           lambda p, key: preview_action(p[0], p[1], key), self._paint)
 
-    async def _render_preview(self, seq: int, spec: dict, agents: list) -> None:
-        if seq != self._seq or self._fig_box is None:
+    def _paint(self, result) -> None:
+        if self._fig_box is None:
             return
-        key = hashlib.sha1(json.dumps([spec, agents, self.page.ink], sort_keys=True,
-                                      default=str).encode()).hexdigest()[:12]
-        if key not in self._cache:
-            try:
-                result = await io.io_bound(styled, self.page.ink, preview_action, spec, agents, key)
-            except ValueError as exc:
-                result = str(exc)
-            except Exception as exc:  # noqa: BLE001 -- the live figure must never take the card down
-                result = f"Could not draw the action: {exc}"
-                logging.getLogger("nicegui").exception("action preview failed")
-            if result is None:            # io_bound: cancelled or shutting down
-                return
-            if len(self._cache) >= 32:
-                self._cache.pop(next(iter(self._cache)))
-            self._cache[key] = result
-        if seq != self._seq:
-            return
-        result = self._cache[key]
         self._fig_box.clear()
         with self._fig_box:
             ui.label("Action as defined").classes("eyebrow mt-1")
@@ -302,11 +268,8 @@ class ActionsView:
             with ui.expansion("isolated action nodes (in no event)") \
                     .classes("w-full text-xs"):
                 for agent in agents:
-                    with ui.row().classes("w-full no-wrap items-center gap-2"):
-                        box = ui.input(f"new node for {agent}").props("dense outlined") \
-                            .classes("grow")
-                        ui.button(icon="add", on_click=lambda _, a=agent, w=box:
-                                  self.add_isolated(spec, a, w)).props("flat dense").classes("add-btn")
+                    add_field(f"new node for {agent}",
+                              lambda w, a=agent: self.add_isolated(spec, a, w))
                     with ui.row().classes("w-full gap-2"):
                         for name in spec.get("isolated", {}).get(agent, []):
                             ui.chip(name, removable=True, color=colors[agent],
@@ -317,12 +280,7 @@ class ActionsView:
             ui.label("Preconditions and postconditions (atoms on action nodes)") \
                 .classes("eyebrow mt-1")
             nodes = action_node_names(spec)
-            with ui.row().classes("w-full no-wrap items-center gap-2"):
-                atom_box = ui.input("atom (e.g. one of the model's)").props("dense outlined") \
-                    .classes("grow")
-                ui.button(icon="add", on_click=lambda: self.add_atom(spec, atom_box)) \
-                    .props("flat dense").classes("add-btn")
-                atom_box.on("keydown.enter", lambda: self.add_atom(spec, atom_box))
+            add_field("atom (e.g. one of the model's)", lambda w: self.add_atom(spec, w))
             atoms = sorted(set(spec.get("pre", {})) | set(spec.get("post", {})))
             for atom in atoms:
                 for table, label in (("pre", "requires"), ("post", "sets")):
@@ -362,21 +320,19 @@ class ActionsView:
                 ui.label("Missing: " + "; ".join(problems)).classes("text-xs") \
                     .style("color:var(--p-warn)")
             else:
-                ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
-                        f"{html.escape(describe_action(spec, agents, self.model_atoms()))}</pre>")
-                # The same action as a Kripke action model (Def. 4.4): events,
-                # their preconditions as one formula each, and who confuses
-                # which events -- the other side of the equivalence (docs/12).
+                pre(describe_action(spec, agents, self.model_atoms()))
+                # The same action as a Kripke action model (thesis Def. 4.4,
+                # docs/12 §4): events, their preconditions as one formula
+                # each, and who confuses which events.
                 with ui.expansion("as a Kripke action model").classes("w-full text-xs"):
                     try:
                         text = describe_action_kripke(spec, agents, self.model_atoms())
                     except ValueError as exc:
                         text = str(exc)
-                    ui.html("<pre style='white-space:pre-wrap' class='text-xs'>"
-                            f"{html.escape(text)}</pre>")
+                    pre(text)
             # The action drawn as it stands, updated after every edit.
             self._fig_box = ui.column().classes("w-full gap-1")
-            self._schedule_preview(copy.deepcopy(spec), list(agents))
+            self.refresh_preview(spec)
             with ui.row().classes("w-full items-center gap-2"):
                 ui.button("Apply to the active model", icon="play_arrow",
                           on_click=lambda: self.apply()) \

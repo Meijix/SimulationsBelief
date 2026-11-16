@@ -17,7 +17,6 @@ from semantics import lift_valuation
 from simplicial import Node, SimplicialBeliefModel, label_node, to_relational, to_simplicial
 from visualization import visualize
 from .base import (
-    FIGURE_FORMAT,
     OUTPUTS,
     PipelineResult,
     StepReport,
@@ -186,7 +185,7 @@ def _consistent_part(model, assignment, by_name) -> Tuple[SimplicialBeliefModel,
     ]
 
 
-def _simplicial_problems(model, assignment, by_name, vertices) -> Tuple[List[str], List[str]]:
+def _simplicial_problems(model, assignment, by_name) -> Tuple[List[str], List[str]]:
     """``(violations, notes)`` for a hand-declared complex (already pruned)."""
     problems = model.violations()
     name = {n: v for v, n in by_name.items()}
@@ -243,7 +242,7 @@ def preview_simplicial(
                      output_dir=str(OUTPUTS), assignment=assignment or None,
                      engine="auto" if _geometric_ok(model) else "dot",
                      font_scale=font_scale))
-    problems, _ = _simplicial_problems(model, assignment, by_name, vertices)
+    problems, _ = _simplicial_problems(model, assignment, by_name)
     notes = [] if _geometric_ok(model) else [_dimension_note(model)]
     return path, dropped + problems + notes
 
@@ -373,20 +372,20 @@ def run_simplicial(
         assignment = simplicial_assignment(by_name, vatoms)
     except ValueError as exc:
         step.failed.append(str(exc))
-        result.badges.append(("inexpressible", "negative"))
+        result.badges.append(("inexpressible", "bad"))
         return result
     # Inconsistent facets are removed, not refused (GitHub #21): the model is
     # the maximal consistent complex, and the removal is reported as something
     # the theory completed for the user. Duplicate facets are merged the same way.
     model, dropped = _consistent_part(model, assignment, by_name)
     step.completed += merged + dropped
-    problems, notes = _simplicial_problems(model, assignment, by_name, vertices)
+    problems, notes = _simplicial_problems(model, assignment, by_name)
     step.missing += notes
     if problems:
         step.failed.append("\n".join(problems))
-        result.badges.append(("invalid", "negative"))
+        result.badges.append(("invalid", "bad"))
     else:
-        result.badges.append(("valid", "positive"))
+        result.badges.append(("valid", "ok"))
         if knowledge_only:
             step.completed.append(
                 f"well-formed knowledge complex: {len(model.facets)} facets, "
@@ -402,7 +401,7 @@ def run_simplicial(
     # A knowledge complex has no belief logic to name: S_a = S makes D hold
     # trivially, so the KD45/K45 badge would say nothing.
     result.badges.append(("knowledge (S_a = S)" if knowledge_only
-                          else ("KD45" if axiom_d else "K45"), "primary"))
+                          else ("KD45" if axiom_d else "K45"), "info"))
     result.stats.append((str(len(model.facets)), "facets"))
     result.stats.append((str(len(model.nodes)), "vertices"))
     if not knowledge_only:
@@ -486,18 +485,16 @@ def simplicial_state_from_editor(
     kind: str, agents: List[str], worlds: List[str],
     per_agent: Dict[str, List[dict]], atoms: Dict[str, List[str]],
     axiom_d: bool, believe_all_when_silent: bool = True,
-) -> Tuple[Dict[str, List[str]], List[dict], Dict[str, dict]]:
-    """Translate the relational model being edited into a direct-complex state.
+) -> dict:
+    """The direct-complex STATE of the relational model being edited.
 
-    This BOOTSTRAPS the simplicial editor from what is already drawn: it runs
-    general -> proper -> simplicial and dumps the result into named vertices
-    (a0, a1, ... per agent), facets named after their world, and the
-    assignment the valuation induces. From there the complex is free: it is
-    edited without going through Kripke.
+    Runs general -> proper -> simplicial and names the result for the editor:
+    vertices ``a0, a1, ...`` per agent, facets named after their world, the
+    assignment the valuation induces; a knowledge-only model becomes a
+    knowledge complex (``S_a = S``). From there the complex is edited freely.
 
     Raises:
-        ValueError: if the current model cannot be translated (pure belief,
-            invalid model...).
+        ValueError: if the model cannot be translated (pure belief, invalid).
     """
     from visualization import facet_name
 
@@ -533,7 +530,11 @@ def simplicial_state_from_editor(
                 spec["true" if value == 1 else "false"].append(names[node])
     for atom in atoms or {}:
         vatoms.setdefault(atom, {"true": [], "false": []})
-    return vertices, facets, vatoms
+    state = blank_state("simplicial")
+    state.update({"agents": list(agents), "vertices": vertices, "facets": facets,
+                  "vatoms": vatoms, "axiom_d": axiom_d,
+                  "complex_kind": "knowledge" if kind == "knowledge" else "kb"})
+    return state
 
 
 def state_from_simplicial_model(

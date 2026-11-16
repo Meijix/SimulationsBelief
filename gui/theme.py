@@ -1,70 +1,35 @@
-"""Visual system of the GUI: palette, CSS, card and chip helpers (no state).
+"""Visual system of the GUI: the two palettes, the CSS, and the small
+presentation helpers the views share (cards, panel heads, status marks,
+chips, figures, escaped ``<pre>`` blocks). No application state.
 
-Everything here is presentation vocabulary shared by the view modules in
-``gui/views``: the palette (``POSTER``), the CSS that Tailwind and Quasar do
-not cover (``HEAD_HTML``), the base card classes, the status marks
-(``status``, ``chip``), the panel title (``card_title``), the figure helpers
-(``figure_img``, ``is_wide``) and the help texts that depend on the model
-kind. Nothing in this module reads or writes application state, which is
-what makes it safe to import from anywhere.
-
-Design rules (2026-11-13, "aurora": navy sky, one violet; a light twin
-for daylight, switched from the header). The GUI is an
-instrument, not a dashboard: a dark navy workbench with a few flat panels,
-hairlines instead of shadows, square corners, dense rows, and words rather
-than icons. One accent, a vibrant violet, is spent on exactly three things:
-the primary button, the active tab or document, and the rule of the live
-preview. Everything else is ink or muted ink. Figures are drawn transparent in
-the renderers' dark ink theme (``visualization.ink_theme``), so they need
-no plate. Status is said
-in words with one small coloured mark, in the three hues of an aurora:
-green for valid / done, amber for "to be completed", rose for rejected /
-error. Agents keep their own Okabe-Ito colours because that is data, not
-chrome. No gradients, no glows, no animation, no uppercase tracking.
+The look: a research instrument, not a dashboard. Navy page and flat navy
+panels with hairlines and square corners (a light twin for daylight), one
+violet accent spent on the primary button, the active tab or document and
+the rule of the live preview; status said in words with one small mark in
+aurora hues (green valid / done, amber to complete, rose rejected). Icons
+sit next to words, never alone. Figures are drawn transparent in the ink of
+the page (``visualization.ink_theme``). Agents keep their Okabe-Ito colours:
+that is data, not chrome.
 """
 
 from __future__ import annotations
 
+import html
+import re
+
 from nicegui import ui
 
 
-def _version() -> str:
-    """The package version for the header and the footer: from the installed
-    metadata (``pip install -e .``) or, failing that, from pyproject.toml."""
-    try:
-        from importlib.metadata import version
-        return version("simulationsbelief")
-    except Exception:  # noqa: BLE001 -- not installed: read the file
-        import re
-        from pathlib import Path
-        try:
-            text = (Path(__file__).resolve().parent.parent / "pyproject.toml").read_text()
-            m = re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
-            return m.group(1) if m else "dev"
-        except OSError:
-            return "dev"
-
-
-VERSION = _version()
-
-
-# The two palettes (2026-11-13). DARK is the one the user chose: navy as the
-# page, violet as the accent, in the key of the northern lights. LIGHT is
-# the same system printed on paper: a cool off-white page, white panels,
-# the violet one step deeper so it holds on white. In both, the accent
-# exists in two strengths: ``accent`` is the fill (buttons, the active
-# document) and carries ``on_accent`` text; ``accent_ink`` is the accent as
-# TEXT on the page, for tabs and text buttons. Every value is also a CSS
-# variable (``--p-<key>``, see HEAD_HTML), switched by Quasar's body class
-# (``body--dark`` / ``body--light``), so a page can change theme in place:
-# the views never paint a hex, they paint ``var(--p-...)``.
+# ``accent`` is the violet as a fill (with ``on_accent`` text on it);
+# ``accent_ink`` is the violet as text on the page. Every value is also a CSS
+# variable ``--p-<key>`` (see HEAD_HTML), switched by Quasar's body class
+# (``body--dark`` / ``body--light``), so the theme changes in place and the
+# views paint ``var(--p-...)``, never a hex.
 PALETTES = {
     "dark": {
-        "page": "#05081A",      # the night sky: page background
-        "surface": "#0B1128",   # panels: a lighter navy, one hairline around
+        "page": "#05081A",      # page background
+        "surface": "#0B1128",   # panels
         "inset": "#070C20",     # sunken areas inside a panel (code, log rows)
-        "paper": "#EEF0F8",     # a light plate, kept for anything that must be white
-        "paper_ink": "#1B2140", # text on such a plate
         "ink": "#E7EAF6",       # text
         "line": "rgba(170,180,230,.14)",    # hairlines (borders, rules)
         "chip": "rgba(170,180,230,.12)",    # neutral tags (worlds)
@@ -73,18 +38,14 @@ PALETTES = {
         "accent_ink": "#B794FF",        # the accent as text on the page
         "on_accent": "#05081A", # text on a violet fill
         "muted": "#9BA4CB",     # secondary text: panel titles, captions, notes
-        # Status hues (the aurora's own): green = valid / done, amber = to be
-        # completed / stale, rose = rejected / error.
-        "green": "#5BE3A8",
-        "yellow": "#F5C04E",
-        "pink": "#FF7E9A",
+        "green": "#5BE3A8",     # status: valid / done
+        "yellow": "#F5C04E",    # status: to be completed / stale
+        "pink": "#FF7E9A",      # status: rejected / error
     },
     "light": {
         "page": "#F3F4FA",
         "surface": "#FFFFFF",
         "inset": "#EEF0F8",
-        "paper": "#FFFFFF",
-        "paper_ink": "#1B2140",
         "ink": "#1B2140",
         "line": "rgba(27,33,64,.14)",
         "chip": "rgba(27,33,64,.08)",
@@ -98,12 +59,6 @@ PALETTES = {
         "pink": "#BE123C",
     },
 }
-# The ink theme of the FIGURES that goes with each palette (visualization.ink).
-FIGURE_INK = {"dark": "dark", "light": "light"}
-# Legacy name: the dark palette. Views should paint CSS variables, not these.
-POSTER = dict(PALETTES["dark"])
-POSTER.update({"lime": POSTER["green"], "cyan": POSTER["green"], "blue": POSTER["muted"],
-               "purple": POSTER["accent_ink"], "orange": POSTER["muted"]})
 
 
 def _css_vars(palette: dict) -> str:
@@ -232,14 +187,11 @@ HEAD_HTML = f"""
                     display: flex; flex-wrap: wrap; align-items: center; color: var(--p-ink);
                     column-gap: 1.5rem; row-gap: .5rem; min-height: 50px; }}
   .header-title {{ min-width: 0; flex: 1 1 320px; display: flex; align-items: baseline; gap: .9rem; }}
-  .header-title .q-item__label, .header-sub {{ overflow: hidden; text-overflow: ellipsis; }}
-  .header-sub {{ font-family: 'IBM Plex Mono', 'Menlo', monospace; font-size: .76rem;
-                 color: var(--p-muted); white-space: nowrap; }}
+  .header-title .q-item__label {{ overflow: hidden; text-overflow: ellipsis; }}
   .header-controls {{ margin-left: auto; display: flex; align-items: center; gap: .75rem;
                       flex-wrap: wrap; flex: 0 1 auto; min-width: 0; }}
   .header-example {{ width: 340px; max-width: calc(100vw - 3rem); }}
   @media (max-width: 1100px) {{
-    .header-sub {{ display: none; }}
     .header-example {{ width: 260px; }}
   }}
   @media (max-width: 720px) {{
@@ -285,8 +237,6 @@ HEAD_HTML = f"""
   .thin-scroll::-webkit-scrollbar {{ width: 6px; }}
   .thin-scroll::-webkit-scrollbar-thumb {{ background: var(--p-scroll); border-radius: 3px; }}
   .thin-scroll::-webkit-scrollbar-track {{ background: transparent; }}
-  /* The "live" mark of the preview: a still dot in the accent. */
-  .pulse-dot {{ width: 8px; height: 8px; border-radius: 9999px; background: var(--p-accent); }}
 </style>
 """
 
@@ -322,39 +272,32 @@ FORMULA_HELP = {
 
 
 def url(path) -> str:
-    """Static URL of a figure, with the mtime as cache buster (see module docstring)."""
+    """Static URL of a figure; the mtime is a cache buster, since a run
+    overwrites its own file names."""
     return f"/outputs/{path.name}?v={int(path.stat().st_mtime)}"
 
 
-def figure_size(path) -> tuple[float, float] | None:
-    """``(width, height)`` of a figure file, from its header, without decoding it.
-
-    SVG (Graphviz/matplotlib write ``width="…pt" height="…pt"`` on the root
-    element) and PNG (the IHDR chunk) are enough for the figures this GUI
-    produces. Used only to decide the layout: whether a figure is tall or
-    wide. ``None`` when it cannot be told, which lays the figure out wide.
-    """
-    import re
-    import struct
-
-    try:
-        with open(path, "rb") as fh:
-            head = fh.read(2048)
-    except OSError:
-        return None
-    if head.startswith(b"\x89PNG") and len(head) >= 24:
-        w, h = struct.unpack(">II", head[16:24])
-        return float(w), float(h)
-    m = re.search(rb'<svg[^>]*?\swidth="([\d.]+)(?:pt|px)?"[^>]*?\sheight="([\d.]+)(?:pt|px)?"', head)
-    if m:
-        return float(m.group(1)), float(m.group(2))
-    return None
+def card(extra: str = ""):
+    """A panel: flat, hairline border, square corners (``extra``: more classes)."""
+    return ui.card().classes(CARD + (" " + extra if extra else "")).props(FLAT)
 
 
-def is_wide(path) -> bool:
-    """A figure wider than 1.6 : 1 takes a whole row of the grid; others share one."""
-    size = figure_size(path)
-    return size is None or size[1] == 0 or size[0] / size[1] > 1.6
+def pre(text: str, classes: str = "text-xs", margin: bool = True):
+    """A ``<pre>`` block with ``text`` escaped (a formula error may contain ``<end>``)."""
+    style = "white-space:pre-wrap" + ("" if margin else ";margin:0")
+    return ui.html(f"<pre style='{style}' class='{classes}'>{html.escape(text)}</pre>")
+
+
+def add_field(label: str, on_add, color: str | None = None):
+    """An input with an "add" button; Enter or the button calls ``on_add(input)``.
+    With ``color``, the agent's swatch is drawn before the field."""
+    with ui.row().classes("w-full no-wrap items-center gap-2"):
+        if color:
+            swatch(color)
+        box = ui.input(label).props("dense outlined").classes("grow")
+        ui.button(icon="add", on_click=lambda: on_add(box)).props("flat dense").classes("add-btn")
+    box.on("keydown.enter", lambda: on_add(box))
+    return box
 
 
 def figure_caption(caption: str) -> None:
@@ -363,15 +306,12 @@ def figure_caption(caption: str) -> None:
     The adapters produce "Fig. 2a · proper model, knowledge R_a (S5)"; the
     number becomes the bold label and the text starts with a capital.
     """
-    import html as _html
-    import re as _re
-
-    m = _re.match(r"\s*Fig\.?\s*([0-9]+[a-z]?)\s*·\s*(.*)$", caption)
+    m = re.match(r"\s*Fig\.?\s*([0-9]+[a-z]?)\s*·\s*(.*)$", caption)
     if m:
         number, text = m.group(1), m.group(2).strip()
-        body = f"<b>Figure {number}.</b> {_html.escape(text[:1].upper() + text[1:])}"
+        body = f"<b>Figure {number}.</b> {html.escape(text[:1].upper() + text[1:])}"
     else:
-        body = _html.escape(caption)
+        body = html.escape(caption)
     ui.html(f'<div class="fig-caption">{body}</div>').classes("w-full")
 
 
@@ -388,16 +328,6 @@ def figure_img(path) -> None:
         f'<img src="{url(path)}" style="display:block;margin:0 auto;'
         'max-width:100%;max-height:520px;width:auto;height:auto">'
     ).classes("w-full")
-
-
-def card_title(text: str):
-    """Panel title of the visual system: a short label in muted ink.
-
-    Returns the label so a caller can put it in a row with other things
-    (the preview puts its status at the far right); ``panel_head`` is the
-    row-with-hairline variant for the common case.
-    """
-    return ui.label(text).classes("eyebrow")
 
 
 def panel_head(text: str):

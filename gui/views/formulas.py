@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from nicegui import ui
 
 from adapters import evaluate_state
-from theme import CARD, FLAT, FORMULA_HELP, panel_head, chip
+from theme import FORMULA_HELP, card, chip, panel_head, pre
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -21,7 +21,7 @@ class FormulasView:
         self.out = None
 
     def build(self) -> None:
-        with ui.card().classes(CARD).props(FLAT):
+        with card():
             panel_head("Evaluate formula")
             self.input = ui.input(
                 "formula", placeholder="B_a p & ~K_a p",
@@ -43,11 +43,10 @@ class FormulasView:
         self.out.clear()
         simplicial = page.state["kind"] == "simplicial"
         try:
-            rows = evaluate_state(page.live_state(), self.input.value or "")
+            rows = evaluate_state(page.state, self.input.value or "")
         except ValueError as exc:
             with self.out:
-                ui.html(f"<pre style='white-space:pre-wrap' "
-                        f"class='bad-text text-xs'>{exc}</pre>")
+                pre(str(exc), classes="bad-text text-xs")
             return
         holds = sum(1 for _, ok in rows if ok)
         with self.out:

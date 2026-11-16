@@ -1,8 +1,8 @@
 """Models bar: the open documents, and saving / opening / downloading them.
 
-One chip per document (click = activate, x = close), buttons to open a blank
-one or duplicate the active one, the persistence buttons (GitHub #18) and,
-with two or more documents, the comparison controls.
+One tab per document (click = activate, x = close), buttons to open a blank
+one or duplicate the active one, the persistence buttons and, with two or
+more documents, the comparison controls.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import copy
 from nicegui import run as io, ui
 
 from adapters import KINDS, print_light, run_state
-from theme import CARD, FLAT, KIND_ICON, panel_head
+from theme import KIND_ICON, card, panel_head
 
 if TYPE_CHECKING:
     from views.page import Page
@@ -38,7 +38,7 @@ class DocsBarView:
             with ui.row().classes("items-end gap-0 no-wrap"):
                 for d in ws.docs:
                     active = d["id"] == ws.active
-                    kind = page.state["kind"] if active else d["state"]["kind"]
+                    kind = d["state"]["kind"]
                     with ui.element("div").classes("doc-tab" + (" active" if active else "")) \
                             .on("click", lambda _, i=d["id"]: page.activate(i)) \
                             .tooltip(KINDS[kind]) as tab:
@@ -55,8 +55,8 @@ class DocsBarView:
             ui.button("Duplicate", icon="content_copy", on_click=lambda: page.duplicate_active()) \
                 .props("flat dense", remove="color").classes("quiet-btn").tooltip("Duplicate the active model")
             ui.element("div").classes("vsep")
-            # Persistence (GitHub #18): the whole bar to a file, a file back
-            # into the bar, and the active model out as a download.
+            # Persistence: the whole bar to a file, a file back into the
+            # bar, and the active model out as a download.
             ui.button("Save", icon="save", on_click=lambda: self.save_dialog()) \
                 .props("flat dense", remove="color").classes("quiet-btn").tooltip("Save all open models")
             ui.button("Open", icon="folder_open", on_click=lambda: self.open_dialog()) \
@@ -79,15 +79,10 @@ class DocsBarView:
                           on_click=lambda: page.compare.open()) \
                     .props("color=primary text-color=dark unelevated dense")
 
-    # ---- Save / open workspaces (GitHub #18) ------------------------------- #
-    # Everything open (names, states, read-only flags, provenance) goes to
-    # one JSON file in saved_models/; opening one adds its models to the bar
-    # or replaces what is open. A single model can also be downloaded as a
-    # one-model workspace, which is the unit to share or to hand to a script.
+    # ---- Save / open workspaces (saved_models/README.md) ------------------- #
     def save_dialog(self) -> None:
         page, ws = self.page, self.page.ws
-        ws.store_active(page.live_state())
-        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[460px]").props(FLAT):
+        with ui.dialog() as dlg, card("min-w-[460px]"):
             panel_head("Save workspace")
             ui.label("The DEFINITION of each model (what you see in the editor) is saved "
                      "to saved_models/<name>.json; the figures are regenerated on a run. "
@@ -165,8 +160,6 @@ class DocsBarView:
     def open_saved(self, path, replace: bool, dlg=None) -> None:
         """Open a saved workspace, adding to the bar or replacing it."""
         page, ws = self.page, self.page.ws
-        if not replace:
-            ws.store_active(page.live_state())
         try:
             opened = ws.open(path, replace)
         except (OSError, ValueError) as exc:
@@ -186,7 +179,7 @@ class DocsBarView:
     def open_dialog(self) -> None:
         ws = self.page.ws
         saved = ws.saved_files()
-        with ui.dialog() as dlg, ui.card().classes(CARD + " min-w-[520px]").props(FLAT):
+        with ui.dialog() as dlg, card("min-w-[520px]"):
             panel_head("Open workspace")
             if not saved:
                 ui.label("No saved workspaces yet (saved_models/ is empty).") \
@@ -215,6 +208,5 @@ class DocsBarView:
         import json
 
         page, ws = self.page, self.page.ws
-        ws.store_active(page.live_state())
         data = json.dumps(ws.export_payload(), ensure_ascii=False, indent=1).encode("utf-8")
         ui.download.content(data, f"{page.current()['name']}.json")

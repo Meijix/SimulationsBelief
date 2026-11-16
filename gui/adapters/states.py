@@ -14,25 +14,11 @@ from .formulas import evaluate_formula
 from .relational import preview_figure, run_pipeline_from_seeds, seeds_from_editor
 
 
-# --------------------------------------------------------------------------- #
-# The STATE of a model and the API that works on it.
-#
-# The GUI handles several models at once (one "document" per model), so
-# everything that describes ONE model lives in a flat, serialisable dict --
-# the "state" -- and these three functions are the only entry point:
-#
-#     preview_state(state, tag)   -> (figure, what is missing)
-#     evaluate_state(state, text) -> [(world or facet, holds?)]
-#     run_state(state, tag)       -> PipelineResult
-#
-# They resolve the model kind (``state["kind"]``); callers need not know
-# whether it is Kripke or a complex. ``tag`` keeps each document's files apart
-# in outputs/ so two open models do not overwrite each other.
-#
-# THIS IS THE CONTRACT FOR THE ACTION LAYER (not implemented yet): applying an
-# action to a model must produce ANOTHER state; with that the GUI already
-# knows how to draw, validate, evaluate and compare it, with no new UI code.
-# --------------------------------------------------------------------------- #
+# Everything that describes one model is a flat, serialisable dict (the
+# "state", see ``base.blank_state``). These three functions resolve
+# ``state["kind"]``, so callers need not know whether it is Kripke or a
+# complex; ``tag`` keeps each document's files apart in outputs/. An action
+# applied to a model produces another state (``actions.apply_action``).
 
 
 def state_problem(state: dict) -> Optional[str]:

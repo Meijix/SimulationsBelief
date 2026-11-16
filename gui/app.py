@@ -9,12 +9,11 @@ directly, with no API and no serialization), it runs in the browser (the 3D
 plotly figures are already HTML and are embedded as they are), and a single
 page is enough.
 
-VISUAL SYSTEM. An instrument, not a dashboard (2026-11-13, "aurora"; it
-replaced the espresso-and-cyan desk, which in turn had replaced a
-navy-and-lime template). Navy page, flat navy panels with hairlines and
-square corners, one vibrant violet, three aurora hues for status.
+VISUAL SYSTEM. An instrument, not a dashboard ("aurora", see ``theme.py``).
+Navy page, flat navy panels with hairlines and square corners, one vibrant
+violet, three aurora hues for status.
 
-    * Background: navy (``POSTER["page"]``); panels are a lighter navy with
+    * Background: navy (``theme.PALETTES``); panels are a lighter navy with
       a hairline border; no shadows, no gradients, no glows, no animation.
       The live preview is told apart by a thin violet rule on top.
     * Figures are rendered TRANSPARENT and in the DARK ink theme
@@ -30,7 +29,7 @@ square corners, one vibrant violet, three aurora hues for status.
       muted ink; buttons and tabs are sentence case.
     * Color: violet for the Run button, the active document's underline,
       the active tab, the preview rule and the accent text (text buttons);
-      what sits on a violet fill is navy (``POSTER["on_accent"]``). Verdicts
+      what sits on a violet fill is navy. Verdicts
       are said in words with one small coloured dot (``theme.status``):
       green = valid / done, amber = to be completed, rose = rejected. Agents
       keep the same Okabe-Ito colours (a square swatch) in their chips as in
@@ -58,9 +57,8 @@ header) lists the open documents; one is active and is the one shown by the
 editor, the preview and the results. Documents can be opened blank,
 duplicated, renamed and closed, and COMPARED 2 to 4 side by side (their
 results are stored per document and only the ones that changed are
-recomputed). A document can be READ-ONLY with an annotated origin: this is
-how the results of applying action models will come in (``new_doc`` is the
-hook; the state API lives in ``adapters/states.py``).
+recomputed). A document can be READ-ONLY with an annotated origin: that is
+how the result of applying an action opens (the Actions tab).
 
 HOW MODELS ARE ENTERED. Everything is interactive and propagates in a chain:
 
@@ -114,9 +112,25 @@ HOW FIGURES ARE SHOWN. ``visualization.show`` writes SVG/HTML into
 from __future__ import annotations
 
 import logging
+import multiprocessing
+import os
+import sys
 import time
 import traceback
 from pathlib import Path
+
+if getattr(sys, "frozen", False):
+    # Packaged executable (packaging/build_gui.py): figures, saved workspaces
+    # and settings go to a folder in the user's home, and the bundled Graphviz
+    # (Windows build) goes first on the PATH. Set before nicegui is imported,
+    # which is when it reads its storage path.
+    _DATA = Path.home() / "SimulationsBelief"
+    _DATA.mkdir(exist_ok=True)
+    os.environ.setdefault("SIMULATIONSBELIEF_DATA", str(_DATA))
+    os.environ.setdefault("NICEGUI_STORAGE_PATH", str(_DATA / ".nicegui"))
+    _GRAPHVIZ = Path(getattr(sys, "_MEIPASS", "")) / "graphviz"
+    if _GRAPHVIZ.is_dir():
+        os.environ["PATH"] = str(_GRAPHVIZ) + os.pathsep + os.environ.get("PATH", "")
 
 from nicegui import Client, app, ui
 
@@ -124,8 +138,6 @@ from nicegui import Client, app, ui
 # sys.path[0], and adapters takes care of putting the repo root on the path.
 # When the GUI is started through the installed command (``gui.app:main``),
 # this folder is not on the path yet, so it is added here first.
-import sys
-
 _HERE = str(Path(__file__).resolve().parent)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
@@ -330,18 +342,24 @@ def footer() -> None:
 
 
 def main() -> None:
-    """Start the server (the ``simulationsbelief-gui`` command and ``python gui/app.py``).
+    """Start the server (the ``simulationsbelief-gui`` command, ``python gui/app.py``
+    and the packaged executable).
 
     reload=False: NiceGUI's auto-reload re-imports the module in a subprocess,
-    a surprising behavior for a simple local tool. The port can be changed
-    with the environment variable ``SIMULATIONSBELIEF_PORT`` (default 8080).
+    a surprising behavior for a simple local tool. The port comes from
+    ``SIMULATIONSBELIEF_PORT``; without it, 8080, or the first free port from
+    8080 up when running as the packaged executable.
     """
-    import os
+    port = os.environ.get("SIMULATIONSBELIEF_PORT")
+    if port is None and getattr(sys, "frozen", False):
+        from nicegui import native
 
-    port = int(os.environ.get("SIMULATIONSBELIEF_PORT", "8080"))
-    ui.run(title="The geometry of a false belief", reload=False, dark=True, port=port)
+        port = native.find_open_port(8080)
+    ui.run(title="The geometry of a false belief", reload=False, dark=True,
+           port=int(port or 8080))
 
 
 # The __mp_main__ guard is the NiceGUI convention (multiprocess uvicorn).
 if __name__ in {"__main__", "__mp_main__"}:
+    multiprocessing.freeze_support()
     main()
