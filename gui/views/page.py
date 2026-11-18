@@ -162,12 +162,22 @@ class Page:
             else:
                 element.classes(remove="pointer-events-none opacity-60")
         self.readonly_box.clear()
+        origin = doc["origin"] or {}
+        notes = origin.get("notes") or []
         if not doc["readonly"]:
+            # An editable result (opened from a run) only shows what it did
+            # not carry over, as a warning to check before trusting it.
+            if notes:
+                with self.readonly_box, card():
+                    for note in notes:
+                        with ui.row().classes("w-full items-start gap-3 no-wrap"):
+                            ui.icon("warning").style("color:var(--p-warn)")
+                            ui.label(note).classes("text-sm grow")
             return
         with self.readonly_box, card():
             with ui.row().classes("w-full items-center gap-3 no-wrap"):
                 ui.icon("lock").style("color:var(--p-warn)")
-                source = (doc["origin"] or {}).get("label")
+                source = origin.get("label")
                 ui.label(
                     ("Result of " + source + ". " if source else "")
                     + "This model is read-only: to change it, "
@@ -178,7 +188,7 @@ class Page:
                     .props("outline dense")
             # What the product reported (isolated vertices, collapsed
             # perspectives, revisions), one line each.
-            for note in (doc["origin"] or {}).get("notes") or []:
+            for note in notes:
                 ui.label("· " + note).classes("text-xs muted font-mono")
 
     def repaint_all(self) -> None:

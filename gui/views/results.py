@@ -104,16 +104,19 @@ class ResultsView:
         if doc["id"] == page.ws.active:   # the model may have been switched mid-run
             self.render_outcome(outcome)
 
-    def open_kripke(self, state: dict) -> None:
-        """Open the equivalent Kripke model of the active complex as a new document."""
+    def open_result(self, state: dict, suffix: str, origin: str, notes: list) -> None:
+        """Open a model the run computed as a new, editable document; the
+        source document is left as it is. ``notes`` are what the new model
+        does not carry over: shown now and kept under the document's banner."""
         page, ws = self.page, self.page.ws
         source = page.current()
-        doc = ws.new_doc(f"{source['name']} · Kripke", copy.deepcopy(state), readonly=False,
-                         origin={"label": f"complex → Kripke model (G_B) of {source['name']}"})
+        doc = ws.new_doc(f"{source['name']} · {suffix}", copy.deepcopy(state), readonly=False,
+                         origin={"label": f"{origin} of {source['name']}", "notes": list(notes)})
         # Notify BEFORE activating: activating repaints the results column,
         # and with it the button whose click is being handled.
-        ui.notify(f"Kripke model opened as “{doc['name']}”: run the pipeline to take it "
-                  "back to a complex.", type="positive")
+        ui.notify(f"Opened as “{doc['name']}”.", type="positive")
+        for note in notes:
+            ui.notify(note, type="warning", multi_line=True, timeout=0, close_button="OK")
         page.activate(doc["id"])
 
     async def download_figures(self) -> None:
@@ -249,17 +252,28 @@ class ResultsView:
                     ui.label("Drag to rotate; scroll to zoom.") \
                         .classes("text-xs italic muted")
 
-            # A direct complex comes with its equivalent Kripke model (G_B,
-            # docs/12): one click opens it as an editable document.
-            if out.kripke_state:
+            # A run's results are figures; these buttons turn each computed
+            # model into a document that can be edited and run again. A
+            # relational run offers its proper model and its complex, a
+            # direct complex its equivalent Kripke model (G_B, docs/12).
+            openable = [   # (state, button, name suffix, origin on the document, notes)
+                (out.proper_state, "Open the proper model", "proper", "proper model", []),
+                (out.complex_state, "Open the complex", "complex", "simplicial model",
+                 out.complex_notes),
+                (out.kripke_state, "Open as Kripke model", "Kripke",
+                 "complex → Kripke model (G_B)", []),
+            ]
+            openable = [entry for entry in openable if entry[0]]
+            if openable:
                 with card():
-                    with ui.row().classes("w-full items-center gap-3 no-wrap"):
-                        ui.label("The equivalent Kripke model (Fig. 3) can be opened as a "
-                                 "model of its own and sent back through the pipeline.") \
-                            .classes("text-sm muted grow")
-                        ui.button("Open as Kripke model", icon="open_in_new",
-                                  on_click=lambda st=out.kripke_state: self.open_kripke(st)) \
-                            .props("outline dense")
+                    panel_head("Edit a result")
+                    with ui.row().classes("w-full items-center gap-3"):
+                        ui.label("Each result opens as an editable model of its own, "
+                                 "next to this one.").classes("text-sm muted grow")
+                        for state, label, suffix, origin, notes in openable:
+                            ui.button(label, icon="open_in_new",
+                                      on_click=lambda st=state, sx=suffix, o=origin, n=notes:
+                                      self.open_result(st, sx, o, n)).props("outline dense")
 
             # Text diagrams (visualize): collapsed so they do not compete with the figures.
             with ui.expansion("Text diagrams").classes("w-full"):

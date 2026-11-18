@@ -29,6 +29,7 @@ from .base import (
     hasse_show,
     blank_state,
     show,
+    world_text,
 )
 from .examples import editor_rows
 
@@ -133,43 +134,48 @@ def build_general(
     )
 
 
+def state_from_frame(frame, valuation=None, kind: str = "kb") -> dict:
+    """The editor state of a computed frame, so it can be opened as a document.
+
+    ``frame`` is a :class:`KnowledgeBeliefFrame` (``kind="kb"``) or a knowledge
+    :class:`RelationalFrame` (``"knowledge"``). Its classes and believed sets
+    are read off as the example library reads its models (``editor_rows``),
+    and ``valuation`` becomes the per-atom world lists.
+    """
+    agents = sorted(frame.agents, key=str)
+    ordered = sorted(frame.worlds, key=str)
+    # The editor needs every world to be a distinct string; two worlds that
+    # print alike are told apart with a prime.
+    names: Dict = {}
+    for w in ordered:
+        text = world_text(w)
+        while text in names.values():
+            text += "'"
+        names[w] = text
+    per_agent = {}
+    for a in agents:
+        rows = editor_rows(frame, a, ordered, kind)
+        per_agent[a] = [{"cls": [names[w] for w in r["cls"]], "bel": [names[w] for w in r["bel"]]}
+                        for r in rows]
+    atoms = {str(atom): [names[w] for w in ordered if w in true]
+             for atom, true in (valuation or {}).items()}
+    state = blank_state(kind)
+    state.update({"agents": agents, "worlds": [names[w] for w in ordered],
+                  "per_agent": per_agent, "atoms": atoms, "axiom_d": bool(frame.axiom_d)})
+    return state
+
+
 def state_from_relational(rel, knowledge_only: bool = False) -> dict:
     """The editor state of the Kripke model ``to_relational`` returns (GitHub #8).
 
     This closes the loop of the categorical equivalence in the GUI: a complex
     typed by hand becomes a relational document (kind ``knowledge`` when every
     ``S_a`` is the whole complex, ``kb`` otherwise) that the pipeline can take
-    back through proper -> simplicial. World names are the facet names turned
-    into strings (an action result names facets by ``(world, event)`` pairs);
-    the knowledge classes and believed sets are read off the frame exactly as
-    the example library reads its models, and the lifted valuation becomes
-    the per-atom world lists. Axiom D is the frame's own verdict (KD45 iff no
-    perspective was isolated).
+    back through proper -> simplicial. The worlds are the facets, and Axiom D
+    is the frame's own verdict (KD45 iff no perspective was isolated).
     """
-    frame = rel.frame
-    agents = sorted(frame.agents, key=str)
-    # A world name must be a unique string for the editor; str() of a pair is
-    # fine, and a clash (two facets whose names print alike) gets a suffix.
-    names: Dict = {}
-    taken: set = set()
-    for w in sorted(frame.worlds, key=str):
-        name = str(w)
-        while name in taken:
-            name += "'"
-        names[w], taken = name, taken | {name}
-    worlds = [names[w] for w in sorted(frame.worlds, key=str)]
-    kind = "knowledge" if knowledge_only else "kb"
-    per_agent = {}
-    for a in agents:
-        rows = editor_rows(frame, a, sorted(frame.worlds, key=str), kind)
-        per_agent[a] = [{"cls": [names[w] for w in r["cls"]], "bel": [names[w] for w in r["bel"]]}
-                        for r in rows]
-    atoms = {str(atom): [names[w] for w in sorted(frame.worlds, key=str) if w in true]
-             for atom, true in (rel.valuation or {}).items()}
-    state = blank_state(kind)
-    state.update({"agents": agents, "worlds": worlds, "per_agent": per_agent,
-                  "atoms": atoms, "axiom_d": bool(frame.axiom_d)})
-    return state
+    return state_from_frame(rel.frame, rel.valuation,
+                            "knowledge" if knowledge_only else "kb")
 
 
 def _valuation_of(atoms: Optional[Dict[str, List[str]]]):
@@ -407,7 +413,7 @@ def diagnose_simplicial(proper, sm, valuation) -> StepReport:
     for atom, facet in gaps:
         world = sm.world_of_facet.get(facet, facet)
         by_atom.setdefault(str(atom), []).append(
-            "(" + ", ".join(map(str, world)) + ")" if isinstance(world, tuple) else str(world)
+            world_text(world)
         )
     for atom, worlds in by_atom.items():
         shown = ", ".join(worlds[:8]) + (f" … (+{len(worlds) - 8})" if len(worlds) > 8 else "")
@@ -579,6 +585,11 @@ def run_pipeline_from_seeds(
                       **edge_style(explicit_edges))),
         ))
     result.text_diagrams.append(("Proper model", visualize(proper)))
+    # Kept as an editor state so the page can open it as a document: the
+    # worlds are the copies (w, u) and the atoms the lifted ones.
+    result.proper_state = state_from_frame(proper, lifted, kind)
+    # Keep the document's own switch: a pure-knowledge frame does not carry it.
+    result.proper_state["axiom_d"] = axiom_d
 
     # -- Step 3: the simplicial belief model. --------------------------------
     try:
@@ -614,6 +625,24 @@ def run_pipeline_from_seeds(
                                    dim=3, output_dir=str(OUTPUTS),
                                    valuation=lifted, font_scale=font_scale))
     result.text_diagrams.append(("Simplicial model", str(sm)))
+    # Same for the complex, as a direct-complex state. Its atoms live on the
+    # vertices: a vertex gets a value only where its agent knows the atom, so
+    # where NU fails (see the log) the atom is unknown, not true. Every atom
+    # stays declared, even one no vertex observes, so formulas still parse.
+    from .complex import state_from_simplicial_model  # here: complex.py imports this module
+    assignment = assignment_from_model(sm, lifted) if lifted else None
+    result.complex_state = state_from_simplicial_model(sm, assignment)
+    for atom in lifted or {}:
+        result.complex_state["vatoms"].setdefault(str(atom), {"true": [], "false": []})
+    # Say so on the document: its formulas will not agree with the Kripke
+    # model's on these atoms until the assignment is checked by hand.
+    lost = sorted({str(atom) for atom, _ in nu_violations(sm, assignment, lifted)}) if lifted else []
+    if lost:
+        result.complex_notes.append(
+            f"Check the assignment of {', '.join(lost)} in Atoms and correct it if needed. "
+            "NU fails: the atom is true at worlds where no agent knows it, so no vertex "
+            "carries it there and the complex reads it as unknown, not true."
+        )
 
     # -- Fig. 4: the face lattice (Hasse diagram) of the complex. -------------
     # The combinatorial reading of Fig. 3: which simplices exist and which is a

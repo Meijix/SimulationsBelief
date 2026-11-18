@@ -134,6 +134,15 @@ def _hasse_caption(number: str, full: bool) -> str:
             "(intermediate faces are omitted; enable them with “full lattice”)")
 
 
+def world_text(world) -> str:
+    """A world's name in the editor and the log. The copies of the proper
+    model and the worlds of an action result are pairs; they print as
+    ``(w, u)``, without the quotes ``str`` would put around the parts."""
+    if isinstance(world, tuple):
+        return "(" + ", ".join(world_text(part) for part in world) + ")"
+    return str(world)
+
+
 def blank_state(kind: str = "kb") -> dict:
     """An empty state with every key the GUI and this API expect.
 
@@ -212,6 +221,14 @@ class PipelineResult:
     # For a direct complex: the editor state of its equivalent Kripke model
     # (G_B, docs/12), so it can be opened as a document; None without facets.
     kripke_state: dict | None = None
+    # For a relational run: the editor states of the proper model (step 2)
+    # and of the complex (step 3), opened the same way; None if the run
+    # stopped before that step.
+    proper_state: dict | None = None
+    complex_state: dict | None = None
+    # What the opened complex does not carry over from the Kripke model (the
+    # atoms where NU fails); shown when it is opened and on the document.
+    complex_notes: List[str] = field(default_factory=list)
     steps: List[StepReport] = field(default_factory=list)
 
     @property

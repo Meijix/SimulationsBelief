@@ -8,7 +8,7 @@ from typing import Dict, List, Tuple
 
 from . import base  # noqa: F401  (puts the repository root on sys.path first)
 from simplicial import Node, SimplicialBeliefModel
-from .base import OUTPUTS, _fname, _geometric_ok, _knowledge_only, show
+from .base import OUTPUTS, _fname, _geometric_ok, _knowledge_only, show, world_text
 from .complex import (
     _consistent_part,
     build_simplicial,
@@ -373,10 +373,6 @@ def apply_action(state: dict, spec: dict, model_name: str = "model") -> dict:
         n: "⋅".join(_pair_text(p) for p in sorted(map(_pair_parts, n.cls)))
         for n in out_model.nodes
     }
-    out_model.world_of_facet = {
-        F: "(" + ", ".join(map(str, w)) + ")" if isinstance(w, tuple) else w
-        for F, w in out_model.world_of_facet.items()
-    }
     doc = doc_from_model(f"{model_name} ⋅ {spec.get('name') or 'action'}", out_model,
                          result.assignment,
                          origin=f"action “{spec.get('name') or 'action'}” ({label}) "
@@ -403,7 +399,7 @@ def _update_notes(result, out_model) -> List[str]:
             notes.append(f"revision of {rev.agent}: facet {intended} was lost and no "
                          f"realisable facet keeps its perspective")
             continue
-        to = ", ".join(str(facet_names.get(F, "?")) for F in rev.realised)
+        to = ", ".join(world_text(facet_names.get(F, "?")) for F in rev.realised)
         tie = " (tie)" if len(rev.realised) > 1 else ""
         notes.append(f"revision of {rev.agent}: {intended} → {to}{tie}")
     return notes

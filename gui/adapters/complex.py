@@ -27,6 +27,7 @@ from .base import (
     hasse_show,
     blank_state,
     show,
+    world_text,
 )
 from .formulas import parse_formula
 from .relational import _valuation_of, build_general, seeds_from_editor, state_from_relational
@@ -566,7 +567,7 @@ def state_from_simplicial_model(
                       key=lambda n: sorted(map(str, n.cls)))
         for i, n in enumerate(mine):
             base = (str(given[n]) if n in given
-                    else str(next(iter(n.cls))) if len(n.cls) == 1 else f"{a}{i}")
+                    else world_text(next(iter(n.cls))) if len(n.cls) == 1 else f"{a}{i}")
             name = base if base not in taken else f"{a}:{base}"
             while name in taken:
                 name += "'"
@@ -577,7 +578,7 @@ def state_from_simplicial_model(
 
     def facet_label(F, i):
         w = model.world_of_facet.get(F)
-        return str(w) if w is not None else f"F{i + 1}"
+        return world_text(w) if w is not None else f"F{i + 1}"
 
     ordered = sorted(model.facets, key=lambda F: sorted(names[n] for n in F))
     facets = [

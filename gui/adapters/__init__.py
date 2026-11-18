@@ -34,6 +34,7 @@ from .relational import (  # noqa: F401
     build_general,
     run_pipeline_from_seeds,
     seeds_from_editor,
+    state_from_frame,
     state_from_relational,
 )
 from .formulas import evaluate_formula, parse_formula  # noqa: F401
