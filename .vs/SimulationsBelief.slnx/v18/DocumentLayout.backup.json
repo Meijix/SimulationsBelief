@@ -1,0 +1,106 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\app.py||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:gui\\app.py||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters\\actions.py||{8B382828-6202-11D1-8870-0000F87579D2}|",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:gui\\adapters\\actions.py||{8B382828-6202-11D1-8870-0000F87579D2}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\visualization.py||{8B382828-6202-11D1-8870-0000F87579D2}|",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:visualization.py||{8B382828-6202-11D1-8870-0000F87579D2}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters.py||{8B382828-6202-11D1-8870-0000F87579D2}|",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:gui\\adapters.py||{8B382828-6202-11D1-8870-0000F87579D2}|"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\views\\docs_bar.py||{8B382828-6202-11D1-8870-0000F87579D2}|",
+      "RelativeMoniker": "D:0:0:{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}|\u003CMiscFiles\u003E|solutionrelative:gui\\views\\docs_bar.py||{8B382828-6202-11D1-8870-0000F87579D2}|"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 256,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 5,
+          "Children": [
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{3ae79031-e1bc-11d0-8f78-00a0c9110057}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "visualization.py",
+              "DocumentMoniker": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\visualization.py",
+              "RelativeDocumentMoniker": "visualization.py",
+              "ToolTip": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\visualization.py",
+              "RelativeToolTip": "visualization.py",
+              "ViewState": "AgIAAKwDAAAAAAAAAAAowLsDAAAEAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-10-21T15:47:27.888Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "actions.py",
+              "DocumentMoniker": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters\\actions.py",
+              "RelativeDocumentMoniker": "gui\\adapters\\actions.py",
+              "ToolTip": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters\\actions.py",
+              "RelativeToolTip": "gui\\adapters\\actions.py",
+              "ViewState": "AgIAALIAAAAAAAAAAAAowMEAAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-10-21T15:46:53.485Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "docs_bar.py",
+              "DocumentMoniker": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\views\\docs_bar.py",
+              "RelativeDocumentMoniker": "gui\\views\\docs_bar.py",
+              "ToolTip": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\views\\docs_bar.py",
+              "RelativeToolTip": "gui\\views\\docs_bar.py",
+              "ViewState": "AgIAAIgAAAAAAAAAAAAowJsAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-10-20T17:49:45.518Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "adapters.py",
+              "DocumentMoniker": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters.py",
+              "RelativeDocumentMoniker": "gui\\adapters.py",
+              "ToolTip": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\adapters.py",
+              "RelativeToolTip": "gui\\adapters.py",
+              "ViewState": "AgIAAFoFAAAAAAAAAAAowGkFAAAIAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-10-20T02:36:08.82Z"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "app.py",
+              "DocumentMoniker": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\app.py",
+              "RelativeDocumentMoniker": "gui\\app.py",
+              "ToolTip": "C:\\Users\\sinkp\\Documents\\GitHub\\SimulationsBelief\\gui\\app.py",
+              "RelativeToolTip": "gui\\app.py",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAA0AAABMAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2026-10-07T20:00:40.338Z",
+              "EditorCaption": ""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

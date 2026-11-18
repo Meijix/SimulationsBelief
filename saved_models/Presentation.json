@@ -1,0 +1,1658 @@
+{
+ "format": "simulationsbelief-workspace/1",
+ "saved": "2026-10-19T21:48:00",
+ "models": [
+  {
+   "name": "examples.py · muddy children (knowledge, 3 children)",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [
+     "clean",
+     "a",
+     "b",
+     "c",
+     "ab",
+     "ac",
+     "bc",
+     "abc"
+    ],
+    "per_agent": {
+     "a": [
+      {
+       "cls": [
+        "clean",
+        "a"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "b",
+        "ab"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "bc",
+        "abc"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "c",
+        "ac"
+       ],
+       "bel": []
+      }
+     ],
+     "b": [
+      {
+       "cls": [
+        "a",
+        "ab"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "ac",
+        "abc"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "clean",
+        "b"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "c",
+        "bc"
+       ],
+       "bel": []
+      }
+     ],
+     "c": [
+      {
+       "cls": [
+        "a",
+        "ac"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "ab",
+        "abc"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "b",
+        "bc"
+       ],
+       "bel": []
+      },
+      {
+       "cls": [
+        "clean",
+        "c"
+       ],
+       "bel": []
+      }
+     ]
+    },
+    "atoms": {
+     "Ma": [
+      "a",
+      "ab",
+      "ac",
+      "abc"
+     ],
+     "Mb": [
+      "b",
+      "ab",
+      "bc",
+      "abc"
+     ],
+     "Mc": [
+      "c",
+      "ac",
+      "bc",
+      "abc"
+     ]
+    },
+    "vertices": {
+     "a": [
+      "a0",
+      "a1",
+      "a2",
+      "a3"
+     ],
+     "b": [
+      "b0",
+      "b1",
+      "b2",
+      "b3"
+     ],
+     "c": [
+      "c0",
+      "c1",
+      "c2",
+      "c3"
+     ]
+    },
+    "facets": [
+     {
+      "name": "a",
+      "nodes": {
+       "b": "b0",
+       "c": "c0",
+       "a": "a0"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "ab",
+      "nodes": {
+       "c": "c1",
+       "a": "a1",
+       "b": "b0"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "abc",
+      "nodes": {
+       "b": "b1",
+       "c": "c1",
+       "a": "a2"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "ac",
+      "nodes": {
+       "b": "b1",
+       "c": "c0",
+       "a": "a3"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "b",
+      "nodes": {
+       "b": "b2",
+       "a": "a1",
+       "c": "c2"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "bc",
+      "nodes": {
+       "b": "b3",
+       "a": "a2",
+       "c": "c2"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "c",
+      "nodes": {
+       "b": "b3",
+       "c": "c3",
+       "a": "a3"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "clean",
+      "nodes": {
+       "c": "c3",
+       "a": "a0",
+       "b": "b2"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Ma": {
+      "true": [
+       "b1",
+       "c1",
+       "b0",
+       "c0"
+      ],
+      "false": [
+       "b3",
+       "c3",
+       "b2",
+       "c2"
+      ]
+     },
+     "Mc": {
+      "true": [
+       "b3",
+       "b1",
+       "a3",
+       "a2"
+      ],
+      "false": [
+       "a0",
+       "a1",
+       "b2",
+       "b0"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "c1",
+       "a1",
+       "c2",
+       "a2"
+      ],
+      "false": [
+       "c3",
+       "a0",
+       "a3",
+       "c0"
+      ]
+     }
+    },
+    "complex_kind": "knowledge",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  },
+  {
+   "name": "examples.py · muddy children (knowledge, 3 children) ⋅ Whispering",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {},
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0⋅a~Mb",
+      "a1⋅aMb",
+      "a2⋅aMb",
+      "a3⋅a~Mb"
+     ],
+     "b": [
+      "b0⋅bMb",
+      "b0⋅b~Mb",
+      "b1⋅bMb",
+      "b1⋅b~Mb",
+      "b2⋅bMb",
+      "b2⋅b~Mb",
+      "b3⋅bMb",
+      "b3⋅b~Mb"
+     ],
+     "c": [
+      "c0⋅c",
+      "c1⋅c",
+      "c2⋅c",
+      "c3⋅c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "(a, a whispers ~Mb)",
+      "nodes": {
+       "c": "c0⋅c",
+       "b": "b0⋅b~Mb",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(clean, a whispers ~Mb)",
+      "nodes": {
+       "b": "b2⋅b~Mb",
+       "c": "c3⋅c",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ab, a hispers Mb)",
+      "nodes": {
+       "c": "c1⋅c",
+       "b": "b0⋅bMb",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(b, a hispers Mb)",
+      "nodes": {
+       "b": "b2⋅bMb",
+       "c": "c2⋅c",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(abc, a hispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "b": "b1⋅bMb",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(bc, a hispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "c": "c2⋅c",
+       "b": "b3⋅bMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b1⋅b~Mb",
+       "c": "c0⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(c, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b3⋅b~Mb",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Mc": {
+      "true": [
+       "a2⋅aMb",
+       "a3⋅a~Mb",
+       "b1⋅bMb",
+       "b1⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅b~Mb"
+      ],
+      "false": [
+       "a0⋅a~Mb",
+       "a1⋅aMb",
+       "b0⋅bMb",
+       "b0⋅b~Mb",
+       "b2⋅bMb",
+       "b2⋅b~Mb"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "a1⋅aMb",
+       "a2⋅aMb",
+       "b0⋅bMb",
+       "b1⋅bMb",
+       "b2⋅bMb",
+       "b3⋅bMb",
+       "c1⋅c",
+       "c2⋅c"
+      ],
+      "false": [
+       "a0⋅a~Mb",
+       "a3⋅a~Mb",
+       "b0⋅b~Mb",
+       "b1⋅b~Mb",
+       "b2⋅b~Mb",
+       "b3⋅b~Mb",
+       "c0⋅c",
+       "c3⋅c"
+      ]
+     },
+     "Ma": {
+      "true": [
+       "b0⋅bMb",
+       "b0⋅b~Mb",
+       "b1⋅bMb",
+       "b1⋅b~Mb",
+       "c0⋅c",
+       "c1⋅c"
+      ],
+      "false": [
+       "b2⋅bMb",
+       "b2⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅b~Mb",
+       "c2⋅c",
+       "c3⋅c"
+      ]
+     }
+    },
+    "complex_kind": "knowledge",
+    "axiom_d": false,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": true,
+   "origin": {
+    "label": "action “Whispering” (knowledge (spec-b's product)) on examples.py · muddy children (knowledge, 3 children)"
+   }
+  },
+  {
+   "name": "examples.py · muddy children (knowledge, 3 children) ⋅ Whispering with Nonsense",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {},
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0⋅aN",
+      "a0⋅a~Mb",
+      "a1⋅aMb",
+      "a1⋅aN",
+      "a2⋅aMb",
+      "a2⋅aN",
+      "a3⋅aN",
+      "a3⋅a~Mb"
+     ],
+     "b": [
+      "b0⋅bMb",
+      "b0⋅bN",
+      "b0⋅b~Mb",
+      "b1⋅bMb",
+      "b1⋅bN",
+      "b1⋅b~Mb",
+      "b2⋅bMb",
+      "b2⋅bN",
+      "b2⋅b~Mb",
+      "b3⋅bMb",
+      "b3⋅bN",
+      "b3⋅b~Mb"
+     ],
+     "c": [
+      "c0⋅c",
+      "c1⋅c",
+      "c2⋅c",
+      "c3⋅c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "(a, a whispers Nonsense)",
+      "nodes": {
+       "b": "b0⋅bN",
+       "c": "c0⋅c",
+       "a": "a0⋅aN"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(clean, a whispers Nonsense)",
+      "nodes": {
+       "b": "b2⋅bN",
+       "a": "a0⋅aN",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(a, a whispers ~Mb)",
+      "nodes": {
+       "c": "c0⋅c",
+       "b": "b0⋅b~Mb",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(clean, a whispers ~Mb)",
+      "nodes": {
+       "b": "b2⋅b~Mb",
+       "c": "c3⋅c",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ab, a whispers Mb)",
+      "nodes": {
+       "c": "c1⋅c",
+       "b": "b0⋅bMb",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(b, a whispers Mb)",
+      "nodes": {
+       "b": "b2⋅bMb",
+       "c": "c2⋅c",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ab, a whispers Nonsense)",
+      "nodes": {
+       "b": "b0⋅bN",
+       "a": "a1⋅aN",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(b, a whispers Nonsense)",
+      "nodes": {
+       "b": "b2⋅bN",
+       "a": "a1⋅aN",
+       "c": "c2⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(abc, a whispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "b": "b1⋅bMb",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(bc, a whispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "c": "c2⋅c",
+       "b": "b3⋅bMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(abc, a whispers Nonsense)",
+      "nodes": {
+       "b": "b1⋅bN",
+       "a": "a2⋅aN",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(bc, a whispers Nonsense)",
+      "nodes": {
+       "b": "b3⋅bN",
+       "a": "a2⋅aN",
+       "c": "c2⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers Nonsense)",
+      "nodes": {
+       "a": "a3⋅aN",
+       "c": "c0⋅c",
+       "b": "b1⋅bN"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(c, a whispers Nonsense)",
+      "nodes": {
+       "a": "a3⋅aN",
+       "b": "b3⋅bN",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b1⋅b~Mb",
+       "c": "c0⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(c, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b3⋅b~Mb",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Mc": {
+      "true": [
+       "a2⋅aMb",
+       "a2⋅aN",
+       "a3⋅aN",
+       "a3⋅a~Mb",
+       "b1⋅bMb",
+       "b1⋅bN",
+       "b1⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅bN",
+       "b3⋅b~Mb"
+      ],
+      "false": [
+       "a0⋅aN",
+       "a0⋅a~Mb",
+       "a1⋅aMb",
+       "a1⋅aN",
+       "b0⋅bMb",
+       "b0⋅bN",
+       "b0⋅b~Mb",
+       "b2⋅bMb",
+       "b2⋅bN",
+       "b2⋅b~Mb"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "a1⋅aMb",
+       "a1⋅aN",
+       "a2⋅aMb",
+       "a2⋅aN",
+       "b0⋅bMb",
+       "b1⋅bMb",
+       "b2⋅bMb",
+       "b3⋅bMb",
+       "c1⋅c",
+       "c2⋅c"
+      ],
+      "false": [
+       "a0⋅aN",
+       "a0⋅a~Mb",
+       "a3⋅aN",
+       "a3⋅a~Mb",
+       "b0⋅b~Mb",
+       "b1⋅b~Mb",
+       "b2⋅b~Mb",
+       "b3⋅b~Mb",
+       "c0⋅c",
+       "c3⋅c"
+      ]
+     },
+     "Ma": {
+      "true": [
+       "b0⋅bMb",
+       "b0⋅bN",
+       "b0⋅b~Mb",
+       "b1⋅bMb",
+       "b1⋅bN",
+       "b1⋅b~Mb",
+       "c0⋅c",
+       "c1⋅c"
+      ],
+      "false": [
+       "b2⋅bMb",
+       "b2⋅bN",
+       "b2⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅bN",
+       "b3⋅b~Mb",
+       "c2⋅c",
+       "c3⋅c"
+      ]
+     }
+    },
+    "complex_kind": "knowledge",
+    "axiom_d": false,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": true,
+   "origin": {
+    "label": "action “Whispering with Nonsense” (knowledge (spec-b's product)) on examples.py · muddy children (knowledge, 3 children)"
+   }
+  },
+  {
+   "name": "Whisper",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {
+     "a": [],
+     "b": [],
+     "c": []
+    },
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "aMb",
+      "a~Mb",
+      "aN"
+     ],
+     "b": [
+      "bMb",
+      "b~Mb",
+      "bN"
+     ],
+     "c": [
+      "c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "a whispers ~Mb",
+      "nodes": {
+       "a": "a~Mb",
+       "b": "b~Mb",
+       "c": "c"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "a whispers nothing",
+      "nodes": {
+       "a": "aN",
+       "b": "bN",
+       "c": "c"
+      },
+      "belief": [
+       "c",
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "a whispers Mb",
+      "nodes": {
+       "a": "aMb",
+       "b": "bMb",
+       "c": "c"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     }
+    ],
+    "vatoms": {},
+    "complex_kind": "kb",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  },
+  {
+   "name": "examples.py · muddy children (knowledge, 3 children) ⋅ Whispering with Nonsense (copy)",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {},
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0⋅aN",
+      "a0⋅a~Mb",
+      "a1⋅aMb",
+      "a1⋅aN",
+      "a2⋅aMb",
+      "a2⋅aN",
+      "a3⋅aN",
+      "a3⋅a~Mb"
+     ],
+     "b": [
+      "b0⋅bMb",
+      "b0⋅bN",
+      "b0⋅b~Mb",
+      "b1⋅bMb",
+      "b1⋅bN",
+      "b1⋅b~Mb",
+      "b2⋅bMb",
+      "b2⋅bN",
+      "b2⋅b~Mb",
+      "b3⋅bMb",
+      "b3⋅bN",
+      "b3⋅b~Mb"
+     ],
+     "c": [
+      "c0⋅c",
+      "c1⋅c",
+      "c2⋅c",
+      "c3⋅c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "(a, a whispers nothing)",
+      "nodes": {
+       "b": "b0⋅bN",
+       "c": "c0⋅c",
+       "a": "a0⋅aN"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(clean, a whispers nothing)",
+      "nodes": {
+       "b": "b2⋅bN",
+       "a": "a0⋅aN",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(a, a whispers ~Mb)",
+      "nodes": {
+       "c": "c0⋅c",
+       "b": "b0⋅b~Mb",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(clean, a whispers ~Mb)",
+      "nodes": {
+       "b": "b2⋅b~Mb",
+       "c": "c3⋅c",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(ab, a whispers Mb)",
+      "nodes": {
+       "c": "c1⋅c",
+       "b": "b0⋅bMb",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(b, a whispers Mb)",
+      "nodes": {
+       "b": "b2⋅bMb",
+       "c": "c2⋅c",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(ab, a whispers nothing)",
+      "nodes": {
+       "b": "b0⋅bN",
+       "a": "a1⋅aN",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(b, a whispers nothing)",
+      "nodes": {
+       "b": "b2⋅bN",
+       "a": "a1⋅aN",
+       "c": "c2⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(abc, a whispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "b": "b1⋅bMb",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(bc, a whispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "c": "c2⋅c",
+       "b": "b3⋅bMb"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(abc, a whispers nothing)",
+      "nodes": {
+       "b": "b1⋅bN",
+       "a": "a2⋅aN",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(bc, a whispers nothing)",
+      "nodes": {
+       "b": "b3⋅bN",
+       "a": "a2⋅aN",
+       "c": "c2⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers nothing)",
+      "nodes": {
+       "a": "a3⋅aN",
+       "c": "c0⋅c",
+       "b": "b1⋅bN"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(c, a whispers nothing)",
+      "nodes": {
+       "a": "a3⋅aN",
+       "b": "b3⋅bN",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b1⋅b~Mb",
+       "c": "c0⋅c"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     },
+     {
+      "name": "(c, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b3⋅b~Mb",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Mc": {
+      "true": [
+       "a2⋅aMb",
+       "a2⋅aN",
+       "a3⋅aN",
+       "a3⋅a~Mb",
+       "b1⋅bMb",
+       "b1⋅bN",
+       "b1⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅bN",
+       "b3⋅b~Mb"
+      ],
+      "false": [
+       "a0⋅aN",
+       "a0⋅a~Mb",
+       "a1⋅aMb",
+       "a1⋅aN",
+       "b0⋅bMb",
+       "b0⋅bN",
+       "b0⋅b~Mb",
+       "b2⋅bMb",
+       "b2⋅bN",
+       "b2⋅b~Mb"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "a1⋅aMb",
+       "a1⋅aN",
+       "a2⋅aMb",
+       "a2⋅aN",
+       "b0⋅bMb",
+       "b1⋅bMb",
+       "b2⋅bMb",
+       "b3⋅bMb",
+       "c1⋅c",
+       "c2⋅c"
+      ],
+      "false": [
+       "a0⋅aN",
+       "a0⋅a~Mb",
+       "a3⋅aN",
+       "a3⋅a~Mb",
+       "b0⋅b~Mb",
+       "b1⋅b~Mb",
+       "b2⋅b~Mb",
+       "b3⋅b~Mb",
+       "c0⋅c",
+       "c3⋅c"
+      ]
+     },
+     "Ma": {
+      "true": [
+       "b0⋅bMb",
+       "b0⋅bN",
+       "b0⋅b~Mb",
+       "b1⋅bMb",
+       "b1⋅bN",
+       "b1⋅b~Mb",
+       "c0⋅c",
+       "c1⋅c"
+      ],
+      "false": [
+       "b2⋅bMb",
+       "b2⋅bN",
+       "b2⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅bN",
+       "b3⋅b~Mb",
+       "c2⋅c",
+       "c3⋅c"
+      ]
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": false,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  },
+  {
+   "name": "PA",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {
+     "a": [],
+     "b": [],
+     "c": []
+    },
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a"
+     ],
+     "b": [
+      "b"
+     ],
+     "c": [
+      "c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "a whispered",
+      "nodes": {
+       "a": "a",
+       "b": "b",
+       "c": "c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Mb": {
+      "true": [],
+      "false": []
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": true,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  },
+  {
+   "name": "examples.py · muddy children (knowledge, 3 children) ⋅ Whispering (copy)",
+   "state": {
+    "kind": "simplicial",
+    "agents": [
+     "a",
+     "b",
+     "c"
+    ],
+    "worlds": [],
+    "per_agent": {},
+    "atoms": {},
+    "vertices": {
+     "a": [
+      "a0⋅a~Mb",
+      "a1⋅aMb",
+      "a2⋅aMb",
+      "a3⋅a~Mb"
+     ],
+     "b": [
+      "b0⋅bMb",
+      "b0⋅b~Mb",
+      "b1⋅bMb",
+      "b1⋅b~Mb",
+      "b2⋅bMb",
+      "b2⋅b~Mb",
+      "b3⋅bMb",
+      "b3⋅b~Mb"
+     ],
+     "c": [
+      "c0⋅c",
+      "c1⋅c",
+      "c2⋅c",
+      "c3⋅c"
+     ]
+    },
+    "facets": [
+     {
+      "name": "(a, a whispers ~Mb)",
+      "nodes": {
+       "c": "c0⋅c",
+       "b": "b0⋅b~Mb",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(clean, a whispers ~Mb)",
+      "nodes": {
+       "b": "b2⋅b~Mb",
+       "c": "c3⋅c",
+       "a": "a0⋅a~Mb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ab, a hispers Mb)",
+      "nodes": {
+       "c": "c1⋅c",
+       "b": "b0⋅bMb",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(b, a hispers Mb)",
+      "nodes": {
+       "b": "b2⋅bMb",
+       "c": "c2⋅c",
+       "a": "a1⋅aMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(abc, a hispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "b": "b1⋅bMb",
+       "c": "c1⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(bc, a hispers Mb)",
+      "nodes": {
+       "a": "a2⋅aMb",
+       "c": "c2⋅c",
+       "b": "b3⋅bMb"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(ac, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b1⋅b~Mb",
+       "c": "c0⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     },
+     {
+      "name": "(c, a whispers ~Mb)",
+      "nodes": {
+       "a": "a3⋅a~Mb",
+       "b": "b3⋅b~Mb",
+       "c": "c3⋅c"
+      },
+      "belief": [
+       "a",
+       "b",
+       "c"
+      ]
+     }
+    ],
+    "vatoms": {
+     "Mc": {
+      "true": [
+       "a2⋅aMb",
+       "a3⋅a~Mb",
+       "b1⋅bMb",
+       "b1⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅b~Mb"
+      ],
+      "false": [
+       "a0⋅a~Mb",
+       "a1⋅aMb",
+       "b0⋅bMb",
+       "b0⋅b~Mb",
+       "b2⋅bMb",
+       "b2⋅b~Mb"
+      ]
+     },
+     "Mb": {
+      "true": [
+       "a1⋅aMb",
+       "a2⋅aMb",
+       "b0⋅bMb",
+       "b1⋅bMb",
+       "b2⋅bMb",
+       "b3⋅bMb",
+       "c1⋅c",
+       "c2⋅c"
+      ],
+      "false": [
+       "a0⋅a~Mb",
+       "a3⋅a~Mb",
+       "b0⋅b~Mb",
+       "b1⋅b~Mb",
+       "b2⋅b~Mb",
+       "b3⋅b~Mb",
+       "c0⋅c",
+       "c3⋅c"
+      ]
+     },
+     "Ma": {
+      "true": [
+       "b0⋅bMb",
+       "b0⋅b~Mb",
+       "b1⋅bMb",
+       "b1⋅b~Mb",
+       "c0⋅c",
+       "c1⋅c"
+      ],
+      "false": [
+       "b2⋅bMb",
+       "b2⋅b~Mb",
+       "b3⋅bMb",
+       "b3⋅b~Mb",
+       "c2⋅c",
+       "c3⋅c"
+      ]
+     }
+    },
+    "complex_kind": "kb",
+    "axiom_d": false,
+    "silent_defunct": false,
+    "explicit": false,
+    "hasse_full": false,
+    "make_3d": true
+   },
+   "readonly": false,
+   "origin": null
+  }
+ ],
+ "actions": [
+  {
+   "name": "Whispering",
+   "events": [
+    {
+     "name": "a hispers Mb",
+     "nodes": {
+      "a": "aMb",
+      "b": "bMb",
+      "c": "c"
+     }
+    },
+    {
+     "name": "a whispers ~Mb",
+     "nodes": {
+      "a": "a~Mb",
+      "b": "b~Mb",
+      "c": "c"
+     }
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": [],
+    "c": []
+   },
+   "pre": {
+    "Mb": {
+     "true": [
+      "aMb",
+      "bMb"
+     ],
+     "false": [
+      "a~Mb",
+      "b~Mb"
+     ]
+    }
+   },
+   "post": {
+    "Mb": {
+     "true": [],
+     "false": []
+    }
+   },
+   "mode": 3,
+   "update": "knowledge"
+  },
+  {
+   "name": "Whispering with Nonsense",
+   "events": [
+    {
+     "name": "a whispers Mb",
+     "nodes": {
+      "a": "aMb",
+      "b": "bMb",
+      "c": "c"
+     }
+    },
+    {
+     "name": "a whispers ~Mb",
+     "nodes": {
+      "a": "a~Mb",
+      "b": "b~Mb",
+      "c": "c"
+     }
+    },
+    {
+     "name": "a whispers Nonsense",
+     "nodes": {
+      "a": "aN",
+      "b": "bN",
+      "c": "c"
+     }
+    }
+   ],
+   "isolated": {
+    "a": [],
+    "b": [],
+    "c": []
+   },
+   "pre": {
+    "Mb": {
+     "true": [
+      "aMb",
+      "bMb"
+     ],
+     "false": [
+      "a~Mb",
+      "b~Mb"
+     ]
+    }
+   },
+   "post": {
+    "Mb": {
+     "true": [],
+     "false": []
+    }
+   },
+   "mode": 3,
+   "update": "knowledge"
+  }
+ ]
+}
